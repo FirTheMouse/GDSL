@@ -1,0 +1,44 @@
+# Build folders
+/build/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+compile_commands.json
+
+# IDE specific
+.vscode/
+.idea/
+*.code-workspace
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Compiled object files and executables
+*.o
+#*.obj
+#*.glb
+*.so
+*.dll
+*.exe
+*.out
+*.a
+*.lib
+
+# Logs and dumps
+*.log
+*.tmp
+*.stackdump
+
+# Backup and temporary files
+*~
+*.swp
+*.bak
+
+# Ignore shader cache (if any)
+*.spv
+.cache/

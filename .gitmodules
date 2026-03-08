@@ -1,0 +1,3 @@
+[submodule "ext/g_lib"]
+	path = ext/g_lib
+	url = https://github.com/FirTheMouse/g_lib

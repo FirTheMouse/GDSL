@@ -11,6 +11,12 @@ namespace GDSL {
 //to check if a hash exists before using it
 #define CHECK_REG 1
 
+
+//GDSL, Golden Dynamic Systems Language
+//TAST: tokenizer, a stage, scope stage, t stage.
+//DRE: Discover, resolve, execute
+//MIX: Memory, instruction, execute
+
 g_ptr<Log::Span> span = nullptr;
 static void newline(const std::string& label) {
     span->add_line(label);
@@ -313,13 +319,17 @@ public:
     }
 
     g_ptr<Value> distribute_value(const std::string& label, g_ptr<Value> val) {
+        log("Distributing a value: ",label," through ",name);
         if(value_table.hasKey(label)) {
             g_ptr<Value> table_value = value_table.get(label);
             if(table_value->type == 0) {
+                log("Replacing the value with already existing value");
                 table_value->copy(val);
                 val = table_value;
-            }
+            } else 
+                log("Doing nothing because there's an existing type with a valid value");
         } else {
+            log("Putting into table");
             value_table.put(label, val);
         }
         for(auto s : scopes) {
@@ -392,30 +402,18 @@ public:
             to_return += "\n" + indent + "   "+value->info(); //TO_STRING(value->type);
         }
 
-        if(!children.empty()) {
-            //to_return += " ["+std::to_string(children.length())+"]";
-            for(int i=0;i<children.length();i++) {
-                if(children[i])
-                    to_return += "\n " + children[i]->to_string(depth + 1, i, print_sub_scopes);
-                else 
-                    to_return += "\n" + indent + "[NULL]";
-            }
-        }
-
-
-
 
         if(value_table.size()>0) {
-            to_return += "\n" + indent + "Value table:";
+            to_return += "\n" + indent + "   Value table:";
             for(auto [key,val] : value_table.entrySet()) {
-                to_return += "\n" + indent + "   Key: "+key+" | "+val->info();
+                to_return += "\n" + indent + "     Key: "+key+" | "+val->info();
             }
         }
 
         if(node_table.size()>0) {
-            to_return += "\n" + indent + "Node table:";
+            to_return += "\n" + indent + "   Node table:";
             for(auto [key,val] : node_table.entrySet()) {
-                to_return += "\n" + indent + "   Key: "+key+" | "+val->info();
+                to_return += "\n" + indent + "     Key: "+key+" | "+val->info();
             }
         }
     
@@ -430,20 +428,34 @@ public:
         //     to_return +=  "\n" + indent + "  Frame: " + "[yes]";
         // }
         if(!scopes.empty()) {
-            to_return +=  "\n" + indent + "  Scopes: " + std::to_string(scopes.size());
+            to_return +=  "\n" + indent + "   Scopes: " + std::to_string(scopes.size());
             int i = 0;
             for(auto& scope : scopes) {
                 to_return += "\n" + indent; 
-                if(print_sub_scopes) {
-                    to_return += scope->to_string(depth + 3,index,print_sub_scopes);
-                }
-                else {
-                    to_return += "    " + scope->name;
+                if(scope) {
+                    if(print_sub_scopes) {
+                        to_return += scope->to_string(depth + 3,index,print_sub_scopes);
+                    }
+                    else {
+                        to_return += "    " + scope->name;
+                    }
+                } else {
+                    to_return += "[NULL]";
                 }
             }
         }
         if(owner) {
             to_return +=  "\n" + indent + "  Owner: " + owner->name;
+        }
+
+        if(!children.empty()) {
+            //to_return += " ["+std::to_string(children.length())+"]";
+            for(int i=0;i<children.length();i++) {
+                if(children[i])
+                    to_return += "\n " + children[i]->to_string(depth + 1, i, print_sub_scopes);
+                else 
+                    to_return += "\n" + indent + "[NULL]";
+            }
         }
      
         // if(left) {
@@ -725,6 +737,7 @@ static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root,g_ptr<Node> le
     if(!t_default_function)
         print("GDSL::parse_a_node t_stage requires a default function!");
     //newline("Parsing (T): "+node->info());
+    log("Parsing: ",node->info());
     t_functions.getOrDefault(node->type,t_default_function)(ctx);
     // endline();
     return ctx.node;
@@ -889,7 +902,8 @@ static void execute_r_nodes(g_ptr<Frame> frame, g_ptr<Object> context=nullptr) {
         frame->active_objects[i]->type_->recycle(frame->active_objects.pop());
     }
     for(int i=frame->active_memory.length()-1;i>=0;i--) {
-        free(frame->active_memory[i]);
+        //Commented out for now
+        //free(frame->active_memory[i]);
     }
 }   
 

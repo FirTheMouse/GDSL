@@ -111,9 +111,7 @@ static std::string data_to_string(uint32_t type,void* data) {
 
 class Node;
 
-//A value holds all the actaul worked-with information, from it's address in a Type (if Type is used) to the actual ptr to the data.
-//NOTE TO SELF: Should any map storing these be nuked before running? Given as they are smart pointers so if a map holds one it won't get deleted properly
-//from a memory managment standpoint these are pretty bad, but they're here more for the prototype stage, and eventually users should be able to easily replace them.
+//NOTE TO SELF: Remember to clean up circiular refrences for Quals at some point
 class Value : public Object {
 public:
     Value() {}
@@ -127,17 +125,28 @@ public:
     int address = 0;
     size_t size = 0;
     int sub_size = 0;
-    list<uint32_t> quals;
+    list<g_ptr<Value>> quals;
+    g_ptr<Value> parent;
     Node* type_scope = nullptr;
 
-    void copy(g_ptr<Value> o) {
+    void copy(g_ptr<Value> o, bool is_deep = false) {
         type = o->type; 
         sub_type = o->sub_type; 
         address = o->address; 
         size = o->size; 
         sub_size = o->sub_size;
         type_scope = o->type_scope;
-        quals << o->quals;
+        if(is_deep) {
+            for(auto oq : o->quals) {
+                g_ptr<Value> cpy = make<Value>();
+                cpy->copy(oq,true);
+                quals << cpy;
+            }
+            parent = nullptr;
+        } else {
+            quals = o->quals;
+            parent = o->parent;
+        }
 
         if(o->data) {
             data = malloc(size);
@@ -167,12 +176,17 @@ public:
 
     std::string info() {
         std::string to_return = "";
-        to_return += "Value: " + to_string() + "["+std::to_string((size_t)(void*)this)+"] (type: " + TO_STRING(type) + ", sub_type: " + TO_STRING(sub_type) + (type_scope?", type_scope: [yes]":"");
-        to_return += ", size: " + std::to_string(size) + ", address: " + std::to_string(address);
+        to_return += "Value [@" + std::to_string((size_t)(void*)this) + "]"
+        + "(type: " + TO_STRING(type)
+        + (data?", value: "+to_string():"")
+        + (sub_type!=0?", sub_type: "+TO_STRING(sub_type):"")
+        + (type_scope?", type_scope: [yes]":"")
+        + (size!=0?", size: "+std::to_string(size):"")
+        + (address!=0?", address: "+std::to_string(address):"");
         if(!quals.empty()) {
-            to_return += ", Quals:";
+            to_return += ", Quals: ";
             for(auto q : quals) {
-                to_return += " "+TO_STRING(q);
+                to_return += TO_STRING(q->type)+(q!=quals.last()?", ":"");
             }
         }
         to_return += ")";
@@ -219,13 +233,38 @@ public:
     list<g_ptr<Node>> children;
     g_ptr<Frame> frame = nullptr;
 
+    list<g_ptr<Value>> quals;
+
     list<g_ptr<Node>> scopes;
     Node* parent = nullptr;
     Node* owner = nullptr;
     Node* in_scope = nullptr;
 
     map<std::string,g_ptr<Value>> value_table;
+    bool find_value_in_scope() {
+        if(in_scope->value_table.hasKey(name)) {
+            value = in_scope->value_table.get(name);
+            return true;
+        }
+        return false;
+    }
+
     map<std::string,g_ptr<Node>> node_table;
+    bool find_node_in_scope() {
+        if(in_scope->node_table.hasKey(name)) {
+            if(scopes.length()>0) scopes.clear(); 
+            scopes << in_scope->node_table.get(name);
+            return true;
+        }
+        return false;
+    }
+
+    bool value_is_valid() {
+        if(value) {
+            return value->type != 0;
+        }
+        return false;
+    }
 
     void copy(g_ptr<Node> o) {
         type = o->type;
@@ -234,6 +273,7 @@ public:
         left = o->left;
         right = o->right;
         children = o->children;
+        quals = o->quals;
         frame = o->frame;
         scopes = o->scopes;
         parent = o->parent;
@@ -264,26 +304,31 @@ public:
             c->place_in_scope(scope);
     }
 
-    g_ptr<Value> distribute_value(const std::string& label, g_ptr<Value> val, bool overwrite) {
-        //log("On scope: ",addr_str());
+    void shunt_to_scope(Node* scope) {
+        in_scope->children.erase(this);
+        scope->children << this;
+        in_scope = scope;
+        for(auto c : children) 
+            c->shunt_to_scope(scope);
+    }
+
+    g_ptr<Value> distribute_value(const std::string& label, g_ptr<Value> val) {
         if(value_table.hasKey(label)) {
             g_ptr<Value> table_value = value_table.get(label);
             if(table_value->type == 0) {
-                //log("Copying ",val->info()," to ",table_value->info());
                 table_value->copy(val);
                 val = table_value;
             }
         } else {
-            //log("Putting ",val->info()," into scope");
             value_table.put(label, val);
         }
         for(auto s : scopes) {
-            val = s->distribute_value(label, val, overwrite);
+            val = s->distribute_value(label, val);
         }
         return val;
     }
 
-    g_ptr<Node> distribute_node(const std::string& label, g_ptr<Node> node, bool overwrite) {
+    g_ptr<Node> distribute_node(const std::string& label, g_ptr<Node> node) {
         if(value_table.hasKey(label)) {
             g_ptr<Node> table_node = node_table.get(label);
             if(table_node->name.empty()) {
@@ -294,7 +339,7 @@ public:
             node_table.put(label, node);
         }
         for(auto s : scopes) {
-            node = s->distribute_node(label,node,overwrite);
+            node = s->distribute_node(label,node);
         }
         return node;
     }
@@ -315,10 +360,6 @@ public:
         }
     }
 
-    bool has_qual(uint32_t qual) {
-        return value->quals.has(qual);
-    }
-
     std::string info() {
         std::string to_return = "";
         
@@ -334,10 +375,35 @@ public:
         std::string indent(depth * 2, ' ');
         std::string to_return = "";
         
-        to_return += indent + "Node #" + std::to_string(index) + " Type: " + TO_STRING(type);
-        if(value && (value->type != 0 || value->sub_type !=0) ) {
-            to_return += "\n" + indent + "  "+value->info();
+        to_return += indent + std::to_string(index) + ": " + TO_STRING(type)
+        +(!name.empty()?green(" "+name):"") 
+        +(in_scope?" {"+in_scope->name+"}":"");
+        
+        if(!quals.empty()) {
+            to_return += " [";
+            for(auto q : quals) {
+                to_return += TO_STRING(q->type)+(q!=quals.last()?", ":"");
+            }
+            to_return += "]";
         }
+
+
+        if(value) {
+            to_return += "\n" + indent + "   "+value->info(); //TO_STRING(value->type);
+        }
+
+        if(!children.empty()) {
+            //to_return += " ["+std::to_string(children.length())+"]";
+            for(int i=0;i<children.length();i++) {
+                if(children[i])
+                    to_return += "\n " + children[i]->to_string(depth + 1, i, print_sub_scopes);
+                else 
+                    to_return += "\n" + indent + "[NULL]";
+            }
+        }
+
+
+
 
         if(value_table.size()>0) {
             to_return += "\n" + indent + "Value table:";
@@ -353,9 +419,7 @@ public:
             }
         }
     
-        if(!name.empty()) {
-            to_return +=  "\n" + indent + "  Name: " + name;
-        }
+
 
         if(!opt_str.empty()) {
             to_return +=  "\n" + indent + "  Opt_str: " + opt_str;
@@ -378,39 +442,36 @@ public:
                 }
             }
         }
-        if(in_scope) {
-            to_return +=  "\n" + indent + "  In_scope: " + in_scope->name;
-        }
         if(owner) {
             to_return +=  "\n" + indent + "  Owner: " + owner->name;
         }
      
-        if(left) {
-            to_return +=  "\n" + indent + "  Left:\n";
-            to_return += left->to_string(depth + 1, 0, print_sub_scopes);
-        }
+        // if(left) {
+        //     to_return +=  "\n" + indent + "  Left:\n";
+        //     to_return += left->to_string(depth + 1, 0, print_sub_scopes);
+        // }
     
-        if(right) {
-            to_return +=  "\n" + indent + "  Right:\n";
-            to_return += right->to_string(depth + 1, 0, print_sub_scopes);
-        }
+        // if(right) {
+        //     to_return +=  "\n" + indent + "  Right:\n";
+        //     to_return += right->to_string(depth + 1, 0, print_sub_scopes);
+        // }
     
-        if(!children.empty()) {
-            int total_children = children.length();
-            if(left) total_children--;
-            if(right) total_children--;
-            if(total_children>0) {
-                to_return +=  "\n" + indent + "  Children: " + std::to_string(total_children);
-                for(int i=0;i<children.length();i++) {
-                    if(i==0&&left) continue;
-                    if(i==1&&right) continue;
-                    if(children[i])
-                        to_return += "\n " + children[i]->to_string(depth + 1, i, print_sub_scopes);
-                    else 
-                        to_return += "\n" + indent + "[NULL]";
-                }
-            }
-        }
+        // if(!children.empty()) {
+        //     int total_children = children.length();
+        //     if(left) total_children--;
+        //     if(right) total_children--;
+        //     if(total_children>0) {
+        //         to_return +=  "\n" + indent + "  Children: " + std::to_string(total_children);
+        //         for(int i=0;i<children.length();i++) {
+        //             if(i==0&&left) continue;
+        //             if(i==1&&right) continue;
+        //             if(children[i])
+        //                 to_return += "\n " + children[i]->to_string(depth + 1, i, print_sub_scopes);
+        //             else 
+        //                 to_return += "\n" + indent + "[NULL]";
+        //         }
+        //     }
+        // }
     
         // if(!opt_sub.empty()) {
         //     to_return +=  "\n" + indent + "  Opt_sub: " + std::to_string(opt_sub.size());
@@ -465,6 +526,8 @@ struct Context {
     g_ptr<Frame> frame;
     list<g_ptr<Node>>* result = nullptr;
     list<g_ptr<Node>> nodes;
+    g_ptr<Value> qual;
+    g_ptr<Value> value;
     int& index;
     uint32_t state;
 
@@ -493,6 +556,64 @@ map<uint32_t, Handler> r_handlers;
 Handler r_default_function;
 
 map<uint32_t, Handler> exec_handlers;
+
+
+//Unused by quals for now
+map<uint32_t, Handler> a_prefix_functions;
+map<uint32_t, Handler> a_suffix_functions;
+
+
+static void process_qual(Context& ctx, g_ptr<Value> qual, map<uint32_t, Handler>& handlers) {
+    ctx.qual = qual;
+    if(handlers.hasKey(qual->type))
+        handlers.get(qual->type)(ctx);
+    ctx.qual = nullptr;
+}
+
+map<uint32_t, Handler> t_prefix_functions; //Prefix opperates on values
+map<uint32_t, Handler> t_suffix_functions; //Suffix opperates on nodes
+static void parse_quals(Context& ctx, g_ptr<Node> node) {
+    ctx.node = node;
+    for(auto qual : node->quals) process_qual(ctx,qual,t_suffix_functions);
+}
+static void parse_quals(Context& ctx, g_ptr<Value> value) {
+    ctx.value = value;
+    for(auto qual : value->quals) process_qual(ctx,qual,t_prefix_functions);
+}
+
+map<uint32_t, Handler> discover_prefix_handlers;
+map<uint32_t, Handler> discover_suffix_handlers;
+static void discover_quals(Context& ctx, g_ptr<Node> node) {
+    ctx.node = node;
+    for(auto qual : node->quals) process_qual(ctx,qual,discover_suffix_handlers);
+}
+static void discover_quals(Context& ctx, g_ptr<Value> value) {
+    ctx.value = value;
+    for(auto qual : value->quals) process_qual(ctx,qual,discover_prefix_handlers);
+}
+
+
+map<uint32_t, Handler> r_prefix_handlers;
+map<uint32_t, Handler> r_suffix_handlers;
+static void resolve_quals(Context& ctx, g_ptr<Node> node) {
+    ctx.node = node;
+    for(auto qual : node->quals) process_qual(ctx,qual,r_suffix_handlers);
+}
+static void resolve_quals(Context& ctx, g_ptr<Value> value) {
+    ctx.value = value;
+    for(auto qual : value->quals) process_qual(ctx,qual,r_prefix_handlers);
+}
+
+map<uint32_t, Handler> exec_prefix_handlers;
+map<uint32_t, Handler> exec_suffix_handlers;
+static void execute_quals(Context& ctx, g_ptr<Node> node) {
+    ctx.node = node;
+    for(auto qual : node->quals) process_qual(ctx,qual,exec_suffix_handlers);
+}
+static void execute_quals(Context& ctx, g_ptr<Value> value) {
+    ctx.value = value;
+    for(auto qual : value->quals) process_qual(ctx,qual,exec_prefix_handlers);
+}
 
 static list<g_ptr<Node>> tokenize(const std::string& code) {
     list<g_ptr<Node>> result;
@@ -603,9 +724,9 @@ static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root,g_ptr<Node> le
     ctx.left = left;
     if(!t_default_function)
         print("GDSL::parse_a_node t_stage requires a default function!");
-    newline("Parsing (T): "+node->info());
+    //newline("Parsing (T): "+node->info());
     t_functions.getOrDefault(node->type,t_default_function)(ctx);
-    endline();
+    // endline();
     return ctx.node;
 }
 
@@ -620,23 +741,27 @@ static void parse_nodes(g_ptr<Node> root) {
 
     g_ptr<Node> last = nullptr;
     for(int i = 0; i < root->children.size(); i++) {
-        auto node = root->children[i];
-        if(node->scope()) {
-            last = parse_a_node(node,root,last);
+        if(root->children[i]->scope()) {
+            last = parse_a_node(root->children[i],root,last);
         }
     }
-    
-    for(auto child_scope : root->scopes) {
-        parse_nodes(child_scope);
-    }
-    
     for(int i = 0; i < root->children.size(); i++) {
         auto node = root->children[i];
         if(!node->scope()) {
             last = parse_a_node(node,root,last);
         }
     }
-
+    for(int i = 0; i < root->children.size(); i++) {
+        if(root->children[i]->scope()) {
+            for(auto c : root->children[i]->children) {
+                parse_a_node(c,root);
+            }
+        }
+    }
+    for(auto child_scope : root->scopes) {
+        parse_nodes(child_scope);
+    }
+    
     log("==T_NODES IN ",root->name,"==");
     for(auto t : root->children) {
         t->populate_lr();
@@ -728,9 +853,10 @@ static g_ptr<Node> execute_r_node(g_ptr<Node> node,g_ptr<Frame> frame) {
     ctx.node = node;
     ctx.frame = frame;
     if(exec_handlers.hasKey(node->type)) {
-        newline("Executing: "+node->info());
+        //newline("Executing: "+node->info());
+        log("Executing: "+node->info());
         exec_handlers.get(node->type)(ctx);
-        endline();
+        //endline();
     }
     else {
         print("execute_r_node::1343 Missing case for r_type: ",TO_STRING(node->type));

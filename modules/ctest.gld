@@ -1,0 +1,34 @@
+num {
+    int x;
+    int y;
+
+    int inc(int val, num* counter) {
+
+        print("Counter x: ",(*counter).x);
+        print("Raw: ",counter.x);
+        int depth = 0;
+        while((*counter).x<val) {
+            (*counter).x = (*counter).x+1;
+            if((*counter).x>x) {
+                return (*counter).x;
+            }
+            depth = depth+1;
+            if(depth>8) return 0;
+        }
+        return (*counter).x;
+    }
+}
+
+int main() {
+    num c;
+    c.x = 5;
+    num j;
+    j.x = 0;
+    print(c.inc(6,&j));
+    print("j.x: ",j.x);
+    j.x = 2;
+    print(c.inc(4,&j));
+
+
+}
+main();

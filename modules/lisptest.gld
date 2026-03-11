@@ -1,0 +1,3 @@
+(defun max (x y) (if (> x y) x y))
+(print (max 3 7))
+(print (max 10 2))

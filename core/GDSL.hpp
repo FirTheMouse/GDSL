@@ -7,98 +7,41 @@ namespace GDSL {
 //Controls for the compiler printing, for debugging
 #define PRINT_ALL 1
 #define PRINT_STYLE 0
-//Very important when adding modules, but will add overhead on execution, causes the reg class
-//to check if a hash exists before using it
-#define CHECK_REG 1
 
 
 //GDSL, Golden Dynamic Systems Language
 //TAST: tokenizer, a stage, scope stage, t stage.
-//DRE: Discover, resolve, execute
-//MIX: Memory, instruction, execute
+//DRE: Discover, resolve, error
+//MIX: Model, interpret, execute
 
 g_ptr<Log::Span> span = nullptr;
-static void newline(const std::string& label) {
+static inline void newline(const std::string& label) {
+    #if PRINT_ALL
     span->add_line(label);
+    #endif
 }
-static double endline() {
+static inline double endline() {
+    #if PRINT_ALL
     return span->end_line();
+    #endif
 }
 
+template<typename... Args>
+static inline void log(Args&&... args) {
+    #if PRINT_ALL
+    span->log(std::forward<Args>(args)...);
+    #endif
+}
 
-#if PRINT_ALL
-    template<typename... Args>
-    static void log(Args&&... args) {
-        span->log(std::forward<Args>(args)...);
-    }
-#else
-    #define log(...)
+#ifndef MAX_TYPES
+    #define MAX_TYPES 1024
 #endif
 
+#ifndef HANDLER_COUNT
+    #define HANDLER_COUNT 3
+#endif
 
-constexpr uint32_t hashString(const char* str) {
-    uint32_t hash = 5381;
-    while (*str) {
-        hash = ((hash << 5) + hash) + *str++;
-    }
-    return hash;
-}
-
-uint32_t hashString(const std::string& str) {
-    return hashString(str.c_str());
-}
-
-#define TYPE_ID(name) hashString(#name)
-
-class reg {
-    static inline map<uint32_t,uint32_t> hash_to_enum;
-    static inline map<uint32_t,std::string> enum_to_string;
-    static inline uint32_t next_id = 0; //Consider making this atomic if the maps become thread safe
-public:
-    static uint32_t new_type(const std::string& name) {
-        //Put logic here to warn if there's duplicate keys
-        uint32_t hash = hashString(name.c_str());
-        uint32_t enum_id = next_id++;
-        
-        hash_to_enum.put(hash,enum_id);
-        enum_to_string.put(enum_id,name);
-        return enum_id;
-    }
-
-    static uint32_t ID(uint32_t hash) {
-        #if CHECK_REG
-        if(!hash_to_enum.hasKey(hash)) {
-            print("reg::40 Warning, key not found for enum ",hash,"!");
-            return 0;
-        }
-        #endif 
-        return hash_to_enum.get(hash);
-    }
-
-    static std::string name(uint32_t ID) {
-        #if CHECK_REG
-        if(!enum_to_string.hasKey(ID)) {
-            print("reg::50 Warning, key not found for enum ",ID,"!");
-            return "[null]";
-        } 
-        #endif
-        return enum_to_string.get(ID);
-    }
-
-    static void printRegistry() {
-        print("-- registry print --");
-        for (const auto& pair : enum_to_string.entrySet()) {
-            print(pair.key," -> ",pair.value);
-        }
-    }
-};
-
-
-//For debug
-//#define GET_TYPE(name) (print("Looking up: " #name), reg::ID(TYPE_ID(name)))
-#define GET_TYPE(name) reg::ID(TYPE_ID(name))
-#define TO_STRING(ID) reg::name(ID)
-#define IS_TYPE(node, type_name) ((node)->type == GET_TYPE(type_name))
+std::string labels[MAX_TYPES*HANDLER_COUNT];
 
 static std::string fallback = "[undefined]";
 
@@ -111,13 +54,47 @@ static std::string data_to_string(uint32_t type,void* data) {
         return value_to_string.get(type)(data);
     }
     catch(std::exception e) {
-        return "[missing value_to_string for type "+TO_STRING(type)+"]";
+        return "[missing value_to_string for type "+labels[type]+"]";
     }
 }
 
 class Node;
+class Value;
 
-//NOTE TO SELF: Remember to clean up circiular refrences for Quals at some point
+struct Qual {
+    uint32_t type = 0;
+    uint32_t sub_type = 9;
+    Qual* parent = nullptr;
+    g_ptr<Value> value = nullptr;
+};
+
+static int _ctx_dummy_index = 0;
+
+struct Context {
+    Context() : index(_ctx_dummy_index) {}
+    Context(list<g_ptr<Node>>& _result, int& _index) : result(&_result), index(_index) {}
+
+    g_ptr<Node> node;
+    g_ptr<Node> left;
+    g_ptr<Node> out;
+    g_ptr<Node> root;
+    list<g_ptr<Node>>* result = nullptr;
+    list<g_ptr<Node>> nodes;
+    Qual qual;
+    g_ptr<Value> value;
+    int& index;
+    uint32_t state = 0;
+    bool flag = false;
+
+    std::string source;
+
+    Context sub() {
+        return Context((*result), index);
+    }
+};
+
+
+
 class Value : public Object {
 public:
     Value() {}
@@ -131,8 +108,8 @@ public:
     int address = 0;
     size_t size = 0;
     int sub_size = 0;
-    list<g_ptr<Value>> quals;
-    g_ptr<Value> parent;
+    list<Qual> quals;
+    list<g_ptr<Value>> sub_values;
     Node* type_scope = nullptr;
 
     void copy(g_ptr<Value> o, bool is_deep = false) {
@@ -144,20 +121,40 @@ public:
         type_scope = o->type_scope;
         if(is_deep) {
             for(auto oq : o->quals) {
-                g_ptr<Value> cpy = make<Value>();
-                cpy->copy(oq,true);
+                Qual cpy;
+                cpy.type = oq.type;
+                cpy.parent = nullptr; //Parent is positional, doesn't survive a deep copy
+                if(oq.value) {
+                    cpy.value = make<Value>();
+                    cpy.value->copy(oq.value, true);
+                }
                 quals << cpy;
             }
-            parent = nullptr;
         } else {
             quals = o->quals;
-            parent = o->parent;
         }
 
         if(o->data) {
             data = malloc(size);
             memcpy(data,o->data,size);
         }
+    }
+
+    Qual to_qual() {
+        Qual to_return;
+        to_return.value = this;
+        to_return.type = type;
+        to_return.sub_type = sub_type;
+        return to_return;
+    }
+
+    bool has_qual(size_t q_type) {
+        for(auto q : quals) { 
+            if(q.type==q_type) {
+                return true;
+            }
+        }
+        return false;
     }
 
     template<typename T>
@@ -176,23 +173,23 @@ public:
         if (!data) {
             return "[null]";
         }
-        std::function<std::string(void*)> fallback_func = [this](void* ptr){return "[missing value_to_string for type "+TO_STRING(type)+"]";};
+        std::function<std::string(void*)> fallback_func = [this](void* ptr){return "[missing value_to_string for type "+labels[type]+"]";};
         return value_to_string.getOrDefault(type,fallback_func)(data);
     }
 
     std::string info() {
         std::string to_return = "";
         to_return += "Value [@" + std::to_string((size_t)(void*)this) + "]"
-        + "(type: " + TO_STRING(type)
+        + "(type: " + labels[type]
         + (data?", value: "+to_string():"")
-        + (sub_type!=0?", sub_type: "+TO_STRING(sub_type):"")
+        + (sub_type!=0?", sub_type: "+labels[sub_type]:"")
         + (type_scope?", type_scope: [yes]":"")
         + (size!=0?", size: "+std::to_string(size):"")
         + (address!=0?", address: "+std::to_string(address):"");
         if(!quals.empty()) {
             to_return += ", Quals: ";
-            for(auto q : quals) {
-                to_return += TO_STRING(q->type)+(q!=quals.last()?", ":"");
+            for(int i=0;i<quals.length();i++) {
+                to_return += labels[quals[i].type]+(i!=quals.length()-1?", ":"");
             }
         }
         to_return += ")";
@@ -205,13 +202,13 @@ public:
                 negate_value.get(type)(data);
             }
             catch(std::exception e) {
-                print("value::300 missing negate_value handler for ",TO_STRING(type));
+                print("value::300 missing negate_value handler for ",labels[type]);
             }
         }
     }
 
     bool is_true() {
-        if (data && IS_TYPE(this,BOOL)) {
+        if(data) {
             return *(bool*)data; 
         }
         return false;
@@ -219,7 +216,6 @@ public:
 };
 
 g_ptr<Value> fallback_value = nullptr;
-class Frame;
 
 //Single unified Node for everything
 class Node : public Object {
@@ -234,17 +230,22 @@ public:
     uint32_t type = 0;
     std::string name = "";
     g_ptr<Value> value = nullptr;
-    g_ptr<Node> left = nullptr;
-    g_ptr<Node> right = nullptr;
     list<g_ptr<Node>> children;
-    g_ptr<Frame> frame = nullptr;
 
-    list<g_ptr<Value>> quals;
+    list<Qual> quals;
 
     list<g_ptr<Node>> scopes;
     Node* parent = nullptr;
     Node* owner = nullptr;
     Node* in_scope = nullptr;
+
+
+    const inline g_ptr<Node> left() { 
+        return children.length() > 0 ? children[0] : nullptr; 
+    }
+    const inline g_ptr<Node> right() { 
+        return children.length() > 1 ? children[1] : nullptr; 
+    }
 
     map<std::string,g_ptr<Value>> value_table;
     bool find_value_in_scope() {
@@ -276,11 +277,8 @@ public:
         type = o->type;
         name = o->name;
         value = o->value;
-        left = o->left;
-        right = o->right;
         children = o->children;
         quals = o->quals;
-        frame = o->frame;
         scopes = o->scopes;
         parent = o->parent;
         owner = o->owner;
@@ -319,17 +317,18 @@ public:
     }
 
     g_ptr<Value> distribute_value(const std::string& label, g_ptr<Value> val) {
-        log("Distributing a value: ",label," through ",name);
+        //log("Distributing a value: ",label," through ",name);
         if(value_table.hasKey(label)) {
             g_ptr<Value> table_value = value_table.get(label);
             if(table_value->type == 0) {
-                log("Replacing the value with already existing value");
+                //log("Replacing the value with already existing value");
                 table_value->copy(val);
                 val = table_value;
-            } else 
-                log("Doing nothing because there's an existing type with a valid value");
+            } else {
+                //log("Doing nothing because there's an existing type with a valid value");
+            }
         } else {
-            log("Putting into table");
+            //log("Putting into table");
             value_table.put(label, val);
         }
         for(auto s : scopes) {
@@ -339,7 +338,7 @@ public:
     }
 
     g_ptr<Node> distribute_node(const std::string& label, g_ptr<Node> node) {
-        if(value_table.hasKey(label)) {
+        if(node_table.hasKey(label)) {
             g_ptr<Node> table_node = node_table.get(label);
             if(table_node->name.empty()) {
                 table_node->copy(node);
@@ -359,21 +358,10 @@ public:
     // list<g_ptr<Node>> opt_sub_2; //Kludge for scopes
     std::string opt_str;
 
-    void populate_lr() {
-        left = nullptr;
-        right = nullptr;
-        for(int i = 0; i<children.length();i++) {
-            if(i==0) left = children[i];
-            else if(i==1) right = children[i];
-
-            children[i]->populate_lr();
-        }
-    }
-
     std::string info() {
         std::string to_return = "";
         
-        to_return += TO_STRING(type) + " [Name: " + name;
+        to_return += labels[type] + " [Name: " + name;
         if(value) {
             to_return += ", "+value->info();
         }
@@ -385,21 +373,21 @@ public:
         std::string indent(depth * 2, ' ');
         std::string to_return = "";
         
-        to_return += indent + std::to_string(index) + ": " + TO_STRING(type)
+        to_return += indent + std::to_string(index) + ": " + labels[type]
         +(!name.empty()?green(" "+name):"") 
         +(in_scope?" {"+in_scope->name+"}":"");
         
         if(!quals.empty()) {
             to_return += " [";
-            for(auto q : quals) {
-                to_return += TO_STRING(q->type)+(q!=quals.last()?", ":"");
+            for(int i=0;i<quals.length();i++) {
+                to_return += labels[quals[i].type]+(i!=quals.length()-1?", ":"");
             }
             to_return += "]";
         }
 
 
         if(value) {
-            to_return += "\n" + indent + "   "+value->info(); //TO_STRING(value->type);
+            to_return += "\n" + indent + "   "+value->info();
         }
 
 
@@ -505,127 +493,68 @@ public:
     }
 };
 
+map<char, std::function<void(Context&)>> tokenizer_functions;
+map<uint32_t, void(*)(Context&)> tokenizer_state_functions;
+std::function<void(Context&)> tokenizer_default_function = nullptr;
 
-class Frame : public Object {
-    public:
-    Frame() {
-        if(!context) {
-            context = make<Type>();
-        }
+
+void(*a_parse_function)(Context& ctx) = nullptr;
+
+//TAST
+void (*a_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+void (*s_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+void (*t_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+//DRE
+void (*d_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+void (*r_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+void (*e_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+//MIX
+void (*m_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+void (*i_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+void (*x_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+
+void (**active_handlers)(Context&) = nullptr;
+
+size_t next_id = 0;
+size_t reg_id(std::string label) {
+    size_t id = next_id;
+    for(int i=0;i<HANDLER_COUNT;i++) {
+        labels[next_id] = label;
+        next_id++;
     }
-    uint32_t type = 0;
-    g_ptr<Type> context = nullptr;
-    std::string name;
-    list<g_ptr<Node>> nodes;
-    list<g_ptr<Value>> stack;
-    g_ptr<Node> return_to = nullptr;
-    list<g_ptr<Object>> active_objects;
-    list<void*> active_memory;
-    list<std::function<void()>> stored_functions;
-};
+    return id;
+}
 
-static int _ctx_dummy_index = 0;
+size_t undefined_id = reg_id("UNDEFINED");
 
+void init_handlers(void(**handlers)(Context&), void(*default_handler)(Context&), bool fill_all = false) {
+    if(handlers==a_handlers) a_parse_function = default_handler; //Special case for convience
 
-struct Context {
-    Context() : index(_ctx_dummy_index) {}
-    Context(list<g_ptr<Node>>& _result, int& _index) : result(&_result), index(_index) {}
-
-    g_ptr<Node> node;
-    g_ptr<Node> left;
-    g_ptr<Node> out;
-    g_ptr<Node> root;
-    g_ptr<Frame> frame;
-    list<g_ptr<Node>>* result = nullptr;
-    list<g_ptr<Node>> nodes;
-    g_ptr<Value> qual;
-    g_ptr<Value> value;
-    int& index;
-    uint32_t state;
-
-    std::string source;
-
-
-    Context sub() {
-        return Context((*result), index);
+    for(int i = 0; i < MAX_TYPES*HANDLER_COUNT; i++) {
+        if(!handlers[i]||fill_all)
+            handlers[i] = default_handler;
     }
-};
-
-using Handler = std::function<void(Context& ctx)>;
-map<char,Handler> tokenizer_functions;
-map<char,Handler> tokenizer_state_functions;
-Handler tokenizer_default_function = nullptr;
-
-map<uint32_t,Handler> a_functions;
-Handler a_parse_function;
-
-map<uint32_t,Handler> t_functions;
-Handler t_default_function;
-
-map<uint32_t, Handler> discover_handlers;
-
-map<uint32_t, Handler> r_handlers;
-Handler r_default_function;
-
-map<uint32_t, Handler> exec_handlers;
-
-
-//Unused by quals for now
-map<uint32_t, Handler> a_prefix_functions;
-map<uint32_t, Handler> a_suffix_functions;
-
-
-static void process_qual(Context& ctx, g_ptr<Value> qual, map<uint32_t, Handler>& handlers) {
-    ctx.qual = qual;
-    if(handlers.hasKey(qual->type))
-        handlers.get(qual->type)(ctx);
-    ctx.qual = nullptr;
 }
 
-map<uint32_t, Handler> t_prefix_functions; //Prefix opperates on values
-map<uint32_t, Handler> t_suffix_functions; //Suffix opperates on nodes
-static void parse_quals(Context& ctx, g_ptr<Node> node) {
-    ctx.node = node;
-    for(auto qual : node->quals) process_qual(ctx,qual,t_suffix_functions);
+void start_stage(void(**handlers)(Context&)) {
+    active_handlers = handlers;
 }
-static void parse_quals(Context& ctx, g_ptr<Value> value) {
+
+static void fire_quals(Context& ctx, g_ptr<Value> value) {
     ctx.value = value;
-    for(auto qual : value->quals) process_qual(ctx,qual,t_prefix_functions);
+    for(auto qual : value->quals) {
+        ctx.qual = qual;
+        active_handlers[qual.type+1](ctx);
+    }
 }
-
-map<uint32_t, Handler> discover_prefix_handlers;
-map<uint32_t, Handler> discover_suffix_handlers;
-static void discover_quals(Context& ctx, g_ptr<Node> node) {
+static void fire_quals(Context& ctx, g_ptr<Node> node) {
     ctx.node = node;
-    for(auto qual : node->quals) process_qual(ctx,qual,discover_suffix_handlers);
-}
-static void discover_quals(Context& ctx, g_ptr<Value> value) {
-    ctx.value = value;
-    for(auto qual : value->quals) process_qual(ctx,qual,discover_prefix_handlers);
-}
-
-
-map<uint32_t, Handler> r_prefix_handlers;
-map<uint32_t, Handler> r_suffix_handlers;
-static void resolve_quals(Context& ctx, g_ptr<Node> node) {
-    ctx.node = node;
-    for(auto qual : node->quals) process_qual(ctx,qual,r_suffix_handlers);
-}
-static void resolve_quals(Context& ctx, g_ptr<Value> value) {
-    ctx.value = value;
-    for(auto qual : value->quals) process_qual(ctx,qual,r_prefix_handlers);
+    for(auto qual : node->quals) {
+        ctx.qual = qual;
+        active_handlers[qual.type+2](ctx);
+    }
 }
 
-map<uint32_t, Handler> exec_prefix_handlers;
-map<uint32_t, Handler> exec_suffix_handlers;
-static void execute_quals(Context& ctx, g_ptr<Node> node) {
-    ctx.node = node;
-    for(auto qual : node->quals) process_qual(ctx,qual,exec_suffix_handlers);
-}
-static void execute_quals(Context& ctx, g_ptr<Value> value) {
-    ctx.value = value;
-    for(auto qual : value->quals) process_qual(ctx,qual,exec_prefix_handlers);
-}
 
 static list<g_ptr<Node>> tokenize(const std::string& code) {
     list<g_ptr<Node>> result;
@@ -658,7 +587,7 @@ static list<g_ptr<Node>> tokenize(const std::string& code) {
     int i = 0;
     for(auto t : result) {
         if(t->getType()) {
-            log(i++," ",TO_STRING(t->getType()),": ",t->name);
+            log(i++," ",labels[t->getType()],": ",t->name);
         }
     }
     endline();
@@ -734,12 +663,9 @@ static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root,g_ptr<Node> le
     ctx.root = root;
     ctx.node = node;
     ctx.left = left;
-    if(!t_default_function)
-        print("GDSL::parse_a_node t_stage requires a default function!");
-    //newline("Parsing (T): "+node->info());
-    log("Parsing: ",node->info());
-    t_functions.getOrDefault(node->type,t_default_function)(ctx);
-    // endline();
+    newline("Parsing (T): "+node->info());
+    active_handlers[node->type](ctx);
+    endline();
     return ctx.node;
 }
 
@@ -777,25 +703,18 @@ static void parse_nodes(g_ptr<Node> root) {
     
     log("==T_NODES IN ",root->name,"==");
     for(auto t : root->children) {
-        t->populate_lr();
         log(t->to_string());
     }
     endline();
 }
 
 static void discover_symbol(g_ptr<Node> node, g_ptr<Node> root) {
-    if(discover_handlers.hasKey(node->type)) {
-        auto func = discover_handlers.get(node->type);
-        Context ctx;
-        ctx.root = root;
-        ctx.node = node;
-        newline("Discovering: "+node->info());
-        func(ctx);
-        endline();
-    }
-    for(auto c : node->children) {
-        discover_symbol(c,root);
-    }
+    Context ctx;
+    ctx.root = root;
+    ctx.node = node;
+    newline("Discovering: "+node->info());
+    active_handlers[node->type](ctx);
+    endline();
 }
 
 static void discover_symbols(g_ptr<Node> root) {
@@ -810,159 +729,149 @@ static void discover_symbols(g_ptr<Node> root) {
     endline();
 }
 
-static g_ptr<Node> resolve_symbol(g_ptr<Node> node,g_ptr<Node> scope,g_ptr<Frame> frame) {
+static g_ptr<Node> resolve_symbol(g_ptr<Node> node,g_ptr<Node> scope) {
     Context ctx;
     ctx.node = node;
     ctx.root = scope;
-    ctx.frame = frame;
-    if(!r_default_function)
-        print("GDSL::resolve_symbol r_stage requires a default function!");
-    ctx.node->frame = scope->frame;
-    if(ctx.node->scope()) 
-        ctx.node->frame = ctx.node->scope()->frame;
     newline("Resolving: "+node->info());
-    r_handlers.getOrDefault(node->type,r_default_function)(ctx);
+    active_handlers[node->type](ctx);
     endline();
     return ctx.node;
 }
 
 static void resolve_sub_nodes(Context& ctx) {
     for(int i = 0; i<ctx.node->children.length();i++) {
-        resolve_symbol(ctx.node->children[i], ctx.root, ctx.frame);
+        resolve_symbol(ctx.node->children[i], ctx.root);
     }
 }
 
-static g_ptr<Frame> resolve_symbols(g_ptr<Node> root) {
+static void resolve_symbols(g_ptr<Node> root) {
     newline("Resolve symbols pass (R) over "+std::to_string(root->children.size())+" nodes");
-
-    root->frame->type = root->type;
-    root->frame->name = root->name;
-
     for(int i = 0; i < root->children.size(); i++) {
-        g_ptr<Node> rnode = resolve_symbol(root->children[i],root,root->frame);
-        if(rnode) 
-            root->frame->nodes << rnode;
-        else
-            i--;
+        resolve_symbol(root->children[i],root);
     }
 
     for(auto child_scope : root->scopes) {
         resolve_symbols(child_scope);
     }
 
-    log("==RESOLVED SYMBOLS: ",root->frame->name,"==");
-    for(auto r : root->frame->nodes) {
+    log("==RESOLVED SYMBOLS: ",root->name,"==");
+    for(auto r : root->children) {
         log(r->to_string());
     }
     endline();
-    
-
-    return root->frame;
 }   
 
-static g_ptr<Node> execute_r_node(g_ptr<Node> node,g_ptr<Frame> frame) {
-    int index = 0; list<g_ptr<Node>> results;
-    Context ctx(results,index);
+static void standard_process(Context& ctx) {
+    active_handlers[ctx.node->type](ctx);
+}
+
+static void process_node(g_ptr<Node> node) {
+    Context ctx;
     ctx.node = node;
-    ctx.frame = frame;
-    if(exec_handlers.hasKey(node->type)) {
-        //newline("Executing: "+node->info());
-        log("Executing: "+node->info());
-        exec_handlers.get(node->type)(ctx);
-        //endline();
-    }
-    else {
-        print("execute_r_node::1343 Missing case for r_type: ",TO_STRING(node->type));
-        return nullptr;
-    }
-    return node;
+    active_handlers[ctx.node->type](ctx);
 }
 
-
-static void execute_r_nodes(g_ptr<Frame> frame, g_ptr<Object> context=nullptr) {
-    if(!context) { 
-        //This is bassicly just to push rows and mark them as usable or not to a thread
-        //Want to replace this later with something more efficent, or, make more use of context
-        context = frame->context->create();
-    }
-
-    for(int i = 0; i < frame->nodes.size(); i++) {
-        auto node = frame->nodes[i];
-        execute_r_node(node,frame);
-        if(!frame->isActive()) {
-            log("Frame was deactivated on ",node->info());
-            break;
-        }
-    }
-    if(!frame->isActive())
-        frame->resurrect();
-
-    frame->context->recycle(context);
-    for(int i=frame->active_objects.length()-1;i>=0;i--) {
-        frame->active_objects[i]->type_->recycle(frame->active_objects.pop());
-    }
-    for(int i=frame->active_memory.length()-1;i>=0;i--) {
-        //Commented out for now
-        //free(frame->active_memory[i]);
-    }
-}   
-
-static void execute_constructor(g_ptr<Frame> frame) {
-    for(int i = 0; i < frame->nodes.size(); i++) {
-        auto node = frame->nodes[i];
-        execute_r_node(node,frame);
-        if(!frame->isActive()) {
-            break;
-        }
+static void standard_sub_process(Context& ctx) {
+    for(int i = 0; i<ctx.node->children.length();i++) {
+        process_node(ctx.node->children[i]);
     }
 }
 
-map<uint32_t, std::function<std::function<void()>(Context&)>> stream_handlers;
-
-static void stream_r_node(g_ptr<Node> node,g_ptr<Frame> frame) {
-    int index = 0; list<g_ptr<Node>> results;
-    Context ctx(results,index);
-    ctx.node = node;
-    ctx.frame = frame;
-    if(stream_handlers.hasKey(node->type)) {
-        std::function<void()> func = stream_handlers.get(node->type)(ctx);
-        if(func) {
-            frame->stored_functions << func;
+static void standard_resolving_pass(g_ptr<Node> root) {
+    newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+    Context ctx;
+    ctx.root = root;
+    for(int i = 0; i < root->children.size(); i++) {
+        if(root->children[i]->scope()) {
+            ctx.node = root->children[i];
+            standard_process(ctx);
+            ctx.left = root->children[i];
         }
     }
-    else {
-        print("stream_r_node::1380 Missing case for r_type: ",TO_STRING(node->type));
+    for(int i = 0; i < root->children.size(); i++) {
+        if(!root->children[i]->scope()) {
+            ctx.node = root->children[i];
+            standard_process(ctx);
+            ctx.left = root->children[i];
+        }
+    }
+    for(int i = 0; i < root->children.size(); i++) {
+        if(root->children[i]->scope()) {
+            for(auto c : root->children[i]->children) {
+                ctx.node = c;
+                standard_process(ctx);
+                ctx.left = c;
+            }
+        }
+    }
+    for(auto child_scope : root->scopes) {
+        standard_resolving_pass(child_scope);
+    }
+    endline();
+}
+
+static void standard_direct_pass(g_ptr<Node> root) {
+    newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+    Context ctx;
+    ctx.root = root;
+    for(int i = 0; i < root->children.size(); i++) {
+        ctx.node = root->children[i];
+        standard_process(ctx);
+        ctx.left = root->children[i];
+    }
+
+    for(auto scope : root->scopes) {
+        standard_direct_pass(scope);
+    }
+    endline();
+}
+
+//Returns true if flagged for a return/break
+static bool standard_travel_pass(g_ptr<Node> root) {
+    newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+    Context ctx;
+    ctx.root = root;
+    for(int i = 0; i < root->children.size(); i++) {
+        newline("Looking at: "+root->children[i]->info());
+        ctx.node = root->children[i];
+        standard_process(ctx);
+        ctx.left = root->children[i];
+        endline();
+        if(ctx.flag) { //This is the return/break process
+            endline();
+            return true;
+        }
+    }
+    endline();
+    return false;
+}
+
+void e_pass(Context& ctx, g_ptr<Node> root){
+    ctx.root = root;
+    for(int i=root->children.length()-1;i>=0;i--) {
+        newline("Checking: "+root->children[i]->info());
+        ctx.node = root->children[i];
+        standard_process(ctx);
+        if(!ctx.node) {
+            root->children.removeAt(i);
+        } else {
+            for(auto scope : root->children[i]->scopes) {
+                e_pass(ctx, scope);
+            }
+            ctx.left = root->children[i];
+        }
+        endline();
     }
 }
 
-//Streaming is a diffrent execution approach that pre-resolves the values to direct addresses and bytes to feed into the Type
-//while this looses flexibility, it can reach the same performance levels as C++ (within 30% in benchmarks), though, this has
-//been shotgunned by the change to use Type indexes instead of adresses.
-static void stream_r_nodes(g_ptr<Frame> frame,g_ptr<Object> context=nullptr) {
-    #if PRINT_ALL
-    print("==STREAM NODES==");
-    #endif
-    if(!context) { 
-        context = frame->context->create();
-    }
-    for(int i = 0; i < frame->nodes.size(); i++) {
-        auto node = frame->nodes[i];
-        stream_r_node(node,frame);
-    }
-    frame->context->recycle(context);
-    // for(int i=frame->active_objects.length()-1;i>=0;i--) {
-    //     frame->active_objects[i]->type_->recycle(frame->active_objects.pop());
-    // }
-}   
+void start_e_stage(g_ptr<Node> root) {
+    start_stage(e_handlers);
+    Context ctx;
+    e_pass(ctx,root);
+}
 
-static void execute_stream(g_ptr<Frame> frame) {
-    for(int i =0;i<frame->stored_functions.length();i++) {
-        frame->stored_functions[i]();
-    }
-    for(int i=frame->active_objects.length()-1;i>=0;i--) {
-        frame->active_objects[i]->type_->recycle(frame->active_objects.pop());
-    }
-}   
+
 
 
 }

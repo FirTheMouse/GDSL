@@ -62,10 +62,17 @@ class Node;
 class Value;
 
 struct Qual {
+    Qual() {}
+    Qual(size_t _type) : type(_type) {}
+    Qual(size_t _type, g_ptr<Value> _value) : type(_type), value(_value) {}
+    Qual(size_t _type, size_t _sub_type) : type(_type), sub_type(_sub_type) {}
+    Qual(size_t _type, bool _mute) : type(_type), mute(_mute) {}
+
     uint32_t type = 0;
-    uint32_t sub_type = 9;
+    uint32_t sub_type = 0;
     Qual* parent = nullptr;
     g_ptr<Value> value = nullptr;
+    bool mute = false;
 };
 
 static int _ctx_dummy_index = 0;
@@ -148,14 +155,18 @@ public:
         return to_return;
     }
 
-    bool has_qual(size_t q_type) {
-        for(auto q : quals) { 
-            if(q.type==q_type) {
-                return true;
-            }
+    int find_qual(size_t q_id) {
+        for(int i=0;i<quals.length();i++){ 
+            if(quals[i].type==q_id) {return i;}
         }
-        return false;
+        return -1;
+    } 
+
+    bool has_qual(size_t q_id) {
+        return find_qual(q_id)!=-1;
     }
+
+
 
     template<typename T>
     T get() { return *(T*)data; }
@@ -225,6 +236,7 @@ public:
     }
     Node(uint32_t _type, char c) : type(_type) {
         name += c;
+        value = make<Value>();
     }
 
     uint32_t type = 0;
@@ -294,6 +306,25 @@ public:
 
     std::string addr_str() {return std::to_string((size_t)(void*)this);}
 
+    int find_qual(size_t q_id) {
+        for(int i=0;i<quals.length();i++){ 
+            if(quals[i].type==q_id) {return i;}
+        }
+        return -1;
+    } 
+
+    int find_qual_in_value(size_t q_id) {
+        if(value)
+            return value->find_qual(q_id);
+        return -1;
+    }
+    
+    bool has_qual(size_t q_id, bool check_value = true) {
+        for(auto q : quals){ if(q.type==q_id) {return true;}}
+        if(value&&check_value) {for(auto q : value->quals){if(q.type==q_id){return true;}}}
+        return false;
+    }
+
     g_ptr<Node> spawn_sub_scope() {
         g_ptr<Node> new_node = make<Node>();
         new_node->parent = this;
@@ -309,26 +340,29 @@ public:
     }
 
     void shunt_to_scope(Node* scope) {
-        in_scope->children.erase(this);
-        scope->children << this;
+        if(in_scope) {
+            in_scope->children.erase(this);
+        }
         in_scope = scope;
-        for(auto c : children) 
+        in_scope->children << this;
+        for(auto c : children)  {
             c->shunt_to_scope(scope);
+        }
     }
 
     g_ptr<Value> distribute_value(const std::string& label, g_ptr<Value> val) {
-        //log("Distributing a value: ",label," through ",name);
+        log("Distributing a value: ",label," through ",name);
         if(value_table.hasKey(label)) {
             g_ptr<Value> table_value = value_table.get(label);
             if(table_value->type == 0) {
-                //log("Replacing the value with already existing value");
+                log("Replacing the value with already existing value");
                 table_value->copy(val);
                 val = table_value;
             } else {
-                //log("Doing nothing because there's an existing type with a valid value");
+                log("Doing nothing because there's an existing type with a valid value");
             }
         } else {
-            //log("Putting into table");
+            log("Putting into table");
             value_table.put(label, val);
         }
         for(auto s : scopes) {
@@ -445,49 +479,6 @@ public:
                     to_return += "\n" + indent + "[NULL]";
             }
         }
-     
-        // if(left) {
-        //     to_return +=  "\n" + indent + "  Left:\n";
-        //     to_return += left->to_string(depth + 1, 0, print_sub_scopes);
-        // }
-    
-        // if(right) {
-        //     to_return +=  "\n" + indent + "  Right:\n";
-        //     to_return += right->to_string(depth + 1, 0, print_sub_scopes);
-        // }
-    
-        // if(!children.empty()) {
-        //     int total_children = children.length();
-        //     if(left) total_children--;
-        //     if(right) total_children--;
-        //     if(total_children>0) {
-        //         to_return +=  "\n" + indent + "  Children: " + std::to_string(total_children);
-        //         for(int i=0;i<children.length();i++) {
-        //             if(i==0&&left) continue;
-        //             if(i==1&&right) continue;
-        //             if(children[i])
-        //                 to_return += "\n " + children[i]->to_string(depth + 1, i, print_sub_scopes);
-        //             else 
-        //                 to_return += "\n" + indent + "[NULL]";
-        //         }
-        //     }
-        // }
-    
-        // if(!opt_sub.empty()) {
-        //     to_return +=  "\n" + indent + "  Opt_sub: " + std::to_string(opt_sub.size());
-        //     int i = 0;
-        //     for(auto& child : opt_sub) {
-        //         to_return += "\n " + child->to_string(depth + 1, i++);
-        //     }
-        // }
-    
-        // if(!opt_sub_2.empty()) {
-        //     to_return +=  "\n" + indent + "  Opt_sub_2: " + std::to_string(opt_sub_2.size());
-        //     int i = 0;
-        //     for(auto& child : opt_sub_2) {
-        //         to_return += "\n " + child->to_string(depth + 1, i++);
-        //     }
-        // }
     
         return to_return;
     }
@@ -525,7 +516,7 @@ size_t reg_id(std::string label) {
     return id;
 }
 
-size_t undefined_id = reg_id("UNDEFINED");
+size_t undefined_id = reg_id("UNDEFINED"); //So that it's always 0
 
 void init_handlers(void(**handlers)(Context&), void(*default_handler)(Context&), bool fill_all = false) {
     if(handlers==a_handlers) a_parse_function = default_handler; //Special case for convience
@@ -543,6 +534,7 @@ void start_stage(void(**handlers)(Context&)) {
 static void fire_quals(Context& ctx, g_ptr<Value> value) {
     ctx.value = value;
     for(auto qual : value->quals) {
+        if(qual.mute) continue;
         ctx.qual = qual;
         active_handlers[qual.type+1](ctx);
     }
@@ -550,6 +542,7 @@ static void fire_quals(Context& ctx, g_ptr<Value> value) {
 static void fire_quals(Context& ctx, g_ptr<Node> node) {
     ctx.node = node;
     for(auto qual : node->quals) {
+        if(qual.mute) continue;
         ctx.qual = qual;
         active_handlers[qual.type+2](ctx);
     }
@@ -770,6 +763,12 @@ static void process_node(g_ptr<Node> node) {
     Context ctx;
     ctx.node = node;
     active_handlers[ctx.node->type](ctx);
+}
+
+static void standard_sub_process(g_ptr<Node> node) {
+    for(int i = 0; i<node->children.length();i++) {
+        process_node(node->children[i]);
+    }
 }
 
 static void standard_sub_process(Context& ctx) {

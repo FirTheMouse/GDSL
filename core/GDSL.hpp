@@ -200,7 +200,7 @@ public:
         if(!quals.empty()) {
             to_return += ", Quals: ";
             for(int i=0;i<quals.length();i++) {
-                to_return += labels[quals[i].type]+(i!=quals.length()-1?", ":"");
+                to_return += labels[quals[i].type]+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"+(i!=quals.length()-1?", ":"");
             }
         }
         to_return += ")";

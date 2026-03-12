@@ -204,6 +204,11 @@ namespace GDSL {
     size_t to_decl_id(size_t id) {return id+1;}
     size_t to_unary_id(size_t id) {return id+2;}
 
+    //Qual handlers which act on the value
+    size_t to_prefix_id(size_t id) {return id+1;}
+    //Qual handlers which act on the node
+    size_t to_suffix_id(size_t id) {return id+2;}
+
     // xTx <- Binary operator, ctx.node->right() and ctx.node->left() are what's on your right and left
     size_t add_binary_operator(char c, const std::string& f,int left_bp, int right_bp) {
         size_t id = add_token(c,f);
@@ -257,12 +262,14 @@ namespace GDSL {
     g_ptr<Value> make_type(const std::string& f, size_t size = 0) {
         g_ptr<Value> val = make_qual_value(f,size);
 
-        t_handlers[val->type+1] = [](Context& ctx){
-            ctx.value->sub_type = ctx.qual.sub_type;
-            ctx.value->type = ctx.qual.type;
-            ctx.value->size = ctx.qual.value->size;
-            if(ctx.qual.value->type_scope)
-                ctx.value->type_scope = ctx.qual.value->type_scope;
+        t_handlers[to_prefix_id(val->type)] = [](Context& ctx){
+            if(ctx.value->sub_type==0) {
+                ctx.value->sub_type = ctx.qual.sub_type;
+                ctx.value->type = ctx.qual.type;
+                ctx.value->size = ctx.qual.value->size;
+                if(ctx.qual.value->type_scope)
+                    ctx.value->type_scope = ctx.qual.value->type_scope;
+            }
         };
 
         return  val;
@@ -280,10 +287,14 @@ namespace GDSL {
         return val->type;
     }
 
+    size_t func_call_id = reg_id("FUNC_CALL");
+    size_t builtin_func_qual = reg_id("BUILTIN_FUNC");
+
     static size_t add_function(const std::string& f, void(*op)(Context&), uint32_t return_type = 0) {
         g_ptr<Value> val = make_value(f,0,return_type);
         keywords.put(f,val);
         size_t call_id = val->sub_type;
+        val->quals << Qual(builtin_func_qual);
 
         x_handlers[call_id] = op;
         return call_id;
@@ -429,10 +440,7 @@ namespace GDSL {
         return left_node;
     }
 
-    //Qual handlers which act on the value
-    size_t to_prefix_id(size_t id) {return id+1;}
-    //Qual handlers which act on the node
-    size_t to_suffix_id(size_t id) {return id+2;}
+
 
 
 
@@ -457,7 +465,6 @@ namespace GDSL {
     size_t rangle_id = add_binary_operator('>',"RANGLE", 2, 3);
     size_t langle_id = add_binary_operator('<',"LANGLE", 2, 3);
     size_t equals_id = add_binary_operator('=', "ASSIGNMENT", 1, 0);
-    size_t func_call_id = reg_id("FUNC_CALL");
     size_t star_id = add_binary_operator('*',"STAR", 6, 7);
     size_t amp_id = add_binary_operator('&',"AMPERSAND",-1,8);
     size_t dot_id = add_binary_operator('.', "PROP_ACCESS", 8, 9);
@@ -497,6 +504,10 @@ namespace GDSL {
     size_t map_id = add_type("map",0);
     size_t list_id = add_type("list",0);
     size_t set_id = add_type("set",0);
+
+    size_t get_id = 0;
+    size_t put_id = 0;
+    size_t push_id = 0;
 
     void inject_this_param(g_ptr<Node> node) {
         g_ptr<Node> star = make<Node>();
@@ -592,16 +603,6 @@ namespace GDSL {
                 //log("Nothing to my left");
             }
         };
-
-
-        t_handlers[to_prefix_id(typename_id)] = [](Context& ctx){
-            ctx.value->sub_type = ctx.qual.type;
-            ctx.value->type = ctx.qual.type;
-            ctx.value->size = ctx.qual.value->size;
-            if(ctx.qual.value->type_scope)
-                ctx.value->type_scope = ctx.qual.value->type_scope;
-        };
-
 
 
         left_binding_power.put(lparen_id, 10);
@@ -748,7 +749,185 @@ namespace GDSL {
                 *(int*)ctx.node->right()->value->data
             );
         };
+            
+        t_handlers[rangle_id] = [](Context& ctx){
+            g_ptr<Node> tail = ctx.node->children.last();
+            while(!tail->children.empty()) {
+                tail = tail->children.last();
+            }
+            if(tail->name==","||tail->name==";") { //If we have a comma or other delimiter as our last
+                ctx.node->type=langle_id;
+                parse_a_node(ctx.node,ctx.root);
+                return;
+            }
 
+            list<g_ptr<Node>> stream;
+            std::function<void(g_ptr<Node>)> flatten = [&](g_ptr<Node> node) {
+                if(node->type != langle_id && node->type != rangle_id) {
+                    stream << node;
+                }
+                for(auto c : node->children) {
+                    flatten(c);
+                }
+            };
+            flatten(ctx.node);
+            //The nodes get flattened into a stream so we can process by airity
+
+            print("INIT STREAM");
+            for(auto n : stream) {
+                print("   ",n->to_string(2));
+            }
+
+            bool is_func_decl = false;
+
+            for(auto n : stream) {
+                if(n->value->type==template_id) is_func_decl = true;
+                parse_a_node(n,ctx.root);
+                if(n->value&&n->value->type==0) {
+                    continue;
+                }
+                if(is_func_decl||n->value->quals.empty()) {
+                    ctx.node->value->quals << n->value->to_qual();
+                } else {
+                    ctx.node->value->quals << n->value->quals;
+                }
+            }
+
+            g_ptr<Node> namenode = stream.last();
+            if(stream.first()->type==func_call_id) {
+                namenode = stream.first();
+            }
+            ctx.node->name = namenode->name;
+            ctx.node->children.clear();
+            print("STREAM OF ",ctx.node->name,": ");
+            for(auto n : stream) {
+                print("   ",n->to_string(2));
+            }
+
+            if(is_func_decl) {
+                ctx.node->type = identifier_id;
+                list<Qual> qual_daycare = ctx.node->value->quals;
+                parse_a_node(ctx.node,ctx.root);
+                ctx.node->value->quals << qual_daycare;
+
+                ctx.node->in_scope->scopes.erase(ctx.node->scope());
+            } else {
+                fire_quals(ctx,ctx.node->value);
+                ctx.node->type = var_decl_id;
+                if(ctx.node->in_scope->type==type_scope_id) {
+                    ctx.node->in_scope->value_table.put(ctx.node->name, ctx.node->value);
+                } else {
+                    ctx.node->value = ctx.node->in_scope->distribute_value(ctx.node->name, ctx.node->value);
+                }
+                ctx.node->value->sub_type = 0;
+                
+
+
+
+                print("FORM:\n",ctx.node->to_string(1));
+            }
+
+
+
+
+            //Reimplment proper binary opp hadnleing for these too!
+
+            // size_t decl_id = to_decl_id(ctx.node->type);
+            // size_t unary_id = to_unary_id(ctx.node->type);
+            // auto& children = ctx.node->children;
+
+            // g_ptr<Node> tail = children.last();
+            // while(!tail->children.empty()) {
+            //     tail = tail->children.last();
+            // }
+
+            // //Now we have the tail, which is our name:
+            // ctx.node->name = tail->name;
+
+
+
+
+            // parse_sub_nodes(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
+            // if(children.length() == 2) {
+            //     g_ptr<Node> type_term = children[0];
+            //     g_ptr<Node> id_term = children[1];
+                
+            //     if(type_term->type==var_decl_id) {
+            //         ctx.node->type = decl_id;
+            //         ctx.node->value = type_term->value;
+            //         ctx.node->name = id_term->name;
+            //         ctx.node->value->sub_type = 0;
+            //         ctx.node->value = ctx.node->in_scope->distribute_value(ctx.node->name, ctx.node->value);
+            //         ctx.node->children.clear();
+
+            //         Qual marker(decl_id,true); //Make a muted qual marker
+            //         ctx.node->value->quals << marker;
+
+            //     } else {
+            //         ctx.node->value->copy(type_term->value);
+            //     }
+            // } else if(children.length() == 1) {
+            //     g_ptr<Node> type_term = children[0];
+
+            //     ctx.node->type = unary_id;
+            //     ctx.node->value->copy(type_term->value);
+            // } 
+        };
+
+
+
+        t_handlers[langle_id] = [](Context& ctx){
+            list<g_ptr<Node>> stream;
+            std::function<void(g_ptr<Node>)> flatten = [&](g_ptr<Node> node) {
+                if(node->type != langle_id && node->type != rangle_id) {
+                    stream << node;
+                }
+                for(auto c : node->children) {
+                    flatten(c);
+                }
+
+            };
+            flatten(ctx.node);
+            
+            //This is throwing the langle to the reciving rangle in cases where we're a map split by commas that needs to be rejoined
+
+            int found_at = ctx.node->in_scope->children.find(ctx.node);
+            list<g_ptr<Node>>* loc = &ctx.node->in_scope->children;
+            if(found_at==-1) { //Search both the node tree and owner, because we may be args
+                loc =  &ctx.node->in_scope->owner->children;
+                found_at = loc->find(ctx.node);
+            }
+
+            if(found_at!=-1) {
+                //If we can be found, throw ourselves right until we hit a rangle with a valid tail-name
+                while(loc->length()>found_at+1) {
+                    g_ptr<Node> on = loc->get(found_at+1);
+                    // print("LOOKING AT:\n",on->to_string(1));
+                    if(on->type==rangle_id) {  //Need to check if the tail has a valid name or just picked up a comma
+                        g_ptr<Node> tail = on->children.last();
+                        while(!tail->children.empty()) {
+                            tail = tail->children.last();
+                        }
+                        if(tail->type==identifier_id) { //We've found our catcher!
+                            for(auto n : stream) {
+                                parse_a_node(n,ctx.root);
+                                if(n->value->type==0) continue;
+                                on->value->quals << n->value->to_qual();
+
+                            }
+                            loc->erase(ctx.node);
+                            parse_a_node(on,ctx.root);
+                            break;
+                        }
+                    } else {
+                        flatten(on); //Just add it to our stream and keep moving
+                        loc->erase(on);
+                    }
+                }
+            }
+
+            //Remember to restore normal functionaliy!
+        };
 
 
        
@@ -862,11 +1041,11 @@ namespace GDSL {
 
         x_handlers[dot_id] = [](Context& ctx) {
             process_node(ctx.node->left());
-            process_node(ctx.node->right());
+            process_node(ctx.node->right(),ctx.node->left());
             ctx.node->value->type = ctx.node->right()->value->type;
             ctx.node->value->size = ctx.node->right()->value->size;
 
-            if(ctx.node->right()->type == func_call_id) {
+            if(ctx.node->right()->type == func_call_id || ctx.node->right()->has_qual(builtin_func_qual)) {
                 ctx.node->value->data = ctx.node->right()->value->data;
             } else if(ctx.node->left()->type!=to_unary_id(star_id)&&ctx.node->left()->has_qual(to_decl_id(star_id))) {
                 ctx.node->value->data = (char*)(*(void**)ctx.node->left()->value->data) + ctx.node->right()->value->address;
@@ -971,6 +1150,12 @@ namespace GDSL {
         t_handlers[var_decl_id] = [](Context& ctx) {
             //Do nothing
         };
+
+        r_handlers[var_decl_id] = [](Context& ctx) {
+            fire_quals(ctx,ctx.node->value);
+            resolve_sub_nodes(ctx);
+        };
+
         x_handlers[var_decl_id] = [](Context& ctx) {
             if(!ctx.node->value->data) {
                 size_t alloc_size = ctx.node->value->size;
@@ -1084,8 +1269,7 @@ namespace GDSL {
                     node->scopes[0] = node->in_scope->distribute_node(node->name,node->scope());
                     node->value->type_scope = node->scope().getPtr();
                     node->value = node->in_scope->distribute_value(node->name,node->value);
-                    if(node->value->sub_type!=typename_id)
-                        node->value->sub_type = 0;
+                    node->value->sub_type = 0;
 
                     if(node->in_scope->type==type_scope_id) {
                         node->scope()->type = method_scope_id;
@@ -1112,8 +1296,7 @@ namespace GDSL {
                     } else {
                         node->value = node->in_scope->distribute_value(node->name, decl_value);
                     }
-                    if(node->value->sub_type!=typename_id)
-                        node->value->sub_type = 0;
+                    node->value->sub_type = 0;
                 } else if(has_scope) {
                     node->type = func_call_id;
                     node->find_value_in_scope(); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
@@ -1239,6 +1422,87 @@ namespace GDSL {
         };
 
 
+        r_handlers[to_prefix_id(list_id)] = [](Context& ctx) {
+            int found_at = ctx.value->find_qual(list_id);
+            if(found_at!=-1) {
+                for(int i=found_at+1;i<ctx.value->quals.length();i++) {
+                    Qual& q = ctx.value->quals[i];
+                    if(q.value->size>0) {
+                        if(!ctx.value->store) {
+                            ctx.value->store = make<Type>();
+                        }
+                        ctx.value->store->add_column(q.value->size);
+                    }
+                }
+            }
+        };
+        r_handlers[to_prefix_id(map_id)] = [](Context& ctx) {
+            int found_at = ctx.value->find_qual(map_id);
+            if(found_at!=-1) {
+                for(int i=found_at+1;i<ctx.value->quals.length();i++) {
+                    Qual& q = ctx.value->quals[i];
+                    if(q.value->size>0) {
+                        if(!ctx.value->store) {
+                            ctx.value->store = make<Type>();
+                        }
+                        ctx.value->store->add_column(q.value->size);
+                    }
+                }
+            }
+        };
+        r_handlers[to_prefix_id(set_id)] = [](Context& ctx) {
+
+        };
+
+        push_id = add_function("push",[](Context& ctx) {
+            list<g_ptr<Node>>& children = ctx.node->children;
+            standard_sub_process(ctx.node);
+            if(ctx.left) {
+                g_ptr<Type> store = ctx.left->value->store;
+                if(ctx.left->value->type == list_id) {
+                    store->push(children[0]->value->data, children[0]->value->size);
+                } else if (ctx.left->value->type == map_id) {
+
+                } else if (ctx.left->value->type == set_id) {
+                    
+                }
+            }
+        });
+        get_id = add_function("get",[](Context& ctx) {
+            list<g_ptr<Node>>& children = ctx.node->children;
+            standard_sub_process(ctx.node);
+            if(ctx.left) {
+                g_ptr<Type> store = ctx.left->value->store;
+                if(ctx.left->value->type == list_id) {
+                    ctx.node->value->data = store->get(children[0]->value->get<int>(), 0, children[0]->value->size);
+                    ctx.node->value->type = int_id;
+                } else if (ctx.left->value->type == map_id) {
+                    std::string key = ctx.node->children[0]->value->to_string();
+                    ctx.node->value->data = std::any_cast<void*>(store->fallback_map.get(key));
+                    ctx.node->value->type = int_id;
+                } else if (ctx.left->value->type == set_id) {
+
+                }
+            }
+
+        });
+        put_id = add_function("put",[](Context& ctx) {
+            if(ctx.left) {
+                g_ptr<Type> store = ctx.left->value->store;
+                if(ctx.left->value->type == list_id) {
+
+                } else if (ctx.left->value->type == map_id) {
+                    std::string key = ctx.node->children[0]->value->to_string();
+                    store->fallback_map.put(key, std::any(ctx.node->children[1]->value->data));
+                } else if (ctx.left->value->type == set_id) {
+                    
+                }
+            }
+
+        });
+
+
+
 
 
         if_id = add_scoped_keyword("if", 2, [](Context& ctx) {
@@ -1313,7 +1577,8 @@ namespace GDSL {
         print("A STAGE");
         start_stage(a_handlers);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
-
+        a_pass_resolve_keywords(nodes);
+        
         print("S STAGE");
         start_stage(s_handlers);
         g_ptr<Node> root = parse_scope(nodes);
@@ -1341,12 +1606,10 @@ namespace GDSL {
         start_stage(r_handlers);
         resolve_symbols(root);
 
-        print("==LOG==");
-        span->print_all();
-        print(root->to_string());
-        print_scopes(root);
-
-        return;
+        // print("==LOG==");
+        // span->print_all();
+        // print(root->to_string());
+        // print_scopes(root);
 
         // print("E STAGE");
         // start_e_stage(root);
@@ -1357,7 +1620,7 @@ namespace GDSL {
 
         print("==LOG==");
         span->print_all();
-
+        print(root->to_string());
         print_scopes(root);
 
         timer.start();

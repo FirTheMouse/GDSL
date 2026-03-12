@@ -118,6 +118,7 @@ public:
     list<Qual> quals;
     list<g_ptr<Value>> sub_values;
     Node* type_scope = nullptr;
+    g_ptr<Type> store = nullptr;
 
     void copy(g_ptr<Value> o, bool is_deep = false) {
         type = o->type; 
@@ -199,8 +200,8 @@ public:
         + (address!=0?", address: "+std::to_string(address):"");
         if(!quals.empty()) {
             to_return += ", Quals: ";
-            for(int i=0;i<quals.length();i++) {
-                to_return += labels[quals[i].type]+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"+(i!=quals.length()-1?", ":"");
+            for(int i=0;i<quals.length();i++) { //+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"
+                to_return += labels[quals[i].type]+(i!=quals.length()-1?", ":"");
             }
         }
         to_return += ")";
@@ -759,9 +760,10 @@ static void standard_process(Context& ctx) {
     active_handlers[ctx.node->type](ctx);
 }
 
-static void process_node(g_ptr<Node> node) {
+static void process_node(g_ptr<Node> node, g_ptr<Node> left = nullptr) {
     Context ctx;
     ctx.node = node;
+    ctx.left = left;
     active_handlers[ctx.node->type](ctx);
 }
 

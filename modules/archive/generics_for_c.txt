@@ -1,0 +1,399 @@
+    list<g_ptr<Node>> flatten_angles(g_ptr<Node> node) {
+        list<g_ptr<Node>> to_return;
+        if(node->type == langle_id || node->type == rangle_id) {
+            for(auto c : node->children) {
+                to_return << flatten_angles(c);
+            }
+        } else {
+            to_return << node;
+        }
+        return to_return;
+    }
+    
+    void a_pass_flatten_angles(list<g_ptr<Node>>& nodes) {
+        for(int i = 0; i < nodes.length(); i++) {
+            if(nodes[i]->type == rangle_id || nodes[i]->type == langle_id) {
+                list<g_ptr<Node>> flat = flatten_angles(nodes.take(i));
+                for(int j = flat.length()-1; j >= 0; j--) {
+                    nodes.insert(flat[j], i);
+                }
+                i--; //Recheck from same position
+            } else {
+                a_pass_flatten_angles(nodes[i]->children);
+            }
+        }
+        //Then re-chain identifiers
+        for(int i = 0; i < nodes.length(); i++) {
+        }
+
+
+    }
+        
+        
+        
+        std::function<void(list<g_ptr<Node>>&,bool)> t_pass_register_generics = [&t_pass_register_generics](list<g_ptr<Node>>& nodes, bool in_generic){
+            size_t rangle = rangle_id;
+            size_t langle = langle_id;
+
+            list<int> wishlist;
+            int start = -1;
+            for(int i=0;i<nodes.length();i++) {
+
+
+                if(!nodes[i]->children.empty()) {
+                    t_pass_register_generics(nodes[i]->children, nodes[i]->type==langle);
+                    // // After recursing, if last child is a RANGLE, extract it
+                    // if(nodes[i]->children.last()->type == rangle) {
+                    //     g_ptr<Node> extracted = nodes[i]->children.pop();
+                    //     nodes.insert(extracted, i+1);
+                    // }
+                }
+
+                if(start!=-1) {
+                    if(nodes[i]->type==rangle) {
+                        bool already_stitched = !nodes[i]->children.empty() && 
+                                                nodes[i]->children[0]->type == langle;
+                        if(already_stitched) {
+                            wishlist << i; // treat as middle param, it's a complete nested generic
+                        } else {
+                            // This is our closer
+                            g_ptr<Node> rangle_node = nodes[i];
+                            for(int n=wishlist.length()-1;n>=0;n--) {
+                                nodes[start]->children << nodes.take(wishlist[n]);
+                            }
+                            while(rangle_node->children.length()>1) {
+                                nodes[start]->children << rangle_node->children.take(0);
+                            }
+                            rangle_node->children.insert(nodes.take(start),0);
+                            start = -1;
+                            wishlist.clear();
+                        }
+                    } else {
+                        wishlist << i;
+                    }
+                } else if(nodes[i]->type==langle) {
+                    start = i;
+                } 
+            }
+        };
+
+
+//Generic with one arg
+//   0: RANGLE
+//      0: LANGLE
+//        0: IDENTIFIER list 
+//        1: IDENTIFIER int
+//          Value [@4432331584](type: INT, sub_type: INT, size: 4)
+//      1: IDENTIFIER lOne
+
+//In Rangle handler
+//Find langle, first child is the node type to search, if it has a typename qual we're in a generic
+//So list shoudl have quals [typename], we map [int] to that, stamp and build a var_decl of type intList[int] lOne
+
+//Langle could perform this function actually, see if it holds.
+//it does not.
+
+
+//Nested generic
+//   0: RANGLE
+//      0: LANGLE
+//        0: LANGLE
+//          0: IDENTIFIER list
+//          1: IDENTIFIER list
+//        1: IDENTIFIER int
+//          Value [@4432360768](type: INT, sub_type: INT, size: 4)
+//      1: RANGLE
+//        0: IDENTIFIER lNested
+
+//Deeply nested generic
+//   0: RANGLE
+//     0: LANGLE
+//       0: LANGLE
+//         0: LANGLE
+//           0: IDENTIFIER list
+//           1: IDENTIFIER list
+//         1: IDENTIFIER list
+//       1: IDENTIFIER int
+//         Value [@4438647232](type: INT, sub_type: INT, size: 4)
+//     1: RANGLE
+//       0: RANGLE
+//         0: IDENTIFIER lVeryNested
+
+//Noticing that the depth of the rangles at the end could be indicitive of something
+
+//Read tail end of rangle depth, that's the langle nest depth
+
+//The final name is always the terminator of the stack, i.e the children of every last child
+
+
+t_handlers[rangle_id] = [](Context& ctx){
+    g_ptr<Node> tail = ctx.node->children.last();
+    while(!tail->children.empty()) {
+        tail = tail->children.last();
+    }
+    if(tail->name==","||tail->name==";") { //If we have a comma or other delimiter as our last
+        ctx.node->type=langle_id;
+        parse_a_node(ctx.node,ctx.root);
+        return;
+    }
+
+    list<g_ptr<Node>> stream;
+    std::function<void(g_ptr<Node>)> flatten = [&](g_ptr<Node> node) {
+        if(node->type == langle_id || node->type == rangle_id) {
+            for(auto c : node->children) {
+                flatten(c);
+            }
+        } else {
+            stream << node;
+        }
+    };
+    flatten(ctx.node);
+    //The nodes get flattened into a stream so we can process by airity
+
+    print("INIT STREAM");
+    for(auto n : stream) {
+        print("   ",n->to_string(2));
+    }
+
+    bool is_func_decl = false;
+
+    for(auto n : stream) {
+        if(n->value->type==template_id) is_func_decl = true;
+        parse_a_node(n,ctx.root);
+        if(n->value&&n->value->type==0) {
+            continue;
+        }
+        if(is_func_decl||n->value->quals.empty()) {
+            ctx.node->value->quals << n->value->to_qual();
+        } else {
+            ctx.node->value->quals << n->value->quals;
+        }
+    }
+
+    g_ptr<Node> namenode = stream.last();
+    if(stream.first()->type==func_call_id) {
+        namenode = stream.first();
+    }
+    ctx.node->name = namenode->name;
+    ctx.node->children.clear();
+    print("STREAM OF ",ctx.node->name,": ");
+    for(auto n : stream) {
+        print("   ",n->to_string(2));
+    }
+
+    if(is_func_decl) {
+        ctx.node->type = identifier_id;
+        list<Qual> qual_daycare = ctx.node->value->quals;
+        parse_a_node(ctx.node,ctx.root);
+        ctx.node->value->quals << qual_daycare;
+
+        ctx.node->in_scope->scopes.erase(ctx.node->scope());
+    } else {
+        list<g_ptr<Value>> lost_quals;
+        list<std::pair<g_ptr<Value>,Qual>> pairs;
+
+
+        for(auto q : ctx.node->value->quals) {
+            print("LOOKING AT: ",labels[q.type]);
+            if(!lost_quals.empty() && q.value->quals.empty()) {
+                pairs.push(std::make_pair(lost_quals.pop(),q));
+                print("PUSHED PAIR: ",pairs.last().first->info(),", ",labels[pairs.last().second.type]);
+            }
+
+            if(!q.value->quals.empty()) {
+                for(auto q2 : q.value->quals) {
+                    if(q2.type==typename_id) {
+                        print("ADDED LOST QUAL: ",labels[q2.type]);
+                        lost_quals << q2.value;
+                    }
+                }
+            }
+        }
+        for(auto p : pairs) {
+            print("Pair: ",p.first->info(),", ",labels[p.second.type]);
+        }
+    }
+
+    print("FORM:\n",ctx.node->to_string(1));
+
+
+
+    //Reimplment proper binary opp hadnleing for these too!
+
+    // size_t decl_id = to_decl_id(ctx.node->type);
+    // size_t unary_id = to_unary_id(ctx.node->type);
+    // auto& children = ctx.node->children;
+
+    // g_ptr<Node> tail = children.last();
+    // while(!tail->children.empty()) {
+    //     tail = tail->children.last();
+    // }
+
+    // //Now we have the tail, which is our name:
+    // ctx.node->name = tail->name;
+
+
+
+
+    // parse_sub_nodes(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
+    // if(children.length() == 2) {
+    //     g_ptr<Node> type_term = children[0];
+    //     g_ptr<Node> id_term = children[1];
+        
+    //     if(type_term->type==var_decl_id) {
+    //         ctx.node->type = decl_id;
+    //         ctx.node->value = type_term->value;
+    //         ctx.node->name = id_term->name;
+    //         ctx.node->value->sub_type = 0;
+    //         ctx.node->value = ctx.node->in_scope->distribute_value(ctx.node->name, ctx.node->value);
+    //         ctx.node->children.clear();
+
+    //         Qual marker(decl_id,true); //Make a muted qual marker
+    //         ctx.node->value->quals << marker;
+
+    //     } else {
+    //         ctx.node->value->copy(type_term->value);
+    //     }
+    // } else if(children.length() == 1) {
+    //     g_ptr<Node> type_term = children[0];
+
+    //     ctx.node->type = unary_id;
+    //     ctx.node->value->copy(type_term->value);
+    // } 
+};
+
+
+
+t_handlers[langle_id] = [](Context& ctx){
+    list<g_ptr<Node>> stream;
+    std::function<void(g_ptr<Node>)> flatten = [&](g_ptr<Node> node) {
+        if(node->type == langle_id || node->type == rangle_id) {
+            for(auto c : node->children) {
+                flatten(c);
+            }
+        } else {
+            stream << node;
+        }
+    };
+    flatten(ctx.node);
+    
+    //This is throwing the langle to the reciving rangle in cases where we're a map split by commas that needs to be rejoined
+
+    int found_at = ctx.node->in_scope->children.find(ctx.node);
+    list<g_ptr<Node>>* loc = &ctx.node->in_scope->children;
+    if(found_at==-1) { //Search both the node tree and owner, because we may be args
+        loc =  &ctx.node->in_scope->owner->children;
+        found_at = loc->find(ctx.node);
+    }
+
+    if(found_at!=-1) {
+        //If we can be found, throw ourselves right until we hit a rangle with a valid tail-name
+        while(loc->length()>found_at+1) {
+            g_ptr<Node> on = loc->get(found_at+1);
+            if(on->type==rangle_id) {  //Need to check if the tail has a valid name or just picked up a comma
+                g_ptr<Node> tail = on->children.last();
+                while(!tail->children.empty()) {
+                    tail = tail->children.last();
+                }
+                if(tail->type==identifier_id) { //We've found our catcher!
+                    for(auto n : stream) {
+                        parse_a_node(n,ctx.root);
+                        if(n->value->type==0) continue;
+                        on->value->quals << n->value->to_qual();
+                    }
+                    break;
+                }
+            } else {
+                flatten(on); //Just add it to our stream and keep moving
+                loc->erase(on);
+            }
+        }
+    }
+
+    //Remember to restore normal functionaliy!
+};
+
+
+
+//Generic with 2 args
+//   0: LANGLE
+//      0: IDENTIFIER map
+//      1: IDENTIFIER int
+//        Value [@4432358080](type: INT, sub_type: INT, size: 4)
+//   0: RANGLE
+//      0: IDENTIFIER float
+//        Value [@4432357312](type: FLOAT, sub_type: FLOAT, size: 4)
+//      1: IDENTIFIER mTwo
+
+//Generic with two args, second arg also generic
+//   0: LANGLE
+//      0: IDENTIFIER map
+//      1: IDENTIFIER int
+//        Value [@4432355008](type: INT, sub_type: INT, size: 4)
+//   0: RANGLE
+//      0: LANGLE
+//        0: IDENTIFIER list
+//        1: IDENTIFIER int
+//          Value [@4432353472](type: INT, sub_type: INT, size: 4)
+//      1: RANGLE
+//        0: IDENTIFIER mNested
+
+//Generic with two args, second arg is a generic with two args as well
+//   0: LANGLE
+//      0: IDENTIFIER map
+//      1: IDENTIFIER int
+//        Value [@4432350784](type: INT, sub_type: INT, size: 4)
+//   0: LANGLE
+//      0: IDENTIFIER map
+//      1: IDENTIFIER int
+//        Value [@4432349248](type: INT, sub_type: INT, size: 4)
+//   0: RANGLE
+//      0: IDENTIFIER float
+//        Value [@4432348480](type: FLOAT, sub_type: FLOAT, size: 4)
+//      1: RANGLE
+//        0: IDENTIFIER mNestedTwo
+
+
+//   0: LANGLE
+//      0: LANGLE
+//        0: IDENTIFIER list
+//        1: IDENTIFIER map
+//      1: IDENTIFIER int
+//        Value [@4436566208](type: INT, sub_type: INT, size: 4)
+//   0: RANGLE
+//      0: IDENTIFIER float
+//        Value [@4436565440](type: FLOAT, sub_type: FLOAT, size: 4)
+//      1: RANGLE
+//        0: IDENTIFIER mapLst
+
+//Very bad case
+//  0: LANGLE
+//     0: IDENTIFIER map
+//     1: IDENTIFIER int
+//       Value [@4367361728](type: INT, sub_type: INT, size: 4)
+//  0: RANGLE
+//     0: LANGLE
+//       0: LANGLE
+//         0: IDENTIFIER list
+//         1: IDENTIFIER list
+//       1: IDENTIFIER float
+//         Value [@4367359424](type: FLOAT, sub_type: FLOAT, size: 4)
+//     1: RANGLE
+//       0: COMMA ,
+//  0: RANGLE
+//     0: LANGLE
+//       0: RANGLE
+//         0: IDENTIFIER string
+//           Value [@4367357888](type: STRING, sub_type: STRING, size: 24)
+//         1: IDENTIFIER deepNestMultiArg
+
+//Yea, not solving this anytime soon, defer to later.
+//Solved it!
+
+//Function call
+//   0: RANGLE
+//      0: LANGLE
+//        0: IDENTIFIER add
+//        1: IDENTIFIER int
+//          Value [@4432378048](type: INT, sub_type: INT, size: 4)
+//Ciclre back to these

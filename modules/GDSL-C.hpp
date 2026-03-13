@@ -1313,6 +1313,7 @@ namespace GDSL {
         print("A STAGE");
         start_stage(a_handlers);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
+        a_pass_resolve_keywords(nodes);
 
         print("S STAGE");
         start_stage(s_handlers);
@@ -1341,12 +1342,6 @@ namespace GDSL {
         start_stage(r_handlers);
         resolve_symbols(root);
 
-        print("==LOG==");
-        span->print_all();
-        print(root->to_string());
-        print_scopes(root);
-
-        return;
 
         // print("E STAGE");
         // start_e_stage(root);
@@ -1357,7 +1352,7 @@ namespace GDSL {
 
         print("==LOG==");
         span->print_all();
-
+        print(root->to_string());
         print_scopes(root);
 
         timer.start();

@@ -127,6 +127,7 @@ public:
         size = o->size; 
         sub_size = o->sub_size;
         type_scope = o->type_scope;
+        store = o->store;
         if(is_deep) {
             for(auto oq : o->quals) {
                 Qual cpy;
@@ -197,7 +198,8 @@ public:
         + (sub_type!=0?", sub_type: "+labels[sub_type]:"")
         + (type_scope?", type_scope: [yes]":"")
         + (size!=0?", size: "+std::to_string(size):"")
-        + (address!=0?", address: "+std::to_string(address):"");
+        + (address!=0?", address: "+std::to_string(address):"")
+        + (store?", store: "+store->type_name:"");
         if(!quals.empty()) {
             to_return += ", Quals: ";
             for(int i=0;i<quals.length();i++) { //+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"
@@ -652,11 +654,13 @@ static g_ptr<Node> find_scope_name(const std::string& match,g_ptr<Node> start) {
 }
 
 
-static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root,g_ptr<Node> left = nullptr) {
+static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root, list<g_ptr<Node>>* result = nullptr, int* index = nullptr, g_ptr<Node> left = nullptr) {
     Context ctx;
     ctx.root = root;
     ctx.node = node;
     ctx.left = left;
+    ctx.result = result;
+    ctx.index = index ? *index : _ctx_dummy_index;
     newline("Parsing (T): "+node->info());
     active_handlers[node->type](ctx);
     endline();
@@ -664,8 +668,9 @@ static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root,g_ptr<Node> le
 }
 
 static void parse_sub_nodes(Context& ctx) {
+    g_ptr<Node> last = nullptr;
     for(int i = 0; i<ctx.node->children.length();i++) {
-        parse_a_node(ctx.node->children[i], ctx.root);
+        last = parse_a_node(ctx.node->children[i], ctx.root,&ctx.node->children,&i,last);
     }
 }
 
@@ -675,19 +680,19 @@ static void parse_nodes(g_ptr<Node> root) {
     g_ptr<Node> last = nullptr;
     for(int i = 0; i < root->children.size(); i++) {
         if(root->children[i]->scope()) {
-            last = parse_a_node(root->children[i],root,last);
+            last = parse_a_node(root->children[i],root,&root->children,&i,last);
         }
     }
     for(int i = 0; i < root->children.size(); i++) {
         auto node = root->children[i];
         if(!node->scope()) {
-            last = parse_a_node(node,root,last);
+            last = parse_a_node(node,root,&root->children,&i,last);
         }
     }
     for(int i = 0; i < root->children.size(); i++) {
         if(root->children[i]->scope()) {
             for(auto c : root->children[i]->children) {
-                parse_a_node(c,root);
+                last = parse_a_node(c,root,&root->children[i]->children,&i,last);
             }
         }
     }

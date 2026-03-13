@@ -199,11 +199,12 @@ public:
         + (type_scope?", type_scope: [yes]":"")
         + (size!=0?", size: "+std::to_string(size):"")
         + (address!=0?", address: "+std::to_string(address):"")
-        + (store?", store: "+store->type_name:"");
+        + (store?", store: "+store->type_name:"")
+        + (!sub_values.empty()?", sub: "+std::to_string(sub_values.length()):"");
         if(!quals.empty()) {
             to_return += ", Quals: ";
             for(int i=0;i<quals.length();i++) { //+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"
-                to_return += labels[quals[i].type]+(i!=quals.length()-1?", ":"");
+                to_return += labels[quals[i].type]+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"+(i!=quals.length()-1?", ":"");
             }
         }
         to_return += ")";
@@ -608,7 +609,6 @@ static list<g_ptr<Node>> parse_tokens(list<g_ptr<Node>> tokens,bool local = fals
             ctx.nodes = tokens;
             
             newline("Parsing (A): "+tokens[index]->info());
-            //a_functions.getOrDefault(tokens[index]->getType(),a_default_function)(ctx);
             a_parse_function(ctx);
             endline();
             //index++;
@@ -788,7 +788,9 @@ static void standard_resolving_pass(g_ptr<Node> root) {
     newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
     Context ctx;
     ctx.root = root;
+    ctx.result = &root->children;
     for(int i = 0; i < root->children.size(); i++) {
+        ctx.index = i;
         if(root->children[i]->scope()) {
             ctx.node = root->children[i];
             standard_process(ctx);
@@ -796,6 +798,7 @@ static void standard_resolving_pass(g_ptr<Node> root) {
         }
     }
     for(int i = 0; i < root->children.size(); i++) {
+        ctx.index = i;
         if(!root->children[i]->scope()) {
             ctx.node = root->children[i];
             standard_process(ctx);
@@ -803,7 +806,9 @@ static void standard_resolving_pass(g_ptr<Node> root) {
         }
     }
     for(int i = 0; i < root->children.size(); i++) {
+        ctx.index = i;
         if(root->children[i]->scope()) {
+            ctx.result = &root->children[i]->children;
             for(auto c : root->children[i]->children) {
                 ctx.node = c;
                 standard_process(ctx);

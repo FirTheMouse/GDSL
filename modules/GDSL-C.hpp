@@ -258,11 +258,13 @@ namespace GDSL {
         g_ptr<Value> val = make_qual_value(f,size);
 
         t_handlers[val->type+1] = [](Context& ctx){
-            ctx.value->sub_type = ctx.qual.sub_type;
-            ctx.value->type = ctx.qual.type;
-            ctx.value->size = ctx.qual.value->size;
-            if(ctx.qual.value->type_scope)
-                ctx.value->type_scope = ctx.qual.value->type_scope;
+            if(ctx.value->sub_type == 0) {
+                ctx.value->sub_type = ctx.qual.sub_type;
+                ctx.value->type = ctx.qual.type;
+                ctx.value->size = ctx.qual.value->size;
+                if(ctx.qual.value->type_scope)
+                    ctx.value->type_scope = ctx.qual.value->type_scope;
+            }
         };
 
         return  val;
@@ -290,7 +292,7 @@ namespace GDSL {
     }
 
 
-    #define LOG_A_PARSE 0
+    #define LOG_A_PARSE 1
 
     g_ptr<Node> a_parse_expression(Context& ctx, int min_bp, g_ptr<Node> left_node = nullptr) {
         //Prefixual pass
@@ -324,6 +326,8 @@ namespace GDSL {
         if(!left_node)
             left_node = make<Node>();
 
+        bool fallthrough = false;
+
         if(has_func) { //Has a function but no left: direct node build
             ctx.left = token;
             ctx.node = make<Node>();  //Fresh output target
@@ -336,9 +340,14 @@ namespace GDSL {
                     log("Function returned:\n",ctx.node->to_string(1));
                 endline();
             #endif
-            left_node = ctx.node; //Read result back
+            if(!ctx.node) {
+                fallthrough = true;
+            } else {
+                left_node = ctx.node; //Read result back
+            }
         }
-        else if(right_bp!=-1) { //Prefixual unary: recurse with right
+        
+        if(fallthrough || (!has_func && right_bp != -1)) { //Prefixual unary: recurse with right
             g_ptr<Node> right_node = a_parse_expression(
                 ctx,
                 right_bp,
@@ -348,7 +357,7 @@ namespace GDSL {
             if(right_node)
                 left_node->children << right_node;
         }
-        else { //Else atom, like a literal or idenitifer
+        else if(!has_func) { //Else atom, like a literal or idenitifer
             left_node = token;
             ctx.node = left_node;
         }
@@ -375,7 +384,10 @@ namespace GDSL {
                 if(ctx.index<ctx.nodes.length()) log("Looking at index ",ctx.index,", token: ",ctx.nodes[ctx.index]->info());
             #endif
 
-            if(a_handlers[op->getType()]!=a_parse_function) {
+            fallthrough = false;
+            bool op_has_func = a_handlers[op->getType()]!=a_parse_function;
+
+            if(op_has_func) {
                 if(left_node->type!=0)
                     ctx.left = left_node;
                 ctx.node = make<Node>();
@@ -391,10 +403,17 @@ namespace GDSL {
                 if(ctx.node) {
                     left_node = ctx.node;
                 } else {
-                    ctx.index--;
-                    break;
+                    if(ctx.flag) {
+                        ctx.flag = false;
+                        fallthrough = true;
+                    } else {
+                        ctx.index--;
+                        break;
+                    }
                 }
-            } else {
+            } 
+            
+            if(!op_has_func || fallthrough) {
                 g_ptr<Node> right_node = a_parse_expression(
                     ctx,
                     right_binding_power.getOrDefault(op->getType(), op_left_bp + 1),
@@ -486,17 +505,13 @@ namespace GDSL {
     size_t struct_qual = add_qualifier("struct");
     size_t type_qual = add_qualifier("type");
 
-    size_t template_id = add_qualifier("template");
+    size_t template_id = make_tokenized_keyword("template");
     size_t typename_id = add_type("typename");
 
     size_t live_qual = reg_id("LIVE");
     size_t ptr_qual = reg_id("POINTER");
     size_t paren_qual = reg_id("PAREN");
 
-
-    size_t map_id = add_type("map",0);
-    size_t list_id = add_type("list",0);
-    size_t set_id = add_type("set",0);
 
     void inject_this_param(g_ptr<Node> node) {
         g_ptr<Node> star = make<Node>();
@@ -750,8 +765,23 @@ namespace GDSL {
         };
 
 
-
-       
+        a_handlers[langle_id] = [](Context& ctx){
+            int i = ctx.index;
+            while(i<ctx.nodes.length()) {
+                if(ctx.nodes[i]->type==end_id||ctx.nodes[i]->type==lbrace_id) {
+                    break;
+                } 
+                else if(ctx.nodes[i]->type==rangle_id) {
+                    ctx.nodes[ctx.index-1]->type = lparen_id;
+                    ctx.nodes[i]->type = rparen_id;
+                    ctx.index--;
+                    return;
+                }
+                i++;
+            }
+            ctx.node = nullptr;
+            ctx.flag = true; //A stage uses it's flag for this
+        };
         
         t_handlers[equals_id] = [](Context& ctx){parse_sub_nodes(ctx);}; //So we don't turn things into declerations
         e_handlers[equals_id] = [](Context& ctx){ 
@@ -1102,15 +1132,26 @@ namespace GDSL {
                     node->value = node->in_scope->distribute_value(node->name,node->value);
 
                     node->scope()->type = type_scope_id;
+
+                    for(auto c : node->children) { //Parse inline quals for templates
+
+                    }
                 }
             } else {
                 has_scope = node->find_node_in_scope(); //To distinquish func_calls from object identifiers
                 if(has_sub_type) {
-                    node->type = var_decl_id;
-                    if(node->in_scope->type==type_scope_id) {
-                        node->in_scope->value_table.put(node->name, decl_value);
+
+                    if(node->value->sub_type == typename_id && node->in_scope->value_table.hasKey(node->name)) {
+                        //Reference to existing typename-typed variable, not a new declaration
+                        node->find_value_in_scope();
+                        node->type = identifier_id;
                     } else {
-                        node->value = node->in_scope->distribute_value(node->name, decl_value);
+                        node->type = var_decl_id;
+                        if(node->in_scope->type==type_scope_id) {
+                            node->in_scope->value_table.put(node->name, decl_value);
+                        } else {
+                            node->value = node->in_scope->distribute_value(node->name, decl_value);
+                        }
                     }
                     if(node->value->sub_type!=typename_id)
                         node->value->sub_type = 0;
@@ -1314,6 +1355,9 @@ namespace GDSL {
         start_stage(a_handlers);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
         a_pass_resolve_keywords(nodes);
+        for(auto n : nodes) {
+            print(n->to_string());
+        }
 
         print("S STAGE");
         start_stage(s_handlers);

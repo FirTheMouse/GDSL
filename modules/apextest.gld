@@ -1,0 +1,14 @@
+Account acc;
+acc.Id = "42";
+acc.Name = "acc";
+
+Account tcc;
+tcc.Id = "12";
+tcc.Name = "tcc";
+
+
+print("Name: ",acc.Name);
+print("Id: ",acc.Id);
+
+list<int> accounts = [SELECT Id FROM Account];
+print(accounts.get(1).Name);

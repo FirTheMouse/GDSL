@@ -614,6 +614,18 @@ namespace GDSL {
         });
 
         x_handlers[lbracket_id] = [](Context& ctx) {
+            //If array acess
+            // process_node(ctx.node->left()); // base
+            // process_node(ctx.node->right()); // index
+            
+            // int i = ctx.node->right()->value->get<int>();
+            // size_t element_size = ctx.node->children[0]->value->size;
+            
+            // ctx.node->value->type = ctx.node->children[0]->value->type;
+            // ctx.node->value->size = element_size;
+            // ctx.node->value->type_scope = ctx.node->children[0]->value->type_scope;
+            // ctx.node->value->data = (char*)ctx.node->children[0]->value->data + i * element_size;
+
             // 1. Find FROM and WHERE children
             g_ptr<Node> from_node = nullptr;
             g_ptr<Node> where_node = nullptr;
@@ -624,7 +636,7 @@ namespace GDSL {
                 else if(c->type == where_id) where_node = c;
                 else if(c->type == select_id) select_node = c;
             }
-            
+
             if(!from_node) return;
             
             g_ptr<Type> store = from_node->children[0]->value->store;
@@ -644,6 +656,7 @@ namespace GDSL {
                 handle->address = tid;
                 handle->quals << Qual(sobj_qual);
                 ctx.node->value->sub_values << handle;
+                //print("PUSHED: ",handle->info());
             }
         };
 
@@ -834,16 +847,16 @@ namespace GDSL {
             
         t_handlers[rangle_id] = [](Context& ctx){
 
-            if(ctx.node->children.length() == 2) {
-                g_ptr<Node> left = ctx.node->children[0];
-                g_ptr<Node> right = ctx.node->children[1];
-                if(!left->value_is_valid() && !right->value_is_valid()) {
-                    // Normal binary operator path
-                    parse_sub_nodes(ctx);
-                    ctx.node->value->copy(left->value);
-                    return;
-                }
-            }
+            // if(ctx.node->children.length() == 2) {
+            //     g_ptr<Node> left = ctx.node->children[0];
+            //     g_ptr<Node> right = ctx.node->children[1];
+            //     if(left->value_is_valid() && right->value_is_valid()) {
+            //         // Normal binary operator path
+            //         parse_sub_nodes(ctx);
+            //         ctx.node->value->copy(left->value);
+            //         return;
+            //     }
+            // }
 
             g_ptr<Node> tail = ctx.node->children.last();
             while(!tail->children.empty()) {
@@ -938,33 +951,41 @@ namespace GDSL {
             flatten(ctx.node);
             
             //This is throwing the langle to the reciving rangle in cases where we're a map split by commas that needs to be rejoined
-            list<g_ptr<Node>>* loc = ctx.result;
-            int found_at = loc->find(ctx.node);
+            int found_at = ctx.node->in_scope->children.find(ctx.node);
+            list<g_ptr<Node>>* loc = &ctx.node->in_scope->children;
+            if(found_at==-1) { //Search both the node tree and owner, because we may be args
+                loc =  &ctx.node->in_scope->owner->children;
+                if(loc) {
+                    found_at = loc->find(ctx.node);
+                }
+            }
 
-            if(found_at!=-1) {
-                //If we can be found, throw ourselves right until we hit a rangle with a valid tail-name
-                while(loc->length()>found_at+1) {
-                    g_ptr<Node> on = loc->get(found_at+1);
-                    // print("LOOKING AT:\n",on->to_string(1));
-                    if(on->type==rangle_id) {  //Need to check if the tail has a valid name or just picked up a comma
-                        g_ptr<Node> tail = on->children.last();
-                        while(!tail->children.empty()) {
-                            tail = tail->children.last();
-                        }
-                        if(tail->type==identifier_id) { //We've found our catcher!
-                            for(auto n : stream) {
-                                parse_a_node(n,ctx.root);
-                                if(n->value->type==0) continue;
-                                on->value->quals << n->value->to_qual();
-
+            if(!loc) {
+                if(found_at!=-1) {
+                    //If we can be found, throw ourselves right until we hit a rangle with a valid tail-name
+                    while(loc->length()>found_at+1) {
+                        g_ptr<Node> on = loc->get(found_at+1);
+                        // print("LOOKING AT:\n",on->to_string(1));
+                        if(on->type==rangle_id) {  //Need to check if the tail has a valid name or just picked up a comma
+                            g_ptr<Node> tail = on->children.last();
+                            while(!tail->children.empty()) {
+                                tail = tail->children.last();
                             }
-                            loc->erase(ctx.node);
-                            parse_a_node(on,ctx.root);
-                            break;
+                            if(tail->type==identifier_id) { //We've found our catcher!
+                                for(auto n : stream) {
+                                    parse_a_node(n,ctx.root);
+                                    if(n->value->type==0) continue;
+                                    on->value->quals << n->value->to_qual();
+
+                                }
+                                loc->erase(ctx.node);
+                                parse_a_node(on,ctx.root);
+                                break;
+                            }
+                        } else {
+                            flatten(on); //Just add it to our stream and keep moving
+                            loc->erase(on);
                         }
-                    } else {
-                        flatten(on); //Just add it to our stream and keep moving
-                        loc->erase(on);
                     }
                 }
             }
@@ -1088,8 +1109,9 @@ namespace GDSL {
         x_handlers[dot_id] = [](Context& ctx) {
             process_node(ctx.node->left());
             process_node(ctx.node->right(),ctx.node->left());
-            ctx.node->value->type = ctx.node->right()->value->type;
-            ctx.node->value->size = ctx.node->right()->value->size;
+            // ctx.node->value->type = ctx.node->right()->value->type;
+            // ctx.node->value->size = ctx.node->right()->value->size;
+            ctx.node->value->copy(ctx.node->right()->value);
 
             if(ctx.node->left()->has_qual(sobj_qual)) {
                 g_ptr<Type> store = ctx.node->left()->value->store;
@@ -1190,18 +1212,6 @@ namespace GDSL {
             } else {
                 //Just an access case
             }
-        };
-        x_handlers[lbracket_id] = [](Context& ctx) {
-            process_node(ctx.node->left()); // base
-            process_node(ctx.node->right()); // index
-            
-            int i = ctx.node->right()->value->get<int>();
-            size_t element_size = ctx.node->children[0]->value->size;
-            
-            ctx.node->value->type = ctx.node->children[0]->value->type;
-            ctx.node->value->size = element_size;
-            ctx.node->value->type_scope = ctx.node->children[0]->value->type_scope;
-            ctx.node->value->data = (char*)ctx.node->children[0]->value->data + i * element_size;
         };
 
         t_handlers[var_decl_id] = [](Context& ctx) {
@@ -1485,7 +1495,7 @@ namespace GDSL {
         });
 
         init_handlers(x_handlers,[](Context& ctx){
-            print("Defualt x handler for: ",ctx.node->info());
+            //print("Defualt x handler for: ",ctx.node->info());
         });
 
         print_id = add_function("print",[](Context& ctx) {
@@ -1593,8 +1603,7 @@ namespace GDSL {
             if(ctx.left) {
                 g_ptr<Type> store = ctx.left->value->store;
                 if(ctx.left->value->type == list_id) {
-                    if(!ctx.node->value->sub_values.empty()) {
-                        print("HIT SUB VALUE RETURN PATH");
+                    if(!ctx.left->value->sub_values.empty()) {
                         g_ptr<Value> result = ctx.left->value->sub_values.get(children[0]->value->get<int>());
                         ctx.node->value->copy(result);
                     } else {
@@ -1762,6 +1771,9 @@ namespace GDSL {
         print("Final time: ",final_time);
 
         //span->print_all();
+
+        // print(root->to_string());
+        // print_scopes(root);
         
         // print("==LOG==");
         // span->print_all();

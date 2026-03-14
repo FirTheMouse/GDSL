@@ -158,12 +158,10 @@ namespace GDSL {
         left_binding_power.put(id, left_bp);
         right_binding_power.put(id, right_bp);
 
-        labels[to_decl_id(id)] = f+"_DECL";
-        labels[to_unary_id(id)] = f+"_UNARY";
+        size_t decl_id = reg_id(f+"_decl");
+        size_t unary_id = reg_id(f+"_unary");
 
-        t_handlers[id] = [](Context& ctx){
-            size_t decl_id = to_decl_id(ctx.node->type);
-            size_t unary_id = to_unary_id(ctx.node->type);
+        t_handlers[id] = [decl_id,unary_id](Context& ctx){
             auto& children = ctx.node->children;
             standard_sub_process(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
             if(children.length() == 2) {
@@ -208,7 +206,7 @@ namespace GDSL {
         uint32_t type = token->getType();
         int left_bp = left_binding_power.getOrDefault(type,-1);
         int right_bp = right_binding_power.getOrDefault(type,-1);
-        bool has_func = a_handlers[type] != a_parse_function;
+        bool has_func = a_handlers.hasKey(type);
 
         #if LOG_A_PARSE
             log("Starting at index ",ctx.index,", token: ",token->info()," (left_bp: ",left_bp,", right_bp: ",right_bp,", has_func: ",has_func?"yes":"no",")");
@@ -288,7 +286,7 @@ namespace GDSL {
             #endif
 
             fallthrough = false;
-            bool op_has_func = a_handlers[op->getType()]!=a_parse_function;
+            bool op_has_func = a_handlers.hasKey(op->getType());
 
             if(op_has_func) {
                 if(left_node->type!=0)
@@ -350,11 +348,6 @@ namespace GDSL {
         #endif
         return left_node;
     }
-
-    //Qual handlers which act on the value
-    size_t to_prefix_id(size_t id) {return id+1;}
-    //Qual handlers which act on the node
-    size_t to_suffix_id(size_t id) {return id+2;}
 
     //Need to define all these globally so that the function pointers can access them
     size_t identifier_id = reg_id("IDENTIFIER");
@@ -465,14 +458,6 @@ namespace GDSL {
 
     void test_module(const std::string& path) {
         span = make<Log::Span>();
-
-        init_handlers(a_handlers,[](Context& ctx){
-            g_ptr<Node> expr = a_parse_expression(ctx, 0);
-            if(expr && !discard_types.has(expr->getType())) {
-                ctx.result->push(expr);
-            }
-        });
-
         
         discard_types.push(undefined_id);
         discard_types.push(end_id);
@@ -1000,7 +985,7 @@ namespace GDSL {
             } else {
                 //log("no valid value, I am the root");
             }
-
+            
             if(!node->scope()) { //Defer, the r_stage will do this later for scoped nodes
                 standard_sub_process(ctx);
             }
@@ -1150,31 +1135,26 @@ namespace GDSL {
             }
         };
 
-        init_handlers(s_handlers,[](Context& ctx) {
-            //Do nothing
-        });
 
-        init_handlers(t_handlers,[](Context& ctx) {
+        a_parse_function = [](Context& ctx){
+            g_ptr<Node> expr = a_parse_expression(ctx, 0);
+            if(expr && !discard_types.has(expr->getType())) {
+                ctx.result->push(expr);
+            }
+        };
+        s_defualt_function = [](Context& ctx){};
+        t_default_function = [](Context& ctx){
             standard_sub_process(ctx);
-        });
-
-        init_handlers(r_handlers,[](Context& ctx) {
+        };
+        r_default_function = [](Context& ctx){
             standard_sub_process(ctx);
-        });
-
-        init_handlers(d_handlers,[](Context& ctx){
+        };
+        d_default_function = [](Context& ctx){
             for(auto c : ctx.node->children) {
                 discover_symbol(c,ctx.root);
             }
-        });
-
-        init_handlers(e_handlers,[](Context& ctx){
-            //print("Missing e_handler for ",labels[ctx.node->type]);
-        });
-
-        init_handlers(x_handlers,[](Context& ctx){
-            print("Defualt x handler for: ",ctx.node->info());
-        });
+        };
+        x_default_function = [](Context& ctx){};
 
         print_id = add_function("print",[](Context& ctx) {
             std::string toPrint = "";
@@ -1279,12 +1259,9 @@ namespace GDSL {
         span2->end_line();
         span2->add_line("A STAGE");
         // print("A STAGE");
-        start_stage(a_handlers);
+        start_stage(&a_handlers,a_parse_function);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
         a_pass_resolve_keywords(nodes);
-        // for(auto n : nodes) {
-        //     print(n->to_string());
-        // }
         // for(auto n : nodes) {
         //     print(n->to_string());
         // }
@@ -1292,10 +1269,7 @@ namespace GDSL {
         // print("S STAGE");
         span2->end_line();
         span2->add_line("S STAGE");
-        // print("S STAGE");
-        span2->end_line();
-        span2->add_line("S STAGE");
-        start_stage(s_handlers);
+        start_stage(&s_handlers,s_defualt_function);
         g_ptr<Node> root = parse_scope(nodes);
 
         //print(root->to_string(0,0,true));
@@ -1303,20 +1277,21 @@ namespace GDSL {
         // print("T STAGE");
         span2->end_line();
         span2->add_line("T STAGE");
-        start_stage(t_handlers);
+        start_stage(&t_handlers,t_default_function);
         standard_resolving_pass(root);
 
         //print("D STAGE");
         span2->end_line();
         span2->add_line("D STAGE");
-        start_stage(d_handlers);
+        start_stage(&d_handlers,d_default_function);
         discover_symbols(root);
 
         //print("R STAGE");
         span2->end_line();
         span2->add_line("R STAGE");
-        start_stage(r_handlers);
+        start_stage(&r_handlers,r_default_function);
         standard_resolving_pass(root);
+        span2->end_line();
 
 
         // print("E STAGE");
@@ -1330,9 +1305,10 @@ namespace GDSL {
         print_scopes(root);
 
         // print("X STAGE");
+        print("Ran:\n",code);
         span2->end_line();
         span2->add_line("X STAGE");
-        start_stage(x_handlers);
+        start_stage(&x_handlers,x_default_function);
 
         g_ptr<Node> main_func = nullptr;
         for(auto c : root->scopes) {
@@ -1343,18 +1319,18 @@ namespace GDSL {
         }
         
         timer.start();
+        print("==EXECUTING==");
         standard_travel_pass(main_func);
         std::string exec_time =  ftime(timer.end());
-
         span2->end_line();
-
-        print("==DONE==");
-        print("Ran:\n",code);
 
         span2->print_all();
 
         print("Final time: ",final_time);
         print("Exec time: ",exec_time);
+
+
+        print("==DONE==");
 
 
         // auto now = std::chrono::system_clock::now();

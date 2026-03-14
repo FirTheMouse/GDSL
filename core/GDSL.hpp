@@ -42,7 +42,7 @@ static inline void log(Args&&... args) {
     #define HANDLER_COUNT 3
 #endif
 
-std::string labels[MAX_TYPES*HANDLER_COUNT];
+map<uint32_t,std::string> labels;
 
 static std::string fallback = "[undefined]";
 
@@ -206,7 +206,7 @@ public:
         if(!quals.empty()) {
             to_return += ", Quals: ";
             for(int i=0;i<quals.length();i++) { //+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"
-                to_return += labels[quals[i].type]+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"+(i!=quals.length()-1?", ":"");
+                to_return += labels[quals[i].type]+(i!=quals.length()-1?", ":"");
             }
         }
         to_return += ")";
@@ -393,9 +393,6 @@ public:
         return node;
     }
 
-    //Could probably replace this using the Object data system, keep them for explicitness but may just cmd+f replace them later
-    // list<g_ptr<Node>> opt_sub;
-    // list<g_ptr<Node>> opt_sub_2; //Kludge for scopes
     std::string opt_str;
 
     std::string info() {
@@ -451,10 +448,6 @@ public:
             to_return +=  "\n" + indent + "  Opt_str: " + opt_str;
         }
 
-        //Add this back once we've figured out how to attach frame names, or just keep it in scope
-        // if(frame) {
-        //     to_return +=  "\n" + indent + "  Frame: " + "[yes]";
-        // }
         if(!scopes.empty()) {
             to_return +=  "\n" + indent + "   Scopes: " + std::to_string(scopes.size());
             int i = 0;
@@ -490,51 +483,42 @@ public:
     }
 };
 
-map<char, std::function<void(Context&)>> tokenizer_functions;
-map<uint32_t, void(*)(Context&)> tokenizer_state_functions;
-std::function<void(Context&)> tokenizer_default_function = nullptr;
 
+using Handler = std::function<void(Context&)>;
 
-void(*a_parse_function)(Context& ctx) = nullptr;
+map<char, Handler> tokenizer_functions;
+map<uint32_t, Handler> tokenizer_state_functions;
+Handler tokenizer_default_function = nullptr;
 
 //TAST
-void (*a_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
-void (*s_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
-void (*t_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+map<uint32_t,Handler> a_handlers; Handler a_parse_function;
+map<uint32_t,Handler> s_handlers; Handler s_defualt_function;
+map<uint32_t,Handler> t_handlers; Handler t_default_function;
 //DRE
-void (*d_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
-void (*r_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
-void (*e_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+map<uint32_t,Handler> d_handlers; Handler d_default_function;
+map<uint32_t,Handler> r_handlers; Handler r_default_function;
+map<uint32_t,Handler> e_handlers; Handler e_default_function;
 //MIX
-void (*m_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
-void (*i_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
-void (*x_handlers[MAX_TYPES*HANDLER_COUNT])(Context&) = {};
+map<uint32_t,Handler> m_handlers; Handler m_default_function;
+map<uint32_t,Handler> i_handlers; Handler i_default_function;
+map<uint32_t,Handler> x_handlers; Handler x_default_function;
 
-void (**active_handlers)(Context&) = nullptr;
+map<uint32_t, std::function<void(Context&)>>* active_handlers = nullptr;
+Handler active_default_function = nullptr;
 
 size_t next_id = 0;
 size_t reg_id(std::string label) {
     size_t id = next_id;
-    for(int i=0;i<HANDLER_COUNT;i++) {
-        labels[next_id] = label;
-        next_id++;
-    }
+    labels[id] = label;
+    next_id++;
     return id;
 }
 
 size_t undefined_id = reg_id("UNDEFINED"); //So that it's always 0
 
-void init_handlers(void(**handlers)(Context&), void(*default_handler)(Context&), bool fill_all = false) {
-    if(handlers==a_handlers) a_parse_function = default_handler; //Special case for convience
-
-    for(int i = 0; i < MAX_TYPES*HANDLER_COUNT; i++) {
-        if(!handlers[i]||fill_all)
-            handlers[i] = default_handler;
-    }
-}
-
-void start_stage(void(**handlers)(Context&)) {
+void start_stage(map<uint32_t,Handler>* handlers, Handler default_function) {
     active_handlers = handlers;
+    active_default_function = default_function;
 }
 
 static void fire_quals(Context& ctx, g_ptr<Value> value) {
@@ -542,7 +526,8 @@ static void fire_quals(Context& ctx, g_ptr<Value> value) {
     for(auto qual : value->quals) {
         if(qual.mute) continue;
         ctx.qual = qual;
-        active_handlers[qual.type+1](ctx);
+        if((*active_handlers).hasKey(qual.type+1))
+            (*active_handlers)[qual.type+1](ctx);
     }
 }
 static void fire_quals(Context& ctx, g_ptr<Node> node) {
@@ -550,7 +535,8 @@ static void fire_quals(Context& ctx, g_ptr<Node> node) {
     for(auto qual : node->quals) {
         if(qual.mute) continue;
         ctx.qual = qual;
-        active_handlers[qual.type+2](ctx);
+        if((*active_handlers).hasKey(qual.type+2))
+            (*active_handlers)[qual.type+2](ctx);
     }
 }
 
@@ -660,7 +646,7 @@ static void discover_symbol(g_ptr<Node> node, g_ptr<Node> root) {
     ctx.root = root;
     ctx.node = node;
     newline("Discovering: "+node->info());
-    active_handlers[node->type](ctx);
+    (*active_handlers).getOrDefault(node->type,active_default_function)(ctx);
     endline();
 }
 
@@ -677,7 +663,8 @@ static void discover_symbols(g_ptr<Node> root) {
 }
 
 static g_ptr<Node> standard_process(Context& ctx) {
-    active_handlers[ctx.node->type](ctx);
+    //log("Processing: ",ctx.node->info());
+    (*active_handlers).getOrDefault(ctx.node->type,active_default_function)(ctx);
     return ctx.node;
 }
 
@@ -791,7 +778,7 @@ void e_pass(Context& ctx, g_ptr<Node> root){
 }
 
 void start_e_stage(g_ptr<Node> root) {
-    start_stage(e_handlers);
+    start_stage(&e_handlers,e_default_function);
     Context ctx;
     e_pass(ctx,root);
 }

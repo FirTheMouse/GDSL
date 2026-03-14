@@ -1,5 +1,5 @@
-#include "modules/GDSL-C.hpp"
-//#include "modules/GDSL-LISP.hpp"
+//#include "modules/GDSL-C.hpp"
+#include "modules/GDSL-LISP.hpp"
 
 int main(int argc, char* argv[]) {
     if(argc < 2) {
@@ -9,4 +9,5 @@ int main(int argc, char* argv[]) {
     std::string path = argv[1];
     GDSL::test_module(path);
     return 0;
+
 }

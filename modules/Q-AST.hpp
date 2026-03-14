@@ -3,6 +3,12 @@
 //An example utility module for GDSL, headers you can drop in to use across projects
 
 namespace GDSL {
+
+    //Qual handlers which act on the value
+    size_t to_prefix_id(size_t id) {return id+1;}
+    //Qual handlers which act on the node
+    size_t to_suffix_id(size_t id) {return id+2;}
+
     map<std::string,g_ptr<Value>> keywords;
 
     void a_pass_resolve_keywords(list<g_ptr<Node>>& nodes) {
@@ -36,6 +42,8 @@ namespace GDSL {
 
     g_ptr<Value> make_qual_value(const std::string& f, size_t size = 0) {
         size_t id = reg_id(f);
+        size_t prefix_id = reg_id(f);
+        size_t suffix_id = reg_id(f);
         g_ptr<Value> val = make<Value>(id,size,id);
         return val;
     }
@@ -43,7 +51,7 @@ namespace GDSL {
     g_ptr<Value> make_type(const std::string& f, size_t size = 0) {
         g_ptr<Value> val = make_qual_value(f,size);
 
-        t_handlers[val->type+1] = [](Context& ctx){
+        t_handlers[to_prefix_id(val->type)] = [](Context& ctx){
             if(ctx.value->sub_type == 0) {
                 ctx.value->sub_type = ctx.qual.sub_type;
                 ctx.value->type = ctx.qual.type;

@@ -1,5 +1,8 @@
 #include "../core/GDSL.hpp"
 
+//An example utility module, like Q-AST.
+//Could move more tokenizer functions down here...
+
 namespace GDSL {
     map<std::string,uint32_t> tokenized_keywords;
     map<char,bool> char_is_split;

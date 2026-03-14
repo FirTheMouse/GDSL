@@ -2,6 +2,9 @@
 #include "../modules/Q-AST.hpp"
 #include "../modules/Q-Tokenizer.hpp"
 
+//A subset of C, the ctest.gld file shows of most of what this can do.
+//I'm activly expanding this, generics are next on the roadmap and one day I hope to bootstrap GDSL itself with this.
+
 namespace GDSL {
     map<uint32_t,int> left_binding_power;
     map<uint32_t,int> right_binding_power;
@@ -150,7 +153,6 @@ namespace GDSL {
     size_t to_decl_id(size_t id) {return id+1;}
     size_t to_unary_id(size_t id) {return id+2;}
 
-    // xTx <- Binary operator, ctx.node->right() and ctx.node->left() are what's on your right and left
     size_t add_binary_operator(char c, const std::string& f,int left_bp, int right_bp) {
         size_t id = add_token(c,f);
         left_binding_power.put(id, left_bp);
@@ -869,7 +871,7 @@ namespace GDSL {
                 g_ptr<Node> expr = a_parse_expression(ctx, 0);
                 if(expr) result_node->children << expr;
             }
-            ctx.index++; // consume ']'
+            ctx.index++;
             
             ctx.node = result_node;
         };
@@ -892,8 +894,8 @@ namespace GDSL {
             }
         };
         x_handlers[lbracket_id] = [](Context& ctx) {
-            process_node(ctx, ctx.node->left()); // base
-            process_node(ctx, ctx.node->right()); // index
+            process_node(ctx, ctx.node->left()); //Base
+            process_node(ctx, ctx.node->right()); //Index
             
             int i = ctx.node->right()->value->get<int>();
             size_t element_size = ctx.node->children[0]->value->size;

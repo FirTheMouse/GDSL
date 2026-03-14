@@ -5,6 +5,10 @@
 
 #include<core/GDSL.hpp>
 
+//This is the bones of a Java-like system like SalseForce's Apex, I added utility modules and changed the handler system 
+//So I need to update this to get it running again, thus why its in Archive right now
+
+
 namespace GDSL {
     map<std::string,g_ptr<Value>> keywords;
     map<std::string,uint32_t> tokenized_keywords;

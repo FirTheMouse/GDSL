@@ -5,7 +5,6 @@ num {
     int inc(int val, num* counter) {
 
         print("Counter x: ",(*counter).x);
-        print("Raw: ",counter.x);
         int depth = 0;
         while((*counter).x<val) {
             (*counter).x = (*counter).x+1;
@@ -28,7 +27,5 @@ int main() {
     print("j.x: ",j.x);
     j.x = 2;
     print(c.inc(4,&j));
-
-
 }
 main();

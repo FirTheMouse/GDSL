@@ -5,9 +5,8 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 1
+#define PRINT_ALL 0
 #define PRINT_STYLE 0
-
 
 //GDSL, Golden Dynamic Systems Language
 //TAST: tokenizer, a stage, scope stage, t stage.
@@ -23,6 +22,8 @@ static inline void newline(const std::string& label) {
 static inline double endline() {
     #if PRINT_ALL
     return span->end_line();
+    #else
+    return 0;
     #endif
 }
 
@@ -356,18 +357,18 @@ public:
     }
 
     g_ptr<Value> distribute_value(const std::string& label, g_ptr<Value> val) {
-        log("Distributing a value: ",label," through ",name);
+        //log("Distributing a value: ",label," through ",name);
         if(value_table.hasKey(label)) {
             g_ptr<Value> table_value = value_table.get(label);
             if(table_value->type == 0) {
-                log("Replacing the value with already existing value");
+                //log("Replacing the value with already existing value");
                 table_value->copy(val);
                 val = table_value;
             } else {
-                log("Doing nothing because there's an existing type with a valid value");
+                //log("Doing nothing because there's an existing type with a valid value");
             }
         } else {
-            log("Putting into table");
+            //log("Putting into table");
             value_table.put(label, val);
         }
         for(auto s : scopes) {

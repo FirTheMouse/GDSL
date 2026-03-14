@@ -292,7 +292,7 @@ namespace GDSL {
     }
 
 
-    #define LOG_A_PARSE 1
+    #define LOG_A_PARSE 0
 
     g_ptr<Node> a_parse_expression(Context& ctx, int min_bp, g_ptr<Node> left_node = nullptr) {
         //Prefixual pass
@@ -1367,40 +1367,44 @@ namespace GDSL {
 
         std::string code = readFile(path);
         Log::Line timer; timer.start();
-        print("TOKENIZE");
+        g_ptr<Log::Span> span2 = make<Log::Span>();
+        span2->add_line("TOKENIZE STAGE");
+
+        //print("TOKENIZE");
         list<g_ptr<Node>> tokens = tokenize(code);
-        print("A STAGE");
+        span2->end_line();
+        span2->add_line("A STAGE");
+        // print("A STAGE");
         start_stage(a_handlers);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
         a_pass_resolve_keywords(nodes);
-        for(auto n : nodes) {
-            print(n->to_string());
-        }
+        // for(auto n : nodes) {
+        //     print(n->to_string());
+        // }
 
-        print("S STAGE");
+        // print("S STAGE");
+        span2->end_line();
+        span2->add_line("S STAGE");
         start_stage(s_handlers);
         g_ptr<Node> root = parse_scope(nodes);
 
         //print(root->to_string(0,0,true));
 
-        print("T STAGE");
+        // print("T STAGE");
+        span2->end_line();
+        span2->add_line("T STAGE");
         start_stage(t_handlers);
         standard_resolving_pass(root);
 
- 
-
-        // print("==LOG==");
-        // span->print_all();
-
-        //log(root->to_string(0,0,true));
-
-
-        newline("Discovering symbols");
-        print("D STAGE");
+        //print("D STAGE");
+        span2->end_line();
+        span2->add_line("D STAGE");
         start_stage(d_handlers);
         discover_symbols(root);
-        endline();
-        print("R STAGE");
+
+        //print("R STAGE");
+        span2->end_line();
+        span2->add_line("R STAGE");
         start_stage(r_handlers);
         standard_resolving_pass(root);
 
@@ -1412,20 +1416,45 @@ namespace GDSL {
 
         std::string final_time = ftime(timer.end());
 
-        print("==LOG==");
-        span->print_all();
-        print(root->to_string());
-        print_scopes(root);
+        // print("==LOG==");
+        // span->print_all();
+        // print(root->to_string());
+        // print_scopes(root);
 
-        timer.start();
-
-        print("X STAGE");
+        // print("X STAGE");
+        span2->end_line();
+        span2->add_line("X STAGE");
         start_stage(x_handlers);
-        standard_travel_pass(root);
 
-        print("Exec time: ",ftime(timer.end()));
+        g_ptr<Node> main_func = nullptr;
+        for(auto c : root->scopes) {
+            if(c->name == "main") {
+                main_func = c;
+                break;
+            }
+        }
+        
+        timer.start();
+        standard_travel_pass(main_func);
+        std::string exec_time =  ftime(timer.end());
+
+        span2->end_line();
+
+        print("==DONE==");
+        // print("Ran:\n",code);
+
+        span2->print_all();
+
+
+
+        auto now = std::chrono::system_clock::now();
+        auto t = std::chrono::system_clock::to_time_t(now);
+        printnl("At: ",std::ctime(&t));
         print("Final time: ",final_time);
+        print("Exec time: ",exec_time);
 
+
+    
         //span->print_all();
 
     }

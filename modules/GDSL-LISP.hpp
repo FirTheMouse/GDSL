@@ -643,6 +643,9 @@ namespace GDSL {
         start_stage(x_handlers);
         standard_travel_pass(root);
 
+        print("==DONE==");
+        print("Ran:\n",code);
+
         print("Exec time: ",ftime(timer.end()));
         print("Final time: ",final_time);
 

@@ -1,41 +1,13 @@
-
-#include<core/type.hpp>
-#include<util/strings.hpp>
-#include<util/logger.hpp>
-
-#include<core/GDSL.hpp>
+#include "../core/GDSL.hpp"
+#include "../modules/Q-AST.hpp"
+#include "../modules/Q-Tokenizer.hpp"
 
 namespace GDSL {
-    map<std::string,g_ptr<Value>> keywords;
-    map<std::string,uint32_t> tokenized_keywords;
-
-    void a_pass_resolve_keywords(list<g_ptr<Node>>& nodes) {
-        for(g_ptr<Node>& node : nodes) {
-            a_pass_resolve_keywords(node->children);
-            g_ptr<Value> value = keywords.getOrDefault(node->name,fallback_value);
-            if(value!=fallback_value) {
-                if(!node->value)
-                    node->value = make<Value>(0);
-                
-                node->value->copy(value);
-            }
-            for(auto scope : node->scopes) {
-                a_pass_resolve_keywords(scope->children);
-            }
-        }
-    };
-
-    map<char,bool> char_is_split;
-
     map<uint32_t,int> left_binding_power;
     map<uint32_t,int> right_binding_power;
 
     map<uint32_t, std::function<void(g_ptr<Node>, g_ptr<Node>, g_ptr<Node>)>> scope_link_handlers;
     map<uint32_t, int> scope_precedence;
-
-    list<size_t> discard_types;
-
-
 
     void print_scope(g_ptr<Node> scope, int depth = 0) {
         std::string indent(depth * 2, ' ');
@@ -152,24 +124,6 @@ namespace GDSL {
         return root_scope;
     }
 
-
-    g_ptr<Value> make_value(const std::string& name, size_t size = 0,uint32_t sub_type = 0) {
-        return make<Value>(sub_type,size,reg_id(name));
-    }
-
-    size_t make_keyword(const std::string& name, size_t size = 0, std::string type_name = "", uint32_t sub_type = 0) {
-        g_ptr<Value> val = make_value(type_name==""?name:type_name,size,sub_type);
-        keywords.put(name,val);
-        return val->sub_type;
-    }
-
-    size_t make_tokenized_keyword(const std::string& f) {
-        size_t id = reg_id(f);
-        tokenized_keywords.put(f,id);
-        return id;
-    }
-
-    // T() {} <- As with function, but ctx.node->frame contains the bracketed code for further execution.
     static size_t add_scoped_keyword(const std::string& name, int scope_prec,void(*exec_fn)(Context&))
     {
         size_t id = make_tokenized_keyword(name);
@@ -190,15 +144,7 @@ namespace GDSL {
         return id;
     }
 
-    size_t add_token(char c, const std::string& f) {
-        size_t id = reg_id(f);
-        tokenizer_functions.put(c,[id,c](Context& ctx) {
-            ctx.node = make<Node>(id,c);
-            ctx.result->push(ctx.node);
-        });
-        char_is_split.put(c, true);
-        return id;
-    }
+
 
     size_t var_decl_id = reg_id("VAR_DECL");
     size_t to_decl_id(size_t id) {return id+1;}
@@ -246,51 +192,6 @@ namespace GDSL {
         
         return id;
     }
-
-
-    g_ptr<Value> make_qual_value(const std::string& f, size_t size = 0) {
-        size_t id = reg_id(f);
-        g_ptr<Value> val = make<Value>(id,size,id);
-        return val;
-    }
-
-    g_ptr<Value> make_type(const std::string& f, size_t size = 0) {
-        g_ptr<Value> val = make_qual_value(f,size);
-
-        t_handlers[val->type+1] = [](Context& ctx){
-            if(ctx.value->sub_type == 0) {
-                ctx.value->sub_type = ctx.qual.sub_type;
-                ctx.value->type = ctx.qual.type;
-                ctx.value->size = ctx.qual.value->size;
-                if(ctx.qual.value->type_scope)
-                    ctx.value->type_scope = ctx.qual.value->type_scope;
-            }
-        };
-
-        return  val;
-    }
-
-    size_t add_qualifier(const std::string& f, size_t size = 0) {
-        g_ptr<Value> val = make_qual_value(f,size);
-        keywords.put(f,val);
-        return val->type;
-    }
-        
-    size_t add_type(const std::string& f, size_t size = 0) {
-        g_ptr<Value> val = make_type(f,size);
-        keywords.put(f,val);
-        return val->type;
-    }
-
-    static size_t add_function(const std::string& f, void(*op)(Context&), uint32_t return_type = 0) {
-        g_ptr<Value> val = make_value(f,0,return_type);
-        keywords.put(f,val);
-        size_t call_id = val->sub_type;
-
-        x_handlers[call_id] = op;
-        return call_id;
-    }
-
 
     #define LOG_A_PARSE 0
 
@@ -452,8 +353,6 @@ namespace GDSL {
     size_t to_prefix_id(size_t id) {return id+1;}
     //Qual handlers which act on the node
     size_t to_suffix_id(size_t id) {return id+2;}
-
-
 
     //Need to define all these globally so that the function pointers can access them
     size_t identifier_id = reg_id("IDENTIFIER");

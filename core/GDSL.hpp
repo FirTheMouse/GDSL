@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/type.hpp>
+#include "../ext/g_lib/core/type.hpp"
 
 namespace GDSL {
 

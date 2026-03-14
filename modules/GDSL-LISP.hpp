@@ -371,7 +371,7 @@ namespace GDSL {
         r_handlers[func_call_id] = [](Context& ctx) {
             if(ctx.node->scope()) {
                 for(int i = 0; i < ctx.node->children.size(); i++) {
-                    g_ptr<Node> arg = resolve_symbol(ctx.node->children[i], ctx.root);
+                    g_ptr<Node> arg = process_node(ctx, ctx.node->children[i]);
                     g_ptr<Node> param = ctx.node->scope()->owner->children[i];
                     g_ptr<Node> assignment = make<Node>();
                     assignment->type = equals_id;
@@ -383,7 +383,7 @@ namespace GDSL {
         };
         x_handlers[func_call_id] = [](Context& ctx) {
             standard_sub_process(ctx);
-            process_node(ctx.node->scope()->owner->children.last());
+            process_node(ctx, ctx.node->scope()->owner->children.last());
         };
 
         defun_id = add_scoped_keyword("defun",2,[](Context& ctx){});
@@ -408,7 +408,7 @@ namespace GDSL {
 
 
             g_ptr<Node> body = node->children.last();
-            process_node(body);
+            process_node(ctx, body);
 
 
             node->type = func_decl_id;
@@ -419,13 +419,13 @@ namespace GDSL {
 
 
         if_id = add_scoped_keyword("if", 0, [](Context& ctx) {
-            process_node(ctx.node->children[0]); // condition
+            process_node(ctx, ctx.node->children[0]); // condition
             if(ctx.node->children[0]->value->is_true()) {
-                process_node(ctx.node->children[1]); // true branch
+                process_node(ctx, ctx.node->children[1]); // true branch
                 if(ctx.node->children[1]->value)
                     ctx.node->value->copy(ctx.node->children[1]->value);
             } else if(ctx.node->children.length() > 2) {
-                process_node(ctx.node->children[2]); // false branch
+                process_node(ctx, ctx.node->children[2]); // false branch
                 if(ctx.node->children[2]->value)
                     ctx.node->value->copy(ctx.node->children[2]->value);
             }
@@ -533,7 +533,7 @@ namespace GDSL {
         });
 
         init_handlers(r_handlers,[](Context& ctx) {
-            resolve_sub_nodes(ctx);
+            standard_sub_process(ctx);
         });
 
         init_handlers(d_handlers,[](Context& ctx){
@@ -553,7 +553,7 @@ namespace GDSL {
         print_id = add_function("print",[](Context& ctx) {
             std::string toPrint = "";
             for(auto r : ctx.node->children) {
-                process_node(r);
+                process_node(ctx, r);
                 toPrint.append(r->value->to_string());
             }
             print(toPrint);
@@ -623,7 +623,7 @@ namespace GDSL {
         endline();
         print("R STAGE");
         start_stage(r_handlers);
-        resolve_symbols(root);
+        standard_resolving_pass(root);
 
         // print("E STAGE");
         // start_e_stage(root);

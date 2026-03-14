@@ -66,6 +66,7 @@ struct Qual {
     Qual(size_t _type) : type(_type) {}
     Qual(size_t _type, g_ptr<Value> _value) : type(_type), value(_value) {}
     Qual(size_t _type, size_t _sub_type) : type(_type), sub_type(_sub_type) {}
+    Qual(size_t _type, size_t _sub_type, g_ptr<Value> _value) : type(_type), sub_type(_sub_type), value(_value) {}
     Qual(size_t _type, bool _mute) : type(_type), mute(_mute) {}
 
     uint32_t type = 0;
@@ -653,60 +654,6 @@ static g_ptr<Node> find_scope_name(const std::string& match,g_ptr<Node> start) {
     });
 }
 
-
-static g_ptr<Node> parse_a_node(g_ptr<Node> node,g_ptr<Node> root, list<g_ptr<Node>>* result = nullptr, int* index = nullptr, g_ptr<Node> left = nullptr) {
-    Context ctx;
-    ctx.root = root;
-    ctx.node = node;
-    ctx.left = left;
-    ctx.result = result;
-    ctx.index = index ? *index : _ctx_dummy_index;
-    newline("Parsing (T): "+node->info());
-    active_handlers[node->type](ctx);
-    endline();
-    return ctx.node;
-}
-
-static void parse_sub_nodes(Context& ctx) {
-    g_ptr<Node> last = nullptr;
-    for(int i = 0; i<ctx.node->children.length();i++) {
-        last = parse_a_node(ctx.node->children[i], ctx.root,&ctx.node->children,&i,last);
-    }
-}
-
-static void parse_nodes(g_ptr<Node> root) {
-    newline("Parse nodes pass (T) over "+std::to_string(root->children.size())+" nodes");
-
-    g_ptr<Node> last = nullptr;
-    for(int i = 0; i < root->children.size(); i++) {
-        if(root->children[i]->scope()) {
-            last = parse_a_node(root->children[i],root,&root->children,&i,last);
-        }
-    }
-    for(int i = 0; i < root->children.size(); i++) {
-        auto node = root->children[i];
-        if(!node->scope()) {
-            last = parse_a_node(node,root,&root->children,&i,last);
-        }
-    }
-    for(int i = 0; i < root->children.size(); i++) {
-        if(root->children[i]->scope()) {
-            for(auto c : root->children[i]->children) {
-                last = parse_a_node(c,root,&root->children[i]->children,&i,last);
-            }
-        }
-    }
-    for(auto child_scope : root->scopes) {
-        parse_nodes(child_scope);
-    }
-    
-    log("==T_NODES IN ",root->name,"==");
-    for(auto t : root->children) {
-        log(t->to_string());
-    }
-    endline();
-}
-
 static void discover_symbol(g_ptr<Node> node, g_ptr<Node> root) {
     Context ctx;
     ctx.root = root;
@@ -728,59 +675,25 @@ static void discover_symbols(g_ptr<Node> root) {
     endline();
 }
 
-static g_ptr<Node> resolve_symbol(g_ptr<Node> node,g_ptr<Node> scope) {
-    Context ctx;
-    ctx.node = node;
-    ctx.root = scope;
-    newline("Resolving: "+node->info());
-    active_handlers[node->type](ctx);
-    endline();
+static g_ptr<Node> standard_process(Context& ctx) {
+    active_handlers[ctx.node->type](ctx);
     return ctx.node;
 }
 
-static void resolve_sub_nodes(Context& ctx) {
-    for(int i = 0; i<ctx.node->children.length();i++) {
-        resolve_symbol(ctx.node->children[i], ctx.root);
-    }
-}
-
-static void resolve_symbols(g_ptr<Node> root) {
-    newline("Resolve symbols pass (R) over "+std::to_string(root->children.size())+" nodes");
-    for(int i = 0; i < root->children.size(); i++) {
-        resolve_symbol(root->children[i],root);
-    }
-
-    for(auto child_scope : root->scopes) {
-        resolve_symbols(child_scope);
-    }
-
-    log("==RESOLVED SYMBOLS: ",root->name,"==");
-    for(auto r : root->children) {
-        log(r->to_string());
-    }
-    endline();
-}   
-
-static void standard_process(Context& ctx) {
-    active_handlers[ctx.node->type](ctx);
-}
-
-static void process_node(g_ptr<Node> node, g_ptr<Node> left = nullptr) {
-    Context ctx;
+static g_ptr<Node> process_node(Context& ctx, g_ptr<Node> node, g_ptr<Node> left = nullptr) {
+    g_ptr<Node> saved_node = ctx.node;
+    g_ptr<Node> saved_left = ctx.left;
     ctx.node = node;
     ctx.left = left;
-    active_handlers[ctx.node->type](ctx);
-}
-
-static void standard_sub_process(g_ptr<Node> node) {
-    for(int i = 0; i<node->children.length();i++) {
-        process_node(node->children[i]);
-    }
+    g_ptr<Node> to_return = standard_process(ctx);
+    ctx.node = saved_node;
+    ctx.left = saved_left;
+    return to_return;
 }
 
 static void standard_sub_process(Context& ctx) {
-    for(int i = 0; i<ctx.node->children.length();i++) {
-        process_node(ctx.node->children[i]);
+    for(int i = 0; i < ctx.node->children.length(); i++) {
+        process_node(ctx, ctx.node->children[i]);
     }
 }
 

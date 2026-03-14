@@ -1270,7 +1270,14 @@ namespace GDSL {
         span2->add_line("TOKENIZE STAGE");
 
         //print("TOKENIZE");
+        g_ptr<Log::Span> span2 = make<Log::Span>();
+        span2->add_line("TOKENIZE STAGE");
+
+        //print("TOKENIZE");
         list<g_ptr<Node>> tokens = tokenize(code);
+        span2->end_line();
+        span2->add_line("A STAGE");
+        // print("A STAGE");
         span2->end_line();
         span2->add_line("A STAGE");
         // print("A STAGE");
@@ -1280,7 +1287,13 @@ namespace GDSL {
         // for(auto n : nodes) {
         //     print(n->to_string());
         // }
+        // for(auto n : nodes) {
+        //     print(n->to_string());
+        // }
 
+        // print("S STAGE");
+        span2->end_line();
+        span2->add_line("S STAGE");
         // print("S STAGE");
         span2->end_line();
         span2->add_line("S STAGE");
@@ -1343,8 +1356,6 @@ namespace GDSL {
         // print("Ran:\n",code);
 
         span2->print_all();
-
-
 
         auto now = std::chrono::system_clock::now();
         auto t = std::chrono::system_clock::to_time_t(now);

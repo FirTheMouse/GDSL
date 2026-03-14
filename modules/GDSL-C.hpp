@@ -1270,10 +1270,6 @@ namespace GDSL {
         span2->add_line("TOKENIZE STAGE");
 
         //print("TOKENIZE");
-        g_ptr<Log::Span> span2 = make<Log::Span>();
-        span2->add_line("TOKENIZE STAGE");
-
-        //print("TOKENIZE");
         list<g_ptr<Node>> tokens = tokenize(code);
         span2->end_line();
         span2->add_line("A STAGE");
@@ -1324,14 +1320,12 @@ namespace GDSL {
         // print("E STAGE");
         // start_e_stage(root);
 
-        
-
         std::string final_time = ftime(timer.end());
 
-        // print("==LOG==");
-        // span->print_all();
-        // print(root->to_string());
-        // print_scopes(root);
+        print("==LOG==");
+        span->print_all();
+        print(root->to_string());
+        print_scopes(root);
 
         // print("X STAGE");
         span2->end_line();
@@ -1353,18 +1347,17 @@ namespace GDSL {
         span2->end_line();
 
         print("==DONE==");
-        // print("Ran:\n",code);
+        print("Ran:\n",code);
 
         span2->print_all();
 
-        auto now = std::chrono::system_clock::now();
-        auto t = std::chrono::system_clock::to_time_t(now);
-        printnl("At: ",std::ctime(&t));
         print("Final time: ",final_time);
         print("Exec time: ",exec_time);
 
 
-    
+        // auto now = std::chrono::system_clock::now();
+        // auto t = std::chrono::system_clock::to_time_t(now);
+        // printnl("At: ",std::ctime(&t));
         //span->print_all();
 
     }

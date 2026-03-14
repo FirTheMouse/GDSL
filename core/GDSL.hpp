@@ -17,8 +17,6 @@ g_ptr<Log::Span> span = nullptr;
 static inline void newline(const std::string& label) {
     #if PRINT_ALL
     span->add_line(label);
-    #else
-    return 0;
     #endif
 }
 static inline double endline() {

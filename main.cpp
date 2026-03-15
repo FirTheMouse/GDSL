@@ -1,5 +1,5 @@
-#include "modules/GDSL-C.hpp"
-//#include "modules/GDSL-LISP.hpp"
+//#include "modules/GDSL-C.hpp"
+#include "modules/GDSL-LISP.hpp"
 
 int main(int argc, char* argv[]) {
     if(argc < 2) {

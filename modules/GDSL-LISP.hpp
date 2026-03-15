@@ -41,12 +41,6 @@ namespace GDSL {
         return id;
     }
 
-    //Qual handlers which act on the value
-    size_t to_prefix_id(size_t id) {return id+1;}
-    //Qual handlers which act on the node
-    size_t to_suffix_id(size_t id) {return id+2;}
-
-
     //Need to define all these globally so that the function pointers can access them
     size_t if_id = 0;
     size_t for_id = 0;

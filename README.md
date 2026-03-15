@@ -23,7 +23,7 @@ TAST tokenizes and parses to make a structure other stages will consume. This is
 
 DRE resolves and annotates the TAST structure so execution can run smoothly. This is where sizes can be calculated, call sites formulated, and optimization passes run. The e stage in particular is home to potential, it runs backwards and its designed for all your error handling and optimization passes (though you can always emit errors earlier, later, or in my case, not at all).
 
-MIX actually executes your code. I haven't invested effort into building a proper MIX for either of the demo modules yet (it's only been about 6 weeks as of writing this), so I just use the x stage and run as an interpreted tree. If you want to emit to LLVM (which is a MIX in of itself + an e stage) you can write the handlers for that. If you want to emit to native, use the m stage to model your memory layout, I stage to emit instructions, x stage to run the stream. If you want a JIT, m stage to arrange memory, I stage to trace and produce the operations, x stage to run them in a stream.
+MIX actually executes your code. I haven't invested effort into building a proper MIX for either of the demo modules yet, so I just use the x stage and run as an interpreted tree. If you want to emit to LLVM (which is a MIX in of itself + an e stage) you can write the handlers for that. If you want to emit to native, use the m stage to model your memory layout, I stage to emit instructions, x stage to run the stream. If you want a JIT, m stage to arrange memory, I stage to trace and produce the operations, x stage to run them in a stream.
 
 The best examples of how to make a language are just looking at what I've made so far, with GDSL-LISP and GDSL-C. Feel free to scan through, the code is quite short and hopefully fairly readable. These are only demo modules, not full implementations.
 
@@ -31,7 +31,7 @@ The best examples of how to make a language are just looking at what I've made s
 # What If I'm not Building
 
 If you're only here to take a look at the concepts and claim, then you just want to run the files directly, not build your own GDSL. 
-Head over to the main.cpp, and comment/uncomment the include module you want (I'll be making this smoother in the future, as I understand not everyone is used to commenting include paths to switch implementations). Then just run the command below to compile:
+Head over to the main.cpp, and comment/uncomment the include module you want. Then just run the command below to compile:
 
 g++ -std=c++17 -O2 -I. main.cpp -o gdsl
 

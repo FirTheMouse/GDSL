@@ -390,6 +390,7 @@ namespace GDSL {
     size_t while_id = 0;
     size_t print_id = 0;
     size_t for_id = 0;
+    size_t randi_id = 0;
 
     size_t wubless_qual = add_qualifier("wubless");
     size_t wubfull_qual = add_qualifier("wubfull");
@@ -679,9 +680,9 @@ namespace GDSL {
         t_handlers[equals_id] = [](Context& ctx){standard_sub_process(ctx);}; //So we don't turn things into declerations
         e_handlers[equals_id] = [](Context& ctx){ 
             if(ctx.node->left()&&ctx.node->right()) {
-                int at_id = ctx.node->left()->value->quals.find_if([](const Qual& q){return q.type==live_qual;});
+                int at_id = ctx.node->left()->value->find_qual(live_qual);
                 if(at_id!=-1) {
-                    ctx.node->right()->value->quals << ctx.node->left()->value->quals[at_id];
+                    ctx.node->right()->distribute_qual_to_values(ctx.node->left()->value->quals[at_id],live_qual);
                 } else {
                     ctx.node = nullptr;
                 }
@@ -1142,7 +1143,7 @@ namespace GDSL {
                 ctx.result->push(expr);
             }
         };
-        s_defualt_function = [](Context& ctx){};
+        s_default_function = [](Context& ctx){};
         t_default_function = [](Context& ctx){
             standard_sub_process(ctx);
         };
@@ -1154,6 +1155,60 @@ namespace GDSL {
                 discover_symbol(c,ctx.root);
             }
         };
+
+        e_default_function=  [](Context& ctx){
+            //Doing nothing for now
+        };
+
+        IdPool reg_pool;
+        reg_pool.init({15, 14, 13, 12, 11, 10, 9}); //Because I'm on a Mac
+        m_default_function = [&reg_pool](Context& ctx){
+            backwards_sub_process(ctx);
+            if(ctx.node->value->reg == -1) {
+                ctx.node->value->reg = reg_pool.alloc();
+            }
+        };
+        m_handlers[var_decl_id] = [&reg_pool](Context& ctx){
+            backwards_sub_process(ctx);
+            if(!ctx.flag && ctx.node->value->reg != -1) {
+                reg_pool.free(ctx.node->value->reg);
+            }
+        };
+        m_handlers[equals_id] = [](Context& ctx) {
+            process_node(ctx, ctx.node->left());
+            if(ctx.node->right()) {
+                ctx.node->right()->value->reg = ctx.node->left()->value->reg;
+                ctx.flag = true;
+                process_node(ctx, ctx.node->right());
+                ctx.flag = false;
+            }
+        };
+
+
+        i_default_function = [](Context& ctx){
+            //Do nothing
+        };
+
+        i_handlers[equals_id] = [](Context& ctx) {
+            standard_sub_process(ctx);
+        };
+        i_handlers[literal_id] = [](Context& ctx) {
+            emit_buffer << MOVZ(
+                ctx.node->value->reg,
+                ctx.node->value->get<int>(),
+                ctx.node->value->size == 8 ? 1 : 0
+            );
+        };
+        i_handlers[plus_id] = [](Context& ctx) {
+            standard_sub_process(ctx); // emit children first
+            emit_buffer << ADD_reg(
+                ctx.node->value->reg,
+                ctx.node->left()->value->reg,
+                ctx.node->right()->value->reg,
+                ctx.node->value->size == 8 ? 1 : 0
+            );
+        };
+
         x_default_function = [](Context& ctx){};
 
         print_id = add_function("print",[](Context& ctx) {
@@ -1178,7 +1233,14 @@ namespace GDSL {
             }
         };
 
-
+        randi_id = add_function("randi",[](Context& ctx){
+            standard_sub_process(ctx);
+            int min = ctx.node->left()->value->get<int>();
+            int max = ctx.node->right()->value->get<int>();
+            ctx.node->value->type = int_id;
+            ctx.node->value->size = 4;
+            ctx.node->value->set<int>(randi(min,max));
+        });
 
 
         if_id = add_scoped_keyword("if", 2, [](Context& ctx) {
@@ -1190,6 +1252,14 @@ namespace GDSL {
                 ctx.flag = standard_travel_pass(ctx.node->right()->scope());
             }
         });
+        e_handlers[if_id] = [](Context& ctx) {
+            //Decisions can be  made here to either replace the scope with the right scope (only else is valid)
+            //or to not add it (only main if is valid) depending on the provablility of branch perdiction in the future.
+            if(ctx.node->right()) {
+                ctx.node->scopes << ctx.node->right()->scope();
+            }
+        };
+
 
         else_id = add_scoped_keyword("else", 1, [](Context& ctx){
             //This doesn't ever really execute
@@ -1256,9 +1326,6 @@ namespace GDSL {
         span2->end_line();
         span2->add_line("A STAGE");
         // print("A STAGE");
-        span2->end_line();
-        span2->add_line("A STAGE");
-        // print("A STAGE");
         start_stage(&a_handlers,a_parse_function);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
         a_pass_resolve_keywords(nodes);
@@ -1269,7 +1336,7 @@ namespace GDSL {
         // print("S STAGE");
         span2->end_line();
         span2->add_line("S STAGE");
-        start_stage(&s_handlers,s_defualt_function);
+        start_stage(&s_handlers,s_default_function);
         g_ptr<Node> root = parse_scope(nodes);
 
         //print(root->to_string(0,0,true));
@@ -1291,11 +1358,31 @@ namespace GDSL {
         span2->add_line("R STAGE");
         start_stage(&r_handlers,r_default_function);
         standard_resolving_pass(root);
+
+
         span2->end_line();
+        span2->add_line("E STAGE");
+        start_stage(&e_handlers,e_default_function);
+        standard_backwards_pass(root);
 
+        span2->end_line();
+        span2->add_line("M STAGE");
+        start_stage(&m_handlers,m_default_function);
+        standard_backwards_pass(root);
 
-        // print("E STAGE");
-        // start_e_stage(root);
+        g_ptr<Node> main_func = nullptr;
+        for(auto c : root->scopes) {
+            if(c->name == "main") {
+                main_func = c;
+                break;
+            }
+        }
+
+        span2->end_line();
+        span2->add_line("I STAGE");
+        start_stage(&i_handlers,i_default_function);
+        standard_travel_pass(main_func?main_func:root);
+        span2->end_line();
 
         std::string final_time = ftime(timer.end());
 
@@ -1310,24 +1397,58 @@ namespace GDSL {
         span2->add_line("X STAGE");
         start_stage(&x_handlers,x_default_function);
 
-        g_ptr<Node> main_func = nullptr;
-        for(auto c : root->scopes) {
-            if(c->name == "main") {
-                main_func = c;
-                break;
-            }
+
+        // Move result into return register
+        emit_buffer << MOV_reg(0, 10, 0);
+        // Return
+        emit_buffer << RET();
+
+        // Create executable buffer
+        size_t byte_size = emit_buffer.length() * sizeof(uint32_t);
+        void* buf = mmap(nullptr, byte_size,
+            PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,
+            -1, 0);
+
+        if(buf == MAP_FAILED) {
+            print("mmap failed: ", strerror(errno));
+            return;
         }
-        
+
+        // Copy instructions
+        uint32_t* ptr = (uint32_t*)buf;
+        for(int i=0;i<emit_buffer.length();i++) {
+            ptr[i] = emit_buffer[i];
+        }
+
+        // Make executable
+        mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
+
+        // Call it
+
         timer.start();
         print("==EXECUTING==");
-        standard_travel_pass(main_func);
+        //standard_travel_pass(main_func?main_func:root);
+
+        typedef int (*JitFunc)();
+        JitFunc func = (JitFunc)buf;
+        int result = func();
+
         std::string exec_time =  ftime(timer.end());
         span2->end_line();
+
+        print("Native result: ", result);
+        munmap(buf, byte_size); //Cleanup
+
+        
+
 
         span2->print_all();
 
         print("Final time: ",final_time);
         print("Exec time: ",exec_time);
+
+        print_emit_buffer();
 
 
         print("==DONE==");

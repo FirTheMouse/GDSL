@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../ext/g_lib/core/type.hpp"
+#include <sys/mman.h>
 
 namespace GDSL {
 
@@ -115,6 +116,7 @@ public:
     uint32_t sub_type = 0;
     void* data = nullptr;
     int address = 0;
+    int reg = -1;
     size_t size = 0;
     int sub_size = 0;
     list<Qual> quals;
@@ -201,6 +203,7 @@ public:
         + (type_scope?", type_scope: [yes]":"")
         + (size!=0?", size: "+std::to_string(size):"")
         + (address!=0?", address: "+std::to_string(address):"")
+        + (reg!=-1?", reg: "+std::to_string(reg):"")
         + (store?", store: "+store->type_name:"")
         + (!sub_values.empty()?", sub: "+std::to_string(sub_values.length()):"");
         if(!quals.empty()) {
@@ -329,6 +332,14 @@ public:
         for(auto q : quals){ if(q.type==q_id) {return true;}}
         if(value&&check_value) {for(auto q : value->quals){if(q.type==q_id){return true;}}}
         return false;
+    }
+
+    void distribute_qual_to_values(Qual& qual,size_t exclude_id = 0) {
+        if(!has_qual(exclude_id))
+            value->quals << qual;
+        for(auto c : children) {
+            c->distribute_qual_to_values(qual,exclude_id);
+        }
     }
 
     g_ptr<Node> spawn_sub_scope() {
@@ -492,7 +503,7 @@ Handler tokenizer_default_function = nullptr;
 
 //TAST
 map<uint32_t,Handler> a_handlers; Handler a_parse_function;
-map<uint32_t,Handler> s_handlers; Handler s_defualt_function;
+map<uint32_t,Handler> s_handlers; Handler s_default_function;
 map<uint32_t,Handler> t_handlers; Handler t_default_function;
 //DRE
 map<uint32_t,Handler> d_handlers; Handler d_default_function;
@@ -539,6 +550,27 @@ static void fire_quals(Context& ctx, g_ptr<Node> node) {
             (*active_handlers)[qual.type+2](ctx);
     }
 }
+
+struct IdPool {
+    list<int> ids;
+    int top = 0;
+    
+    void init(list<int> available) {
+        ids = available;
+        top = available.length();
+    }
+    
+    int alloc() {
+        if(top == 0) return -1;
+        return ids[--top];
+    }
+    
+    void free(int id) {
+        if(id != -1) 
+            ids[top++] = id;
+    }
+};
+
 
 
 static list<g_ptr<Node>> tokenize(const std::string& code) {
@@ -685,6 +717,12 @@ static void standard_sub_process(Context& ctx) {
     }
 }
 
+static void backwards_sub_process(Context& ctx) {
+    for(int i = ctx.node->children.length()-1; i >= 0; i--) {
+        process_node(ctx, ctx.node->children[i]);
+    }
+}
+
 static void standard_resolving_pass(g_ptr<Node> root) {
     newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
     Context ctx;
@@ -727,7 +765,9 @@ static void standard_direct_pass(g_ptr<Node> root) {
     newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
     Context ctx;
     ctx.root = root;
+    ctx.result = &root->children;
     for(int i = 0; i < root->children.size(); i++) {
+        ctx.index = i;
         ctx.node = root->children[i];
         standard_process(ctx);
         ctx.left = root->children[i];
@@ -744,7 +784,9 @@ static bool standard_travel_pass(g_ptr<Node> root) {
     newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
     Context ctx;
     ctx.root = root;
+    ctx.result = &root->children;
     for(int i = 0; i < root->children.size(); i++) {
+        ctx.index = i;
         newline("Looking at: "+root->children[i]->info());
         ctx.node = root->children[i];
         standard_process(ctx);
@@ -759,28 +801,103 @@ static bool standard_travel_pass(g_ptr<Node> root) {
     return false;
 }
 
-void e_pass(Context& ctx, g_ptr<Node> root){
+void standard_backwards_pass(g_ptr<Node> root){
+    newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+    Context ctx;
     ctx.root = root;
+    ctx.result = &root->children;
     for(int i=root->children.length()-1;i>=0;i--) {
-        newline("Checking: "+root->children[i]->info());
+        ctx.index = i;
+        newline("Looking at: "+root->children[i]->info());
         ctx.node = root->children[i];
         standard_process(ctx);
         if(!ctx.node) {
             root->children.removeAt(i);
         } else {
             for(auto scope : root->children[i]->scopes) {
-                e_pass(ctx, scope);
+                standard_backwards_pass(scope);
             }
             ctx.left = root->children[i];
         }
         endline();
     }
+    endline();
 }
 
-void start_e_stage(g_ptr<Node> root) {
-    start_stage(&e_handlers,e_default_function);
+void memory_backwards_pass(g_ptr<Node> root){
+    newline("Memory pass over "+std::to_string(root->children.size())+" nodes");
     Context ctx;
-    e_pass(ctx,root);
+    ctx.root = root;
+    ctx.result = &root->children;
+
+    for(int i=root->children.length()-1;i>=0;i--) {
+        ctx.node = root->children[i];
+        for(auto scope : root->children[i]->scopes) {
+            memory_backwards_pass(scope);
+        }
+        standard_process(ctx);
+        ctx.left = root->children[i];
+    }
+
+    // for(int i=root->children.length()-1;i>=0;i--) {
+    //     ctx.index = i;
+    //     if(root->children[i]->scope()) {
+    //         ctx.node = root->children[i];
+    //         standard_process(ctx);
+    //         ctx.left = root->children[i];
+    //         for(auto scope : root->children[i]->scopes) {
+    //             memory_backwards_pass(scope);
+    //         } 
+    //     }
+    // }
+    // for(int i=root->children.length()-1;i>=0;i--) {
+    //     ctx.index = i;
+    //     if(!root->children[i]->scope()) {
+    //         ctx.node = root->children[i];
+    //         standard_process(ctx);
+    //         ctx.left = root->children[i];
+    //     }
+    // }
+    endline();
+}
+
+list<uint32_t> emit_buffer;
+
+uint32_t MOVZ(int rd, int imm16, int sf = 0) {
+    return (sf << 31)
+         | (0b10100101 << 23)
+         | (0 << 21) 
+         | (imm16 << 5)
+         | rd;
+}
+
+uint32_t ADD_reg(int rd, int rn, int rm, int sf = 0) {
+    return (sf << 31)
+         | (0b00001011000 << 21)
+         | ((rm & 0x1F) << 16)
+         | (0 << 10) 
+         | ((rn & 0x1F) << 5)
+         | (rd & 0x1F);
+}
+
+uint32_t RET() {
+    return 0xD65F03C0;
+}
+
+uint32_t MOV_reg(int rd, int rm, int sf = 0) {
+    return (sf << 31)
+         | (0b00101010000 << 21)
+         | ((rm & 0x1F) << 16)
+         | (0b11111 << 5) 
+         | (rd & 0x1F);
+}
+
+void print_emit_buffer() {
+    print("==EMIT BUFFER==");
+    for(int i=0;i<emit_buffer.length();i++) {
+        uint32_t instr = emit_buffer[i];
+        print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr));
+    }
 }
 
 

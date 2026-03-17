@@ -395,7 +395,7 @@ namespace GDSL {
                 ctx.result->push(expr);
             }
         };
-        s_defualt_function = [](Context& ctx){};
+        s_default_function = [](Context& ctx){};
         t_default_function = [](Context& ctx){
             standard_sub_process(ctx);
         };
@@ -442,7 +442,7 @@ namespace GDSL {
         a_pass_resolve_keywords(nodes);
 
         print("S STAGE");
-        start_stage(&s_handlers,s_defualt_function);
+        start_stage(&s_handlers,s_default_function);
         g_ptr<Node> root = make<Node>();
         root->name = "GLOBAL";
         for(auto n : nodes) {

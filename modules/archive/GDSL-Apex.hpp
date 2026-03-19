@@ -757,7 +757,7 @@ namespace GDSL {
             ctx.node->type = literal_id;
 
             g_ptr<Value> value = make<Value>(float_id,4);
-            value->set<float>(std::stoi(ctx.node->name));
+            value->set<float>(std::stof(ctx.node->name));
             ctx.node->value = value;
         }; 
 

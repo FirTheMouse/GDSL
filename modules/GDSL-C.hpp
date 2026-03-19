@@ -561,7 +561,7 @@ namespace GDSL {
             ctx.node->type = literal_id;
 
             g_ptr<Value> value = make<Value>(float_id,4);
-            value->set<float>(std::stoi(ctx.node->name));
+            value->set<float>(std::stof(ctx.node->name));
             ctx.node->value = value;
         }; 
 
@@ -1159,55 +1159,7 @@ namespace GDSL {
         e_default_function=  [](Context& ctx){
             //Doing nothing for now
         };
-
-        IdPool reg_pool;
-        reg_pool.init({15, 14, 13, 12, 11, 10, 9}); //Because I'm on a Mac
-        m_default_function = [&reg_pool](Context& ctx){
-            backwards_sub_process(ctx);
-            if(ctx.node->value->reg == -1) {
-                ctx.node->value->reg = reg_pool.alloc();
-            }
-        };
-        m_handlers[var_decl_id] = [&reg_pool](Context& ctx){
-            backwards_sub_process(ctx);
-            if(!ctx.flag && ctx.node->value->reg != -1) {
-                reg_pool.free(ctx.node->value->reg);
-            }
-        };
-        m_handlers[equals_id] = [](Context& ctx) {
-            process_node(ctx, ctx.node->left());
-            if(ctx.node->right()) {
-                ctx.node->right()->value->reg = ctx.node->left()->value->reg;
-                ctx.flag = true;
-                process_node(ctx, ctx.node->right());
-                ctx.flag = false;
-            }
-        };
-
-
-        i_default_function = [](Context& ctx){
-            //Do nothing
-        };
-
-        i_handlers[equals_id] = [](Context& ctx) {
-            standard_sub_process(ctx);
-        };
-        i_handlers[literal_id] = [](Context& ctx) {
-            emit_buffer << MOVZ(
-                ctx.node->value->reg,
-                ctx.node->value->get<int>(),
-                ctx.node->value->size == 8 ? 1 : 0
-            );
-        };
-        i_handlers[plus_id] = [](Context& ctx) {
-            standard_sub_process(ctx); // emit children first
-            emit_buffer << ADD_reg(
-                ctx.node->value->reg,
-                ctx.node->left()->value->reg,
-                ctx.node->right()->value->reg,
-                ctx.node->value->size == 8 ? 1 : 0
-            );
-        };
+        
 
         x_default_function = [](Context& ctx){};
 
@@ -1299,6 +1251,158 @@ namespace GDSL {
                 process_node(ctx, ctx.node->children[2]); //Incrementer 
             }
         });
+
+        IdPool reg_pool;
+        reg_pool.init({15, 14, 13, 12, 11, 10, 9}); //Because I'm on a Mac
+        m_default_function = [&reg_pool](Context& ctx){
+            backwards_sub_process(ctx);
+            if(ctx.node->value->reg == -1) {
+                ctx.node->value->reg = reg_pool.alloc();
+            }
+
+            if(ctx.node->value->reg==-1 && !ctx.node->value->data) {
+                ctx.node->value->data = malloc(ctx.node->value->size);
+            }
+        };
+        m_handlers[var_decl_id] = [&reg_pool](Context& ctx){
+            backwards_sub_process(ctx);
+            if(!ctx.flag && ctx.node->value->reg != -1) {
+                reg_pool.free(ctx.node->value->reg);
+            } else if(ctx.node->value->reg == -1) {
+                ctx.node->value->data = malloc(ctx.node->value->size);
+            }
+        };
+        m_handlers[equals_id] = [](Context& ctx) {
+            process_node(ctx, ctx.node->left());
+            if(ctx.node->right()) {
+                ctx.node->right()->value->reg = ctx.node->left()->value->reg;
+                ctx.flag = true;
+                process_node(ctx, ctx.node->right());
+                ctx.flag = false;
+            }
+        };
+
+
+        i_default_function = [](Context& ctx){
+            //Do nothing
+        };
+
+        i_handlers[literal_id] = [](Context& ctx) {
+            emit_load_literal(ctx.node->value);
+        };
+        i_handlers[plus_id] = [](Context& ctx) {
+            standard_sub_process(ctx);
+            emit_add(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value);
+        };
+        i_handlers[rangle_id] = [](Context& ctx) {
+            standard_sub_process(ctx);
+            emit_compare(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value, COND_GT);
+        };
+        i_handlers[langle_id] = [](Context& ctx) {
+            standard_sub_process(ctx);
+            emit_compare(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value, COND_LT);
+        };
+        i_handlers[equals_id] = [](Context& ctx) {
+            standard_sub_process(ctx);
+            if(ctx.node->left()->value->reg == -1) {
+                int result_reg = get_reg(ctx.node->right()->value, LEFT_REG);
+                emit_save_to_ptr(result_reg, (uint64_t)ctx.node->left()->value->data, ctx.node->left()->value->size);
+            }
+        };
+
+        i_handlers[if_id] = [](Context& ctx) {
+            //The condition
+            process_node(ctx, ctx.node->left());
+            int cond_reg = get_reg(ctx.node->left()->value, LEFT_REG);
+            emit_compare_value(cond_reg, 0);
+
+            //Pushing the buffer so we know the offset to jump to if false
+            push_buffer();
+            standard_travel_pass(ctx.node->scope());
+            list<uint32_t> if_body = pop_buffer();
+            
+            if(ctx.node->scopes.length()>1) {
+                push_buffer();
+                standard_travel_pass(ctx.node->scopes[1]);
+                list<uint32_t> else_body = pop_buffer();
+                
+                emit_jump_if(COND_EQ, if_body.length() + 2); //+1 for jump past else, +1 to clear branch
+                emit_buffer << if_body;
+                emit_jump(else_body.length() + 1);
+                emit_buffer << else_body;
+            } else {
+                //No else, just skip over the if body
+                emit_jump_if(COND_EQ, if_body.length() + 1);
+                emit_buffer << if_body;
+            }
+        };
+
+        i_handlers[while_id] = [](Context& ctx) {
+            push_buffer(); //Mesuring the size of the loop body
+            process_node(ctx, ctx.node->left());
+            int cond_reg = get_reg(ctx.node->left()->value, LEFT_REG);
+            emit_compare_value(cond_reg, 0);
+            list<uint32_t> condition = pop_buffer();
+        
+            push_buffer();
+            standard_travel_pass(ctx.node->scope());
+            list<uint32_t> body = pop_buffer();
+        
+            
+            //Exit branch skips body + back jump
+            int exit_offset = body.length() + 2; // +1 for back jump, +1 to clear branch
+            //Back jump goes to start of condition (negative)
+            int back_offset = -(int)(condition.length() + body.length() + 1);
+            
+            emit_buffer << condition;
+            emit_jump_if(COND_EQ, exit_offset);
+            emit_buffer << body;
+            emit_jump(back_offset);
+        };
+
+        // i_handlers[return_id] = [](Context& ctx) {
+        //     process_node(ctx, ctx.node->left());
+        //     int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
+        //     emit_buffer << MOV_reg(REG_RETURN_VALUE, result_reg);
+        //     ctx.flag = true;
+        // };
+
+        // i_handlers[func_decl_id] = [](Context& ctx) {
+        //     ctx.node->value->loc = emit_buffer.length();
+        //     standard_travel_pass(ctx.node->scope());
+        //     emit_return();
+        // };
+
+        // i_handlers[func_call_id] = [](Context& ctx) {
+        //     standard_sub_process(ctx);
+        //     g_ptr<Node> decl = ctx.node->scope()->owner;
+        //     if(decl->value->loc==-1) process_node(ctx, decl);
+        //     int offset = decl->value->loc - (int)emit_buffer.length() ;
+        //     print("LOC: ",decl->value->loc," OFFSET: ",offset," FROM ",(int)emit_buffer.length() );
+        //     emit_call(offset);
+
+        //     int result = ctx.node->value->reg != -1 ? ctx.node->value->reg : LEFT_REG;
+        //     emit_buffer << MOV_reg(result, REG_RETURN_VALUE);
+        //     if(ctx.node->value->reg == -1) {
+        //         emit_save_to_ptr(result, (uint64_t)ctx.node->value->data, ctx.node->value->size);
+        //     }
+        //     ctx.flag = false;
+        // };
+
+
+        
+        // i_handlers[print_id] = [](Context& ctx) {
+        //     standard_sub_process(ctx);
+        //     for(auto child : ctx.node->children) {
+        //         int arg_reg = get_reg(child->value, LEFT_REG);
+        //         // Move argument into x0
+        //         emit_buffer << MOV_reg(REG_RETURN_VALUE, arg_reg);
+        //         // Load the function address and call it
+        //         emit_load_64(LEFT_REG, (uint64_t)&jit_print_int);
+        //         emit_buffer << BLR(LEFT_REG); // Branch and link to register
+        //     }
+        // };
+       
         
 
 
@@ -1359,16 +1463,19 @@ namespace GDSL {
         start_stage(&r_handlers,r_default_function);
         standard_resolving_pass(root);
 
+        #define EMIT 1
 
-        span2->end_line();
-        span2->add_line("E STAGE");
-        start_stage(&e_handlers,e_default_function);
-        standard_backwards_pass(root);
+        #if EMIT
+            span2->end_line();
+            span2->add_line("E STAGE");
+            start_stage(&e_handlers,e_default_function);
+            standard_backwards_pass(root);
 
-        span2->end_line();
-        span2->add_line("M STAGE");
-        start_stage(&m_handlers,m_default_function);
-        standard_backwards_pass(root);
+            span2->end_line();
+            span2->add_line("M STAGE");
+            start_stage(&m_handlers,m_default_function);
+            standard_backwards_pass(root);
+        #endif
 
         g_ptr<Node> main_func = nullptr;
         for(auto c : root->scopes) {
@@ -1378,10 +1485,12 @@ namespace GDSL {
             }
         }
 
-        span2->end_line();
-        span2->add_line("I STAGE");
-        start_stage(&i_handlers,i_default_function);
-        standard_travel_pass(main_func?main_func:root);
+        #if EMIT
+            span2->end_line();
+            span2->add_line("I STAGE");
+            start_stage(&i_handlers,i_default_function);
+            standard_travel_pass(main_func?main_func:root);
+        #endif
         span2->end_line();
 
         std::string final_time = ftime(timer.end());
@@ -1391,54 +1500,71 @@ namespace GDSL {
         print(root->to_string());
         print_scopes(root);
 
-        // print("X STAGE");
         print("Ran:\n",code);
+        #if EMIT
+            print_emit_buffer();
+        #endif
         span2->end_line();
         span2->add_line("X STAGE");
         start_stage(&x_handlers,x_default_function);
 
+        #if EMIT
+            // Move result into return register
+            emit_buffer << MOV_reg(0, 10, 0);
+            // Return
+            emit_buffer << RET();
 
-        // Move result into return register
-        emit_buffer << MOV_reg(0, 10, 0);
-        // Return
-        emit_buffer << RET();
+            // Create executable buffer
+            size_t byte_size = emit_buffer.length() * sizeof(uint32_t);
+            void* buf = mmap(nullptr, byte_size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,
+                -1, 0);
 
-        // Create executable buffer
-        size_t byte_size = emit_buffer.length() * sizeof(uint32_t);
-        void* buf = mmap(nullptr, byte_size,
-            PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,
-            -1, 0);
+            if(buf == MAP_FAILED) {
+                print("mmap failed: ", strerror(errno));
+                return;
+            }
 
-        if(buf == MAP_FAILED) {
-            print("mmap failed: ", strerror(errno));
-            return;
-        }
+            // Copy instructions
+            uint32_t* ptr = (uint32_t*)buf;
+            for(int i=0;i<emit_buffer.length();i++) {
+                ptr[i] = emit_buffer[i];
+            }
 
-        // Copy instructions
-        uint32_t* ptr = (uint32_t*)buf;
-        for(int i=0;i<emit_buffer.length();i++) {
-            ptr[i] = emit_buffer[i];
-        }
+            // Make executable
+            mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
+        #endif
 
-        // Make executable
-        mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
-
-        // Call it
 
         timer.start();
         print("==EXECUTING==");
-        //standard_travel_pass(main_func?main_func:root);
+        #if EMIT
+        struct sigaction sa;
+        sa.sa_sigaction = sigill_handler;
+        sa.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGILL, &sa, nullptr);
 
-        typedef int (*JitFunc)();
-        JitFunc func = (JitFunc)buf;
-        int result = func();
+        jit_buf_start = buf;
+        jit_buf_size = byte_size;
+
+            typedef int (*JitFunc)();
+            JitFunc func = (JitFunc)buf;
+            int result = func();
+        #else
+            standard_travel_pass(main_func?main_func:root);
+        #endif
+
+
 
         std::string exec_time =  ftime(timer.end());
         span2->end_line();
 
-        print("Native result: ", result);
-        munmap(buf, byte_size); //Cleanup
+        #if EMIT
+            print("Native result: ", result);
+            munmap(buf, byte_size); //Cleanup
+        #endif
 
         
 
@@ -1447,9 +1573,6 @@ namespace GDSL {
 
         print("Final time: ",final_time);
         print("Exec time: ",exec_time);
-
-        print_emit_buffer();
-
 
         print("==DONE==");
 

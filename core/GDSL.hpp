@@ -6,7 +6,7 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 0
+#define PRINT_ALL 1
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language
@@ -33,6 +33,27 @@ static inline void log(Args&&... args) {
     #if PRINT_ALL
     span->log(std::forward<Args>(args)...);
     #endif
+}
+
+std::string ptr_to_string(uint64_t addr) {
+    uint64_t varied = addr >> 4;
+    
+    const char* profiles[] = {"CGOQD", "IHLTFE", "AVWXZK", "BPRSM"};
+    int prof = varied & 0x3;
+    
+    const char* group = profiles[prof];
+    int letter_idx = (varied >> 2) % strlen(group);
+    char letter = group[letter_idx];
+    
+    uint64_t tiebreaker = (varied >> 6) & 0xFFF;
+    std::string tbstr = std::to_string(tiebreaker);
+    std::reverse(tbstr.begin(), tbstr.end());
+    
+    return std::string({letter}) + "-" + tbstr + "-" + letter;
+}
+
+std::string ptr_to_string(void* ptr) {
+    return ptr_to_string((uint64_t)ptr);
 }
 
 #ifndef MAX_TYPES
@@ -195,14 +216,14 @@ public:
 
     std::string info() {
         std::string to_return = "";
-        to_return += "Value [@" + std::to_string((size_t)(void*)this) + "]"
+        to_return += "["+ptr_to_string((void*)this)+"]"
         + "(type: " + labels[type]
-        + (data?", value: "+to_string():"")
+        + (reg!=-1?", reg: "+std::to_string(reg):"")
+        + (data?", value: "+to_string()+" @"+ptr_to_string(data):"")
         + (sub_type!=0?", sub_type: "+labels[sub_type]:"")
-        + (type_scope?", type_scope: [yes]":"")
+        + (type_scope?", has scope":"")
         + (size!=0?", size: "+std::to_string(size):"")
         + (address!=0?", address: "+std::to_string(address):"")
-        + (reg!=-1?", reg: "+std::to_string(reg):"")
         + (store?", store: "+store->type_name:"")
         + (!sub_values.empty()?", sub: "+std::to_string(sub_values.length()):"");
         if(!quals.empty()) {
@@ -403,16 +424,27 @@ public:
         return node;
     }
 
+    g_ptr<Value> obliterate_value(const std::string& label, g_ptr<Value> val) {
+        print(red("OBLITERATING: "),red(label),"!");
+        if(value_table.hasKey(label)) {
+            g_ptr<Value> table_value = value_table.get(label);
+            if(table_value==val) {
+                value_table.remove(label);
+                print(red("FOUND"));
+            } else print(red("NOT FOUND"));
+        }
+        for(auto s : scopes) {
+            val = s->obliterate_value(label, val);
+        }
+        return val;
+    }
+
     std::string opt_str;
 
     std::string info() {
         std::string to_return = "";
         
-        to_return += labels[type] + " [Name: " + name;
-        if(value) {
-            to_return += ", "+value->info();
-        }
-        to_return += "]";
+        to_return += labels[type] + " " + green(name) + " " + (value?value->info():"") + (in_scope?"{"+in_scope->name+"}":"");
         return to_return;
     }
 
@@ -420,9 +452,7 @@ public:
         std::string indent(depth * 2, ' ');
         std::string to_return = "";
         
-        to_return += indent + std::to_string(index) + ": " + labels[type]
-        +(!name.empty()?green(" "+name):"") 
-        +(in_scope?" {"+in_scope->name+"}":"");
+        to_return += indent + std::to_string(index) + ": " + info();
         
         if(!quals.empty()) {
             to_return += " [";
@@ -431,12 +461,6 @@ public:
             }
             to_return += "]";
         }
-
-
-        if(value) {
-            to_return += "\n" + indent + "   "+value->info();
-        }
-
 
         if(value_table.size()>0) {
             to_return += "\n" + indent + "   Value table:";
@@ -693,12 +717,14 @@ static void discover_symbols(g_ptr<Node> root) {
     endline();
 }
 
-list<uint32_t> emit_buffer;
 
 static g_ptr<Node> standard_process(Context& ctx) {
     //log("Processing: ",ctx.node->info());
+    //print("Processing: ",ctx.node->info());
+    newline("Processing: "+ctx.node->info());
     (*active_handlers).getOrDefault(ctx.node->type,active_default_function)(ctx);
-    print("Emmited at ",emit_buffer.length()-1,": ",ctx.node->info());
+    endline();
+    //print("Emmited at ",emit_buffer.length()-1,": ",ctx.node->info());
     return ctx.node;
 }
 
@@ -791,11 +817,9 @@ static bool standard_travel_pass(g_ptr<Node> root) {
     ctx.result = &root->children;
     for(int i = 0; i < root->children.size(); i++) {
         ctx.index = i;
-        newline("Looking at: "+root->children[i]->info());
         ctx.node = root->children[i];
         standard_process(ctx);
         ctx.left = root->children[i];
-        endline();
         if(ctx.flag) { //This is the return/break process
             endline();
             return true;
@@ -812,18 +836,17 @@ void standard_backwards_pass(g_ptr<Node> root){
     ctx.result = &root->children;
     for(int i=root->children.length()-1;i>=0;i--) {
         ctx.index = i;
-        newline("Looking at: "+root->children[i]->info());
         ctx.node = root->children[i];
         standard_process(ctx);
         if(!ctx.node) {
             root->children.removeAt(i);
         } else {
             for(auto scope : root->children[i]->scopes) {
-                standard_backwards_pass(scope);
+                if(scope->owner==root->children[i])
+                    standard_backwards_pass(scope);
             }
             ctx.left = root->children[i];
         }
-        endline();
     }
     endline();
 }
@@ -837,36 +860,17 @@ void memory_backwards_pass(g_ptr<Node> root){
     for(int i=root->children.length()-1;i>=0;i--) {
         ctx.node = root->children[i];
         for(auto scope : root->children[i]->scopes) {
-            memory_backwards_pass(scope);
+            if(scope->owner==root->children[i])
+                memory_backwards_pass(scope);
         }
         standard_process(ctx);
         ctx.left = root->children[i];
     }
-
-    // for(int i=root->children.length()-1;i>=0;i--) {
-    //     ctx.index = i;
-    //     if(root->children[i]->scope()) {
-    //         ctx.node = root->children[i];
-    //         standard_process(ctx);
-    //         ctx.left = root->children[i];
-    //         for(auto scope : root->children[i]->scopes) {
-    //             memory_backwards_pass(scope);
-    //         } 
-    //     }
-    // }
-    // for(int i=root->children.length()-1;i>=0;i--) {
-    //     ctx.index = i;
-    //     if(!root->children[i]->scope()) {
-    //         ctx.node = root->children[i];
-    //         standard_process(ctx);
-    //         ctx.left = root->children[i];
-    //     }
-    // }
     endline();
 }
 
 
-
+list<uint32_t> emit_buffer;
 
 list<list<uint32_t>> buffer_stack;
 void push_buffer() {
@@ -961,21 +965,30 @@ uint32_t MOVK(int rd, int imm16, int shift, int sf = 1) {
 }
 
 void emit_load_64(int reg, uint64_t value) {
+    int start_len =  emit_buffer.length();
         emit_buffer << MOVZ(reg, (value      ) & 0xFFFF, 1); // bits 0-15
-    if(value > 0xFFFF)
+    if(value > 0xFFFF) {
         emit_buffer << MOVK(reg, (value >> 16) & 0xFFFF, 16); // bits 16-31
-    if(value > 0xFFFFFFFF)
+    }
+    if(value > 0xFFFFFFFF) {
         emit_buffer << MOVK(reg, (value >> 32) & 0xFFFF, 32); // bits 32-47
-    if(value > 0xFFFFFFFFFFFF)
+    }
+    if(value > 0xFFFFFFFFFFFF) {
         emit_buffer << MOVK(reg, (value >> 48) & 0xFFFF, 48); // bits 48-63
+    }
+    int end_len =  emit_buffer.length()-1;
+
+    log(start_len,"-",end_len,": load ",ptr_to_string(value)," to ",reg);
 }
 
 void emit_load_from_ptr(int reg, uint64_t ptr, int size) {
     emit_load_64(reg, ptr);
+    log(emit_buffer.length(),": load ",ptr_to_string(ptr)," at ",reg);
     emit_buffer << LDR(reg, reg, 0, size); //Offset of 0 because we're using the pointer itself
 }
 void emit_save_to_ptr(int value_reg, uint64_t ptr, int size) {
     emit_load_64(RIGHT_REG, ptr);
+    log(emit_buffer.length(),": save ",value_reg," to ",ptr_to_string(ptr));
     emit_buffer << STR(value_reg, RIGHT_REG, 0, size); // store value to that address
 }
 
@@ -1135,9 +1148,6 @@ uint32_t BLR(int rn) {
 void emit_call_register(int reg) {
     emit_buffer << BLR(reg);
 }
-void jit_print_int(int value) {
-    print(value);
-}
 
 uint32_t SUB_sp(int imm, int sf = 1) {
     return (sf << 31)
@@ -1154,24 +1164,9 @@ uint32_t stack_alloc(int bytes) {
     return SUB_sp(bytes);
 }
 
-
-
-
-// int read_reg(g_ptr<Value> value) {
-//     if(value->reg != -1) return value->reg;
-//     emit_buffer << load_from_stack(16, spill_slot(value));
-//     return 16;
-// }
-
-// // After writing a result, store it back if it lives on the stack
-// void write_reg(g_ptr<Value> value, int computed_in) {
-//     if(value->reg != -1) return; // already where it needs to be
-//     emit_buffer << store_to_stack(computed_in, spill_slot(value));
-// }
-
-
-
-
+static void jit_hello() {
+    print("hello from JIT");
+}
 
 void print_emit_buffer() {
     print("==EMIT BUFFER==");

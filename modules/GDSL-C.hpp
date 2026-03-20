@@ -44,9 +44,12 @@ namespace GDSL {
         bool deferred = false;
     };
 
+    size_t scope_id = reg_id("SCOPE");
+
     static g_ptr<Node> parse_scope(list<g_ptr<Node>> nodes) {
         g_ptr<Node> root_scope = make<Node>();
         root_scope->name = "GLOBAL";
+        root_scope->type = scope_id;
         g_ptr<Node> current_scope = root_scope;
         list<g_value> stack{g_value()};
 
@@ -104,6 +107,7 @@ namespace GDSL {
 
                 g_ptr<Node> parent_scope = current_scope;
                 current_scope = current_scope->spawn_sub_scope();
+                current_scope->type = scope_id;
                 if (owner_node) {
                     //Deffensive check here
                     try {
@@ -161,12 +165,14 @@ namespace GDSL {
         size_t decl_id = reg_id(f+"_decl");
         size_t unary_id = reg_id(f+"_unary");
 
-        t_handlers[id] = [decl_id,unary_id](Context& ctx){
+        t_handlers[id] = [decl_id,unary_id,c](Context& ctx){
             auto& children = ctx.node->children;
             standard_sub_process(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
             if(children.length() == 2) {
                 g_ptr<Node> type_term = children[0];
                 g_ptr<Node> id_term = children[1];
+
+                ctx.node->name = type_term->name+c+id_term->name;
                 
                 if(type_term->type==var_decl_id) {
                     ctx.node->type = decl_id;
@@ -184,7 +190,7 @@ namespace GDSL {
                 }
             } else if(children.length() == 1) {
                 g_ptr<Node> type_term = children[0];
-
+                ctx.node->name = c+type_term->name;
                 ctx.node->type = unary_id;
                 ctx.node->value->copy(type_term->value);
             } 
@@ -677,7 +683,10 @@ namespace GDSL {
             
         // };
         
-        t_handlers[equals_id] = [](Context& ctx){standard_sub_process(ctx);}; //So we don't turn things into declerations
+        t_handlers[equals_id] = [](Context& ctx){ //So we don't turn things into declerations
+            standard_sub_process(ctx);
+            ctx.node->name = ctx.node->left()->name+"="+ctx.node->right()->name;
+        };
         e_handlers[equals_id] = [](Context& ctx){ 
             if(ctx.node->left()&&ctx.node->right()) {
                 int at_id = ctx.node->left()->value->find_qual(live_qual);
@@ -1045,7 +1054,6 @@ namespace GDSL {
             } else {
                 has_scope = node->find_node_in_scope(); //To distinquish func_calls from object identifiers
                 if(has_sub_type) {
-
                     if(node->value->sub_type == typename_id && node->in_scope->value_table.hasKey(node->name)) {
                         //Reference to existing typename-typed variable, not a new declaration
                         node->find_value_in_scope();
@@ -1062,6 +1070,8 @@ namespace GDSL {
                         node->value->sub_type = 0;
                 } else if(has_scope) {
                     node->type = func_call_id;
+                    node->name.append("(");
+                    for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
                     node->find_value_in_scope(); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
                     if(node->value->type_scope)
                         node->scopes[0] = node->value->type_scope; //Swap to the type scope
@@ -1207,9 +1217,6 @@ namespace GDSL {
         e_handlers[if_id] = [](Context& ctx) {
             //Decisions can be  made here to either replace the scope with the right scope (only else is valid)
             //or to not add it (only main if is valid) depending on the provablility of branch perdiction in the future.
-            if(ctx.node->right()) {
-                ctx.node->scopes << ctx.node->right()->scope();
-            }
         };
 
 
@@ -1221,8 +1228,9 @@ namespace GDSL {
             if(my_id>0) {
                 g_ptr<Node> left = ctx.root->children[my_id-1];
                 if(left->type==if_id) {
-                    left->children << ctx.root->children.take(my_id);
-                    left->children[1] = ctx.node;
+                    ctx.node->scope()->owner = left.getPtr();
+                    left->scopes << ctx.node->scopes;
+                    ctx.root->children.removeAt(my_id);
                 }
             }
             ctx.node = nullptr;
@@ -1259,7 +1267,6 @@ namespace GDSL {
             if(ctx.node->value->reg == -1) {
                 ctx.node->value->reg = reg_pool.alloc();
             }
-
             if(ctx.node->value->reg==-1 && !ctx.node->value->data) {
                 ctx.node->value->data = malloc(ctx.node->value->size);
             }
@@ -1276,10 +1283,16 @@ namespace GDSL {
             process_node(ctx, ctx.node->left());
             if(ctx.node->right()) {
                 ctx.node->right()->value->reg = ctx.node->left()->value->reg;
-                ctx.flag = true;
+                ctx.flag = true; //Blocks variable decelreations from freeing themselves
                 process_node(ctx, ctx.node->right());
                 ctx.flag = false;
             }
+        };
+        m_handlers[func_call_id] = [&reg_pool](Context& ctx) {
+            ctx.node->value->reg = REG_RETURN_VALUE;
+        };
+        m_handlers[func_decl_id] = [&reg_pool](Context& ctx) {
+            reg_pool.init({15, 14, 13, 12, 11, 10, 9});
         };
 
 
@@ -1288,10 +1301,12 @@ namespace GDSL {
         };
 
         i_handlers[literal_id] = [](Context& ctx) {
+            log(emit_buffer.length(),": immediate ",ctx.node->value->to_string()," to ",ctx.node->value->reg);
             emit_load_literal(ctx.node->value);
         };
         i_handlers[plus_id] = [](Context& ctx) {
             standard_sub_process(ctx);
+            log(emit_buffer.length(),": add ",ctx.node->left()->value->reg," and ",ctx.node->right()->value->reg," store at ",ctx.node->value->reg);
             emit_add(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value);
         };
         i_handlers[rangle_id] = [](Context& ctx) {
@@ -1360,18 +1375,67 @@ namespace GDSL {
             emit_jump(back_offset);
         };
 
-        // i_handlers[return_id] = [](Context& ctx) {
-        //     process_node(ctx, ctx.node->left());
-        //     int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
-        //     emit_buffer << MOV_reg(REG_RETURN_VALUE, result_reg);
-        //     ctx.flag = true;
-        // };
+        i_handlers[return_id] = [](Context& ctx) {
+            process_node(ctx, ctx.node->left());
+            int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
+            log(emit_buffer.length(),": moving for return ",REG_RETURN_VALUE," to ",result_reg);
+            emit_buffer << MOV_reg(REG_RETURN_VALUE, result_reg);
+            ctx.flag = true;
+        };
 
-        // i_handlers[func_decl_id] = [](Context& ctx) {
-        //     ctx.node->value->loc = emit_buffer.length();
-        //     standard_travel_pass(ctx.node->scope());
-        //     emit_return();
-        // };
+        i_handlers[func_call_id] = [](Context& ctx) {
+
+            g_ptr<Node> current_scope = ctx.root; // or however you access current scope
+            int spill_count = 0;
+            // for(auto [key, val] : current_scope->value_table.entrySet()) {
+            //     if(val->reg != -1) {
+            //         emit_buffer << STR(val->reg, REG_FRAME_POINTER, spill_count);
+            //         spill_count++;
+            //     }
+            // }
+
+            for(auto [key, val] : current_scope->value_table.entrySet()) {
+                if(val->reg != -1) {
+                    if(!val->data) val->data = malloc(val->size);
+                    emit_save_to_ptr(val->reg, (uint64_t)val->data, val->size);
+                }
+            }
+
+            standard_sub_process(ctx);
+            g_ptr<Node> decl = ctx.node->scope()->owner;
+            if(decl->value->loc==-1) process_node(ctx, decl);
+            int offset = decl->value->loc - (int)emit_buffer.length() ;
+            log(emit_buffer.length(),": emitting call to ",decl->value->loc);
+            emit_call(offset);
+
+            // for(auto [key, val] : current_scope->value_table.entrySet()) {
+            //     if(val->reg != -1) {
+            //         emit_buffer << LDR(val->reg, REG_FRAME_POINTER, spill_count);
+            //         spill_count--;
+            //     }
+            // }
+            for(auto [key, val] : current_scope->value_table.entrySet()) {
+                if(val->reg != -1) {
+                    emit_load_from_ptr(val->reg, (uint64_t)val->data, val->size);
+                }
+            }
+
+            log(emit_buffer.length(),": moving for return ",REG_RETURN_VALUE," to ",REG_RETURN_VALUE);
+            emit_buffer << MOV_reg(REG_RETURN_VALUE, REG_RETURN_VALUE);
+            ctx.flag = false;
+        };
+
+        i_handlers[func_decl_id] = [](Context& ctx) {
+            if(ctx.node->value->loc != -1) {
+                return; 
+            }
+            ctx.node->value->loc = emit_buffer.length();
+            newline("Emitting "+ctx.node->name);
+            standard_travel_pass(ctx.node->scope());
+            log(emit_buffer.length(),": emitting return");
+            emit_return();
+            endline();
+        };
 
         // i_handlers[func_call_id] = [](Context& ctx) {
         //     standard_sub_process(ctx);
@@ -1419,11 +1483,12 @@ namespace GDSL {
         span->print_on_line_end = false; //While things aren't crashing
         //span->log_everything = true; //While things are crashing
 
-
+        
         std::string code = readFile(path);
         Log::Line timer; timer.start();
         g_ptr<Log::Span> span2 = make<Log::Span>();
         span2->add_line("TOKENIZE STAGE");
+        span2->log_everything = true;
 
         //print("TOKENIZE");
         list<g_ptr<Node>> tokens = tokenize(code);
@@ -1474,7 +1539,7 @@ namespace GDSL {
             span2->end_line();
             span2->add_line("M STAGE");
             start_stage(&m_handlers,m_default_function);
-            standard_backwards_pass(root);
+            memory_backwards_pass(root);
         #endif
 
         g_ptr<Node> main_func = nullptr;
@@ -1489,6 +1554,22 @@ namespace GDSL {
             span2->end_line();
             span2->add_line("I STAGE");
             start_stage(&i_handlers,i_default_function);
+
+            emit_buffer << STR(REG_LINK, REG_FRAME_POINTER, 0);
+
+            emit_load_64(LEFT_REG, (uint64_t)&jit_hello);
+            emit_call_register(LEFT_REG);
+            
+            emit_buffer << LDR(REG_LINK, REG_FRAME_POINTER, 0);
+
+            for(auto c : root->children) {
+                if(c->type == func_decl_id && c->name != "main") {
+                    Context ctx;
+                    ctx.node = c;
+                    ctx.root = root;
+                    process_node(ctx, c);
+                }
+            }
             standard_travel_pass(main_func?main_func:root);
         #endif
         span2->end_line();
@@ -1510,7 +1591,7 @@ namespace GDSL {
 
         #if EMIT
             // Move result into return register
-            emit_buffer << MOV_reg(0, 10, 0);
+            emit_buffer << MOV_reg(0, 9, 0);
             // Return
             emit_buffer << RET();
 

@@ -1,7 +1,13 @@
+
+int add(int val){
+    val = val+2;
+    print(val);
+    return val;
+}
+
 int main() {
     int i = 0;
-    while(i<3) {
-        i = i+1;
-    }
+    i = i+6;
+    i = add(3);
     print(i);
 }

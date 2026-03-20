@@ -8,8 +8,9 @@ int main(int argc, char* argv[]) {
     // }
     // std::string path = argv[1];
     // GDSL::test_module(path);
-    // GDSL::test_module("modules/tests/lisptest.gld");
+    //GDSL::test_module("modules/tests/lisptest.gld");
     //GDSL::test_module("modules/tests/ctest.gld");
+    //GDSL::test_module("modules/tests/cemittest.gld");
     GDSL::test_module("modules/tests/maintest.gld");
     return 0;
 

@@ -680,7 +680,7 @@ namespace GDSL {
 
         //Add this one day so we can have C++ style templates if we want
         // t_handlers[template_id] = [](Context& ctx) {
-            
+
         // };
         
         t_handlers[equals_id] = [](Context& ctx){ //So we don't turn things into declerations
@@ -1289,7 +1289,10 @@ namespace GDSL {
             }
         };
         m_handlers[func_call_id] = [&reg_pool](Context& ctx) {
+            ctx.flag = true; //Blocks variable decelreations from freeing themselves
+            backwards_sub_process(ctx);
             ctx.node->value->reg = REG_RETURN_VALUE;
+            ctx.flag = false;
         };
         m_handlers[func_decl_id] = [&reg_pool](Context& ctx) {
             reg_pool.init({15, 14, 13, 12, 11, 10, 9});
@@ -1301,7 +1304,6 @@ namespace GDSL {
         };
 
         i_handlers[literal_id] = [](Context& ctx) {
-            log(emit_buffer.length(),": immediate ",ctx.node->value->to_string()," to ",ctx.node->value->reg);
             emit_load_literal(ctx.node->value);
         };
         i_handlers[plus_id] = [](Context& ctx) {
@@ -1318,8 +1320,18 @@ namespace GDSL {
             emit_compare(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value, COND_LT);
         };
         i_handlers[equals_id] = [](Context& ctx) {
+            // standard_sub_process(ctx);
+            // if(ctx.node->left()->value->reg == -1) {
+            //     int result_reg = get_reg(ctx.node->right()->value, LEFT_REG);
+            //     emit_save_to_ptr(result_reg, (uint64_t)ctx.node->left()->value->data, ctx.node->left()->value->size);
+            // }
+
             standard_sub_process(ctx);
-            if(ctx.node->left()->value->reg == -1) {
+            int left_reg = ctx.node->left()->value->reg;
+            int right_reg = ctx.node->right()->value->reg;
+            if(left_reg != -1 && right_reg != -1 && left_reg != right_reg) {
+                emit_copy(left_reg, right_reg);
+            } else if(left_reg == -1) {
                 int result_reg = get_reg(ctx.node->right()->value, LEFT_REG);
                 emit_save_to_ptr(result_reg, (uint64_t)ctx.node->left()->value->data, ctx.node->left()->value->size);
             }
@@ -1378,8 +1390,13 @@ namespace GDSL {
         i_handlers[return_id] = [](Context& ctx) {
             process_node(ctx, ctx.node->left());
             int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
-            log(emit_buffer.length(),": moving for return ",REG_RETURN_VALUE," to ",result_reg);
-            emit_buffer << MOV_reg(REG_RETURN_VALUE, result_reg);
+            emit_copy(REG_RETURN_VALUE, result_reg);
+
+            log(emit_buffer.length(),": emitting return");
+            emit_return();
+
+
+            
             ctx.flag = true;
         };
 
@@ -1401,74 +1418,81 @@ namespace GDSL {
                 }
             }
 
-            standard_sub_process(ctx);
-            g_ptr<Node> decl = ctx.node->scope()->owner;
-            if(decl->value->loc==-1) process_node(ctx, decl);
-            int offset = decl->value->loc - (int)emit_buffer.length() ;
-            log(emit_buffer.length(),": emitting call to ",decl->value->loc);
-            emit_call(offset);
 
-            // for(auto [key, val] : current_scope->value_table.entrySet()) {
-            //     if(val->reg != -1) {
-            //         emit_buffer << LDR(val->reg, REG_FRAME_POINTER, spill_count);
-            //         spill_count--;
-            //     }
-            // }
+
+            standard_sub_process(ctx);
+
+            emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2);
+            g_ptr<Node> decl = ctx.node->scope()->owner;
+            if(decl->value->loc == -1) process_node(ctx, decl);
+            int offset = decl->value->loc - (int)emit_buffer.length();
+            log(emit_buffer.length(),": emitting call to ",decl->value->loc," (offset ",offset,")");
+            emit_call(offset);
+            emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
+ 
             for(auto [key, val] : current_scope->value_table.entrySet()) {
                 if(val->reg != -1) {
                     emit_load_from_ptr(val->reg, (uint64_t)val->data, val->size);
                 }
             }
 
-            log(emit_buffer.length(),": moving for return ",REG_RETURN_VALUE," to ",REG_RETURN_VALUE);
-            emit_buffer << MOV_reg(REG_RETURN_VALUE, REG_RETURN_VALUE);
-            ctx.flag = false;
+
+
+            ctx.flag = false; //Because the return may have set a flag to return from the travel pass
         };
 
         i_handlers[func_decl_id] = [](Context& ctx) {
-            if(ctx.node->value->loc != -1) {
-                return; 
-            }
+            if(ctx.node->value->loc != -1) return;
             ctx.node->value->loc = emit_buffer.length();
-            newline("Emitting "+ctx.node->name);
+            emit_prologue();
             standard_travel_pass(ctx.node->scope());
-            log(emit_buffer.length(),": emitting return");
-            emit_return();
-            endline();
+            emit_epilogue();
+        };
+        i_handlers[print_id] = [](Context& ctx) {
+            for(auto c : ctx.node->children) {
+                if(c->value->reg != -1) {
+                    emit_buffer << MOV_reg(0, c->value->reg, 0);
+                    
+                    // proper x30 save using stack
+                    emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2);
+                    emit_buffer << 0x910003FD; // MOV x29, sp
+        
+                    for(auto [key, val] : ctx.root->value_table.entrySet()) {
+                        if(val->reg != -1) {
+                            if(!val->data) val->data = malloc(val->size);
+                            emit_save_to_ptr(val->reg, (uint64_t)val->data, val->size);
+                        }
+                    }
+        
+                    emit_load_64(LEFT_REG, (uint64_t)&jit_print_int);
+                    emit_call_register(LEFT_REG);
+        
+                    for(auto [key, val] : ctx.root->value_table.entrySet()) {
+                        if(val->reg != -1) {
+                            emit_load_from_ptr(val->reg, (uint64_t)val->data, val->size);
+                        }
+                    }
+        
+                    emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
+                }
+            }
         };
 
-        // i_handlers[func_call_id] = [](Context& ctx) {
-        //     standard_sub_process(ctx);
-        //     g_ptr<Node> decl = ctx.node->scope()->owner;
-        //     if(decl->value->loc==-1) process_node(ctx, decl);
-        //     int offset = decl->value->loc - (int)emit_buffer.length() ;
-        //     print("LOC: ",decl->value->loc," OFFSET: ",offset," FROM ",(int)emit_buffer.length() );
-        //     emit_call(offset);
+        size_t jint_id = add_function("jint",[](Context& ctx){});
+        i_handlers[jint_id] = [](Context& ctx){
+            emit_buffer << STR(REG_LINK, REG_FRAME_POINTER, 0);
+            emit_load_64(LEFT_REG, (uint64_t)&jint);
+            emit_call_register(LEFT_REG);
+            emit_buffer << LDR(REG_LINK, REG_FRAME_POINTER, 0);  
+        };
 
-        //     int result = ctx.node->value->reg != -1 ? ctx.node->value->reg : LEFT_REG;
-        //     emit_buffer << MOV_reg(result, REG_RETURN_VALUE);
-        //     if(ctx.node->value->reg == -1) {
-        //         emit_save_to_ptr(result, (uint64_t)ctx.node->value->data, ctx.node->value->size);
-        //     }
-        //     ctx.flag = false;
-        // };
-
-
-        
-        // i_handlers[print_id] = [](Context& ctx) {
-        //     standard_sub_process(ctx);
-        //     for(auto child : ctx.node->children) {
-        //         int arg_reg = get_reg(child->value, LEFT_REG);
-        //         // Move argument into x0
-        //         emit_buffer << MOV_reg(REG_RETURN_VALUE, arg_reg);
-        //         // Load the function address and call it
-        //         emit_load_64(LEFT_REG, (uint64_t)&jit_print_int);
-        //         emit_buffer << BLR(LEFT_REG); // Branch and link to register
-        //     }
-        // };
-       
-        
-
+        size_t jont_id = add_function("jont",[](Context& ctx){});
+        i_handlers[jont_id] = [](Context& ctx){
+            emit_buffer << STR(REG_LINK, REG_FRAME_POINTER, 0);
+            emit_load_64(LEFT_REG, (uint64_t)&jont);
+            emit_call_register(LEFT_REG);
+            emit_buffer << LDR(REG_LINK, REG_FRAME_POINTER, 0);  
+        };
 
         std::function<void(g_ptr<Node>)> print_scopes = [&print_scopes](g_ptr<Node> root) {
             for(auto t : root->scopes) {
@@ -1531,10 +1555,10 @@ namespace GDSL {
         #define EMIT 1
 
         #if EMIT
-            span2->end_line();
-            span2->add_line("E STAGE");
-            start_stage(&e_handlers,e_default_function);
-            standard_backwards_pass(root);
+            // span2->end_line();
+            // span2->add_line("E STAGE");
+            // start_stage(&e_handlers,e_default_function);
+            // standard_backwards_pass(root);
 
             span2->end_line();
             span2->add_line("M STAGE");
@@ -1555,12 +1579,11 @@ namespace GDSL {
             span2->add_line("I STAGE");
             start_stage(&i_handlers,i_default_function);
 
-            emit_buffer << STR(REG_LINK, REG_FRAME_POINTER, 0);
+            void* safe_ptr =  malloc(24);
+            emit_load_64(REG_FRAME_POINTER,(uint64_t)safe_ptr);
 
-            emit_load_64(LEFT_REG, (uint64_t)&jit_hello);
-            emit_call_register(LEFT_REG);
-            
-            emit_buffer << LDR(REG_LINK, REG_FRAME_POINTER, 0);
+            int jump_placeholder = emit_buffer.length();
+            emit_buffer << B(0); 
 
             for(auto c : root->children) {
                 if(c->type == func_decl_id && c->name != "main") {
@@ -1570,6 +1593,10 @@ namespace GDSL {
                     process_node(ctx, c);
                 }
             }
+
+            int main_loc = emit_buffer.length();
+            emit_buffer[jump_placeholder] = B(main_loc - jump_placeholder);
+
             standard_travel_pass(main_func?main_func:root);
         #endif
         span2->end_line();
@@ -1626,6 +1653,13 @@ namespace GDSL {
         sa.sa_flags = SA_SIGINFO;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGILL, &sa, nullptr);
+
+        // struct sigaction sa2;
+        // sa2.sa_sigaction = sigsegv_handler;
+        // sa2.sa_flags = SA_SIGINFO;
+        // sigemptyset(&sa2.sa_mask);
+        // sigaction(SIGSEGV, &sa2, nullptr);
+        // sigaction(SIGBUS, &sa2, nullptr);
 
         jit_buf_start = buf;
         jit_buf_size = byte_size;

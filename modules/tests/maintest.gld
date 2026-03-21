@@ -1,13 +1,10 @@
 
 int add(int val){
-    val = val+2;
-    print(val);
+    val = val+10;
     return val;
 }
 
 int main() {
-    int i = 0;
-    i = i+6;
-    i = add(3);
-    print(i);
+    int i = 8;
+    i = add(i);
 }

@@ -911,12 +911,14 @@ const int REG_ZERO          = 31;
 const int LEFT_REG          = 16;
 //x17 - load right opperand
 const int RIGHT_REG         = 17;
+//x31 - again
+const int REG_SP = 31;
 
 int size_to_sf(int size) {
     return size == 8 ? 1 : 0;
 }
 
-//Store to address
+//Store to address, rt = read reg, rn = pointer reg
 uint32_t STR(int rt, int rn, int offset, int size = 8) {
     int sz = (size == 8) ? 0b11 : 0b10; // 64-bit vs 32-bit
     return (sz << 30) //64-bit vs 32-bit (2 bits because LDR/STR support more sizes than just 32/64)
@@ -927,7 +929,7 @@ uint32_t STR(int rt, int rn, int offset, int size = 8) {
          | (rt & 0x1F); //Source to read from
 }
 
-//Load from adress
+//Load from address, rt = write reg, rn = pointer reg
 uint32_t LDR(int rt, int rn, int offset, int size = 8) {
     int sz = (size == 8) ? 0b11 : 0b10;
     return (sz << 30)
@@ -948,8 +950,10 @@ uint32_t MOVZ(int rd, int imm16, int sf = 0) {
 }
 
 void emit_load_literal(g_ptr<Value> v) {
+    int  t_reg = v->reg != -1 ? v->reg : LEFT_REG;
+    log(emit_buffer.length(),": immediate ",v->to_string()," to ",t_reg);
     emit_buffer << MOVZ(
-        v->reg != -1 ? v->reg : LEFT_REG,
+        t_reg,
         v->get<int>(),
         size_to_sf(v->size)
     );
@@ -1038,6 +1042,7 @@ uint32_t MOV_reg(int rd, int rm, int sf = 0) {
 }
 //Copy a value from one register to another
 void emit_copy(int to, int from, int sf = 0) {
+    log(emit_buffer.length(),": copy ",from," to ",to);
     emit_buffer << MOV_reg(to, from, sf);
 }
 
@@ -1088,6 +1093,30 @@ static void sigill_handler(int sig, siginfo_t* info, void* ctx) {
     }
     exit(1);
 }
+
+// static void sigsegv_handler(int sig, siginfo_t* info, void* ctx) {
+//     ucontext_t* uc = (ucontext_t*)ctx;
+//     uint64_t pc = uc->uc_mcontext->__ss.__pc;
+//     uint64_t sp = uc->uc_mcontext->__ss.__sp;
+//     uint64_t x29 = uc->uc_mcontext->__ss.__x[29];
+//     uint64_t x30 = uc->uc_mcontext->__ss.__x[30];
+    
+//     print("SIGSEGV/SIGBUS at PC: 0x", std::hex, pc);
+//     print("SP: 0x", sp, " X29: 0x", x29, " X30: 0x", x30);
+    
+//     if(jit_buf_start) {
+//         uint64_t offset = pc - (uint64_t)jit_buf_start;
+//         int instruction_index = offset / 4;
+//         print("Buffer offset: ", std::dec, instruction_index);
+//     }
+    
+//     // Print all registers
+//     for(int i = 0; i < 30; i++) {
+//         print("x", i, ": 0x", std::hex, uc->uc_mcontext->__ss.__x[i]);
+//     }
+    
+//     exit(1);
+// }
 
 //Used to read the flags
 uint32_t CSET(int rd, int cond, int sf = 0) {
@@ -1149,6 +1178,15 @@ void emit_call_register(int reg) {
     emit_buffer << BLR(reg);
 }
 
+uint32_t MOV_from_sp(int rd, int sf = 1) {
+    return (sf << 31)
+         | (0b0010001 << 24)
+         | (0 << 22)          // shift = 0
+         | (0 << 10)          // imm12 = 0
+         | (31 << 5)          // SP as source
+         | (rd & 0x1F);
+}
+
 uint32_t SUB_sp(int imm, int sf = 1) {
     return (sf << 31)
          | (1 << 30)          // op = subtract
@@ -1164,8 +1202,49 @@ uint32_t stack_alloc(int bytes) {
     return SUB_sp(bytes);
 }
 
-static void jit_hello() {
-    print("hello from JIT");
+//Push to stack (and resize):  rt1 = first index to save, rt2 = second index, rn = base register (SP), imm7 = byte offset 
+uint32_t STP(int rt1, int rt2, int rn, int imm7) {
+    return (0b10 << 30)       // 64-bit
+         | (0b1010011 << 23)  // pre-index fixed bits
+         | (0b0 << 22)        // L = 0 (store)
+         | ((imm7 & 0x7F) << 15)
+         | ((rt2 & 0x1F) << 10)
+         | ((rn & 0x1F) << 5)
+         | (rt1 & 0x1F);
+}
+
+//Push to stack (and resize):  rt1 = first index to save, rt2 = second index, rn = base register (SP), imm7 = byte offset
+uint32_t LDP(int rt1, int rt2, int rn, int imm7) {
+    return (0b10 << 30)
+         | (0b101000 << 24)    // LDP post-index
+         | (0b11 << 22)
+         | ((imm7 & 0x7F) << 15)
+         | ((rt2 & 0x1F) << 10)
+         | ((rn & 0x1F) << 5)
+         | (rt1 & 0x1F);
+}
+
+void emit_prologue() {
+    emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2); //Offset is passed in units of 8
+    emit_buffer << 0x910003FD; //MOV x29, sp
+}
+
+void emit_epilogue() {
+    emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
+    emit_return();
+}
+
+static void jint() {
+    print("jint.");
+}
+
+static void jont() {
+    print("JONT!");
+}
+
+
+static void jit_print_int(int val) {
+    print("JIT reg: ", val);
 }
 
 void print_emit_buffer() {

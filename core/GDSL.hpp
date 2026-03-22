@@ -10,9 +10,9 @@ namespace GDSL {
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language
-//TAST: tokenizer, a stage, scope stage, t stage.
+//TAST: Tokenize, assemble, scope, type.
 //DRE: Discover, resolve, error
-//MIX: Model, interpret, execute
+//MIX: Memory, instruction, execute
 
 g_ptr<Log::Span> span = nullptr;
 static inline void newline(const std::string& label) {

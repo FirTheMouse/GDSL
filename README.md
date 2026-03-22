@@ -42,8 +42,4 @@ You do not have to try to do everything, the demo modules I've created are parti
 
 If you're new to compilers, the demo modules are the best starting point, read through GDSL-C for a complete example of how the stages connect, if you feel lost, feel free to reach out to me personally.
 
-# Example
-
-A walkthrough calculator module is in progress, check back soon.
-
 

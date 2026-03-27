@@ -1552,7 +1552,7 @@ namespace GDSL {
         start_stage(&r_handlers,r_default_function);
         standard_resolving_pass(root);
 
-        #define EMIT 1
+        #define EMIT 0
 
         #if EMIT
             // span2->end_line();

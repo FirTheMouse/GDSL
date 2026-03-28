@@ -6,13 +6,13 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 1
+#define PRINT_ALL 0
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language
 //TAST: Tokenize, assemble, scope, type.
-//DRE: Discover, resolve, error
-//MIX: Memory, instruction, execute
+//DRE: Discover, resolve, evaluate
+//MIX: Model, interpret, execute
 
 g_ptr<Log::Span> span = nullptr;
 static inline void newline(const std::string& label) {

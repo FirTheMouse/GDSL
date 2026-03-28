@@ -7,4 +7,5 @@ int add(int val){
 int main() {
     int i = 8;
     i = add(i);
+    print(i);
 }

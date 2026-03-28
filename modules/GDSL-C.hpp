@@ -1070,11 +1070,12 @@ namespace GDSL {
                         node->value->sub_type = 0;
                 } else if(has_scope) {
                     node->type = func_call_id;
-                    node->name.append("(");
-                    for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
                     node->find_value_in_scope(); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
                     if(node->value->type_scope)
                         node->scopes[0] = node->value->type_scope; //Swap to the type scope
+
+                    node->name.append("(");
+                    for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
                 } else if(found_a_value) { //if we already had a value and nothing interesting happened to us, reclaim it
                     node->find_value_in_scope();
                 } else {                                         

@@ -50,6 +50,7 @@ namespace GDSL {
         g_ptr<Node> root_scope = make<Node>();
         root_scope->name = "GLOBAL";
         root_scope->type = scope_id;
+        root_scope->is_scope = true;
         g_ptr<Node> current_scope = root_scope;
         list<g_value> stack{g_value()};
 
@@ -1247,6 +1248,20 @@ namespace GDSL {
                 } 
             }
         });
+        e_handlers[while_id] = [](Context& ctx) {
+            process_node(ctx, ctx.node->left());
+            bool has_dead = false;
+            for(auto c : ctx.node->left()->children) {
+                if(c->type == identifier_id && !c->has_qual(live_qual)) {
+                    has_dead = true;
+                    break;
+                }
+            }
+            if(has_dead) {
+                ctx.root->scopes.erase(ctx.node->scope());
+                ctx.node = nullptr;
+            }
+        };
 
         for_id = add_scoped_keyword("for", 2, [](Context& ctx) {
             process_node(ctx, ctx.node->children[0]); //Run var decl;
@@ -1265,6 +1280,20 @@ namespace GDSL {
         reg_pool.init({15, 14, 13, 12, 11, 10, 9}); //Because I'm on a Mac
         m_default_function = [&reg_pool](Context& ctx){
             backwards_sub_process(ctx);
+            // if(ctx.node->value->reg == -1) {
+            //     int r = reg_pool.alloc();
+            //     if(r != -1) {
+            //         ctx.node->value->reg = r;
+            //     } else { //Walking up and assigning a stack slot as address, the walk up is because of nesting
+            //         g_ptr<Node> func = find_scope(ctx.node->in_scope, [](g_ptr<Node> n) {
+            //             return n->owner && n->owner->type == func_decl_id;
+            //         });
+            //         if(func && func->owner) {
+            //             ctx.node->value->address = func->owner->value->address;
+            //             func->owner->value->address += ctx.node->value->size;
+            //         }
+            //     }
+            // }
             if(ctx.node->value->reg == -1) {
                 ctx.node->value->reg = reg_pool.alloc();
             }
@@ -1296,6 +1325,7 @@ namespace GDSL {
             ctx.flag = false;
         };
         m_handlers[func_decl_id] = [&reg_pool](Context& ctx) {
+            ctx.node->value->address = 0;
             reg_pool.init({15, 14, 13, 12, 11, 10, 9});
         };
 
@@ -1388,56 +1418,31 @@ namespace GDSL {
             emit_jump(back_offset);
         };
 
-        i_handlers[return_id] = [](Context& ctx) {
-            process_node(ctx, ctx.node->left());
-            int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
-            emit_copy(REG_RETURN_VALUE, result_reg);
-
-            log(emit_buffer.length(),": emitting return");
-            emit_return();
-
-
-            
-            ctx.flag = true;
-        };
-
         i_handlers[func_call_id] = [](Context& ctx) {
-
-            g_ptr<Node> current_scope = ctx.root; // or however you access current scope
-            int spill_count = 0;
-            // for(auto [key, val] : current_scope->value_table.entrySet()) {
-            //     if(val->reg != -1) {
-            //         emit_buffer << STR(val->reg, REG_FRAME_POINTER, spill_count);
-            //         spill_count++;
-            //     }
-            // }
-
-            for(auto [key, val] : current_scope->value_table.entrySet()) {
-                if(val->reg != -1) {
-                    if(!val->data) val->data = malloc(val->size);
-                    emit_save_to_ptr(val->reg, (uint64_t)val->data, val->size);
+            for(auto [key, val] : ctx.root->value_table.entrySet()) {
+                if(val->reg > 0) {
+                    int ot = (val->reg - 9);
+                    log(emit_buffer.length(),": emitting save to offset ",ot);
+                    emit_buffer << STR(val->reg, REG_SP, ot);
                 }
             }
-
-
 
             standard_sub_process(ctx);
 
-            emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2);
             g_ptr<Node> decl = ctx.node->scope()->owner;
             if(decl->value->loc == -1) process_node(ctx, decl);
             int offset = decl->value->loc - (int)emit_buffer.length();
+
             log(emit_buffer.length(),": emitting call to ",decl->value->loc," (offset ",offset,")");
             emit_call(offset);
-            emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
- 
-            for(auto [key, val] : current_scope->value_table.entrySet()) {
-                if(val->reg != -1) {
-                    emit_load_from_ptr(val->reg, (uint64_t)val->data, val->size);
+
+            for(auto [key, val] : ctx.root->value_table.entrySet()) {
+                if(val->reg > 0) {
+                    int ot = (val->reg - 9);
+                    log(emit_buffer.length(),": emitting load from offset ",ot);
+                    emit_buffer << LDR(val->reg, REG_SP, ot);
                 }
             }
-
-
 
             ctx.flag = false; //Because the return may have set a flag to return from the travel pass
         };
@@ -1445,46 +1450,86 @@ namespace GDSL {
         i_handlers[func_decl_id] = [](Context& ctx) {
             if(ctx.node->value->loc != -1) return;
             ctx.node->value->loc = emit_buffer.length();
-            emit_prologue();
+
+            log(emit_buffer.length(),": emitting prolouge STP");
+            emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2); //Offset is passed in units of 8
+            log(emit_buffer.length(),": emitting prolouge MOV 29 to SP");
+            emit_buffer << 0x910003FD; //MOV x29, sp
+
+            log(emit_buffer.length(),": emitting prolouge reserve 8 bytes");
+            emit_buffer << SUB_sp(64);
+
             standard_travel_pass(ctx.node->scope());
-            emit_epilogue();
+
+            log(emit_buffer.length(),": emitting epilouge MOV SP to 29");
+            emit_buffer << 0x910003BF; // MOV sp, x29  (ADD sp, x29, #0)
+            log(emit_buffer.length(),": emitting epilouge LDP");
+            emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
+            emit_return();
         };
+
+        i_handlers[return_id] = [](Context& ctx) {
+            process_node(ctx, ctx.node->left());
+            int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
+            emit_copy(REG_RETURN_VALUE, result_reg);
+
+            log(emit_buffer.length(),": emitting epilouge MOV SP to 29");
+            emit_buffer << 0x910003BF; // MOV sp, x29  (ADD sp, x29, #0)
+            log(emit_buffer.length(),": emitting epilouge LDP");
+            emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
+            emit_return();
+
+            ctx.flag = true;
+        };
+
         i_handlers[print_id] = [](Context& ctx) {
             for(auto c : ctx.node->children) {
                 if(c->value->reg != -1) {
-                    emit_buffer << MOV_reg(0, c->value->reg, 0);
-                    
-                    // proper x30 save using stack
-                    emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2);
-                    emit_buffer << 0x910003FD; // MOV x29, sp
-        
                     for(auto [key, val] : ctx.root->value_table.entrySet()) {
-                        if(val->reg != -1) {
-                            if(!val->data) val->data = malloc(val->size);
-                            emit_save_to_ptr(val->reg, (uint64_t)val->data, val->size);
+                        if(val->reg > 0) {
+                            int ot = (val->reg - 9);
+                            log(emit_buffer.length(),": emitting save to offset ",ot);
+                            emit_buffer << STR(val->reg, REG_SP, ot);
                         }
                     }
-        
+                    emit_buffer << MOV_reg(0, c->value->reg, 0);
                     emit_load_64(LEFT_REG, (uint64_t)&jit_print_int);
                     emit_call_register(LEFT_REG);
-        
                     for(auto [key, val] : ctx.root->value_table.entrySet()) {
-                        if(val->reg != -1) {
-                            emit_load_from_ptr(val->reg, (uint64_t)val->data, val->size);
+                        if(val->reg > 0) {
+                            int ot = (val->reg - 9);
+                            log(emit_buffer.length(),": emitting load from offset ",ot);
+                            emit_buffer << LDR(val->reg, REG_SP, ot);
                         }
                     }
-        
-                    emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
                 }
             }
         };
-
+        
         size_t jint_id = add_function("jint",[](Context& ctx){});
-        i_handlers[jint_id] = [](Context& ctx){
-            emit_buffer << STR(REG_LINK, REG_FRAME_POINTER, 0);
-            emit_load_64(LEFT_REG, (uint64_t)&jint);
-            emit_call_register(LEFT_REG);
-            emit_buffer << LDR(REG_LINK, REG_FRAME_POINTER, 0);  
+        i_handlers[jint_id] = [](Context& ctx) {
+                for(auto [key, val] : ctx.root->value_table.entrySet()) {
+                    if(val->reg > 0) {
+                        int ot = (val->reg - 9);
+                        log(emit_buffer.length(),": emitting save to offset ",ot);
+                        emit_buffer << STR(val->reg, REG_SP, ot);
+                    }
+                }
+                emit_buffer << MOV_reg(0, REG_FRAME_POINTER, 1);
+                emit_load_64(LEFT_REG, (uint64_t)&jit_print_int);
+                emit_call_register(LEFT_REG);
+
+                emit_buffer << MOV_from_sp(0);
+                emit_load_64(LEFT_REG, (uint64_t)&jit_print_int);
+                emit_call_register(LEFT_REG);
+
+                for(auto [key, val] : ctx.root->value_table.entrySet()) {
+                    if(val->reg > 0) {
+                        int ot = (val->reg - 9);
+                        log(emit_buffer.length(),": emitting load from offset ",ot);
+                        emit_buffer << LDR(val->reg, REG_SP, ot);
+                    }
+                }
         };
 
         size_t jont_id = add_function("jont",[](Context& ctx){});
@@ -1515,45 +1560,45 @@ namespace GDSL {
         span2->add_line("TOKENIZE STAGE");
         span2->log_everything = true;
 
-        //print("TOKENIZE");
-        list<g_ptr<Node>> tokens = tokenize(code);
-        span2->end_line();
-        span2->add_line("A STAGE");
-        // print("A STAGE");
-        start_stage(&a_handlers,a_parse_function);
-        list<g_ptr<Node>> nodes = parse_tokens(tokens);
-        a_pass_resolve_keywords(nodes);
-        // for(auto n : nodes) {
-        //     print(n->to_string());
-        // }
+        // //print("TOKENIZE");
+        // list<g_ptr<Node>> tokens = tokenize(code);
+        // span2->end_line();
+        // span2->add_line("A STAGE");
+        // // print("A STAGE");
+        // start_stage(&a_handlers,a_parse_function);
+        // list<g_ptr<Node>> nodes = parse_tokens(tokens);
+        // a_pass_resolve_keywords(nodes);
+        // // for(auto n : nodes) {
+        // //     print(n->to_string());
+        // // }
 
-        // print("S STAGE");
-        span2->end_line();
-        span2->add_line("S STAGE");
-        start_stage(&s_handlers,s_default_function);
-        g_ptr<Node> root = parse_scope(nodes);
+        // // print("S STAGE");
+        // span2->end_line();
+        // span2->add_line("S STAGE");
+        // start_stage(&s_handlers,s_default_function);
+        // g_ptr<Node> root = parse_scope(nodes);
 
-        //print(root->to_string(0,0,true));
+        // //print(root->to_string(0,0,true));
 
-        // print("T STAGE");
-        span2->end_line();
-        span2->add_line("T STAGE");
-        start_stage(&t_handlers,t_default_function);
-        standard_resolving_pass(root);
+        // // print("T STAGE");
+        // span2->end_line();
+        // span2->add_line("T STAGE");
+        // start_stage(&t_handlers,t_default_function);
+        // standard_resolving_pass(root);
 
-        //print("D STAGE");
-        span2->end_line();
-        span2->add_line("D STAGE");
-        start_stage(&d_handlers,d_default_function);
-        discover_symbols(root);
+        // //print("D STAGE");
+        // span2->end_line();
+        // span2->add_line("D STAGE");
+        // start_stage(&d_handlers,d_default_function);
+        // discover_symbols(root);
 
-        //print("R STAGE");
-        span2->end_line();
-        span2->add_line("R STAGE");
-        start_stage(&r_handlers,r_default_function);
-        standard_resolving_pass(root);
+        // //print("R STAGE");
+        // span2->end_line();
+        // span2->add_line("R STAGE");
+        // start_stage(&r_handlers,r_default_function);
+        // standard_resolving_pass(root);
 
-        #define EMIT 0
+        #define EMIT 1
 
         #if EMIT
             // span2->end_line();
@@ -1561,10 +1606,14 @@ namespace GDSL {
             // start_stage(&e_handlers,e_default_function);
             // standard_backwards_pass(root);
 
-            span2->end_line();
-            span2->add_line("M STAGE");
-            start_stage(&m_handlers,m_default_function);
-            memory_backwards_pass(root);
+            // span2->end_line();
+            // span2->add_line("M STAGE");
+            // start_stage(&m_handlers,m_default_function);
+            // memory_backwards_pass(root);
+
+            // serialize_node(root);
+            // saveBinary("savetest.wub");
+            g_ptr<Node> root = loadBinary("savetest.wub");
         #endif
 
         g_ptr<Node> main_func = nullptr;
@@ -1579,26 +1628,10 @@ namespace GDSL {
             span2->end_line();
             span2->add_line("I STAGE");
             start_stage(&i_handlers,i_default_function);
-
-            void* safe_ptr =  malloc(24);
-            emit_load_64(REG_FRAME_POINTER,(uint64_t)safe_ptr);
-
             int jump_placeholder = emit_buffer.length();
             emit_buffer << B(0); 
-
-            for(auto c : root->children) {
-                if(c->type == func_decl_id && c->name != "main") {
-                    Context ctx;
-                    ctx.node = c;
-                    ctx.root = root;
-                    process_node(ctx, c);
-                }
-            }
-
-            int main_loc = emit_buffer.length();
-            emit_buffer[jump_placeholder] = B(main_loc - jump_placeholder);
-
-            standard_travel_pass(main_func?main_func:root);
+            standard_travel_pass(root);
+            emit_buffer[jump_placeholder] = B(main_func->owner->value->loc - jump_placeholder);
         #endif
         span2->end_line();
 
@@ -1618,10 +1651,10 @@ namespace GDSL {
         start_stage(&x_handlers,x_default_function);
 
         #if EMIT
-            // Move result into return register
-            emit_buffer << MOV_reg(0, 9, 0);
-            // Return
-            emit_buffer << RET();
+            // // Move result into return register
+            // emit_buffer << MOV_reg(0, 9, 0);
+            // // Return
+            // emit_buffer << RET();
 
             // Create executable buffer
             size_t byte_size = emit_buffer.length() * sizeof(uint32_t);
@@ -1655,12 +1688,12 @@ namespace GDSL {
         sigemptyset(&sa.sa_mask);
         sigaction(SIGILL, &sa, nullptr);
 
-        // struct sigaction sa2;
-        // sa2.sa_sigaction = sigsegv_handler;
-        // sa2.sa_flags = SA_SIGINFO;
-        // sigemptyset(&sa2.sa_mask);
-        // sigaction(SIGSEGV, &sa2, nullptr);
-        // sigaction(SIGBUS, &sa2, nullptr);
+        struct sigaction sa2;
+        sa2.sa_sigaction = sigsegv_handler;
+        sa2.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa2.sa_mask);
+        sigaction(SIGSEGV, &sa2, nullptr);
+        sigaction(SIGBUS, &sa2, nullptr);
 
         jit_buf_start = buf;
         jit_buf_size = byte_size;
@@ -1691,7 +1724,6 @@ namespace GDSL {
         print("Exec time: ",exec_time);
 
         print("==DONE==");
-
 
         // auto now = std::chrono::system_clock::now();
         // auto t = std::chrono::system_clock::to_time_t(now);

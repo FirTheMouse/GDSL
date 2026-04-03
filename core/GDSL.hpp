@@ -6,11 +6,11 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 0
+#define PRINT_ALL 1
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language
-//TAST: Tokenize, assemble, scope, type.
+//TAST: Transform, assemble, scope, type.
 //DRE: Discover, resolve, evaluate
 //MIX: Model, interpret, execute
 
@@ -56,14 +56,6 @@ std::string ptr_to_string(void* ptr) {
     return ptr_to_string((uint64_t)ptr);
 }
 
-#ifndef MAX_TYPES
-    #define MAX_TYPES 1024
-#endif
-
-#ifndef HANDLER_COUNT
-    #define HANDLER_COUNT 3
-#endif
-
 map<uint32_t,std::string> labels;
 
 static std::string fallback = "[undefined]";
@@ -83,6 +75,7 @@ static std::string data_to_string(uint32_t type,void* data) {
 
 class Node;
 class Value;
+struct Qual;
 
 struct Qual {
     Qual() {}
@@ -97,6 +90,9 @@ struct Qual {
     Qual* parent = nullptr;
     g_ptr<Value> value = nullptr;
     bool mute = false;
+    int save_idx = -1;
+
+
 };
 
 static int _ctx_dummy_index = 0;
@@ -126,7 +122,7 @@ struct Context {
 
 
 
-class Value : public Object {
+class Value : public q_object {
 public:
     Value() {}
     Value(uint32_t _type) : type(_type) {}
@@ -139,6 +135,7 @@ public:
     int address = 0;
     int reg = -1;
     int loc = -1;
+    int save_idx = -1;
     size_t size = 0;
     int sub_size = 0;
     list<Qual> quals;
@@ -258,7 +255,7 @@ public:
 g_ptr<Value> fallback_value = nullptr;
 
 //Single unified Node for everything
-class Node : public Object {
+class Node : public q_object {
 public:
     Node() {
         value = make<Value>();
@@ -279,6 +276,10 @@ public:
     Node* parent = nullptr;
     Node* owner = nullptr;
     Node* in_scope = nullptr;
+    bool is_scope = false;
+    std::string opt_str;
+
+    int save_idx = -1;
 
 
     const inline g_ptr<Node> left() { 
@@ -365,6 +366,7 @@ public:
     g_ptr<Node> spawn_sub_scope() {
         g_ptr<Node> new_node = make<Node>();
         new_node->parent = this;
+        new_node->is_scope = true;
         scopes << new_node;
         return new_node; 
     }
@@ -438,8 +440,6 @@ public:
         }
         return val;
     }
-
-    std::string opt_str;
 
     std::string info() {
         std::string to_return = "";
@@ -516,7 +516,6 @@ public:
         return to_return;
     }
 };
-
 
 using Handler = std::function<void(Context&)>;
 
@@ -1030,6 +1029,7 @@ uint32_t RET() {
 }
 //Return from the current function
 void emit_return() {
+    log(emit_buffer.length(),": emitting return");
     emit_buffer << RET();
 }
 
@@ -1094,29 +1094,29 @@ static void sigill_handler(int sig, siginfo_t* info, void* ctx) {
     exit(1);
 }
 
-// static void sigsegv_handler(int sig, siginfo_t* info, void* ctx) {
-//     ucontext_t* uc = (ucontext_t*)ctx;
-//     uint64_t pc = uc->uc_mcontext->__ss.__pc;
-//     uint64_t sp = uc->uc_mcontext->__ss.__sp;
-//     uint64_t x29 = uc->uc_mcontext->__ss.__x[29];
-//     uint64_t x30 = uc->uc_mcontext->__ss.__x[30];
+static void sigsegv_handler(int sig, siginfo_t* info, void* ctx) {
+    ucontext_t* uc = (ucontext_t*)ctx;
+    uint64_t pc = uc->uc_mcontext->__ss.__pc;
+    uint64_t sp = uc->uc_mcontext->__ss.__sp;
+    // uint64_t x29 = uc->uc_mcontext->__ss.__x[29];
+    // uint64_t x30 = uc->uc_mcontext->__ss.__x[30];
     
-//     print("SIGSEGV/SIGBUS at PC: 0x", std::hex, pc);
-//     print("SP: 0x", sp, " X29: 0x", x29, " X30: 0x", x30);
+    print("SIGSEGV/SIGBUS at PC: 0x", std::hex, pc);
+    //print("SP: 0x", sp, " X29: 0x", x29, " X30: 0x", x30);
     
-//     if(jit_buf_start) {
-//         uint64_t offset = pc - (uint64_t)jit_buf_start;
-//         int instruction_index = offset / 4;
-//         print("Buffer offset: ", std::dec, instruction_index);
-//     }
+    if(jit_buf_start) {
+        uint64_t offset = pc - (uint64_t)jit_buf_start;
+        int instruction_index = offset / 4;
+        print("Buffer offset: ", std::dec, instruction_index);
+    }
     
-//     // Print all registers
-//     for(int i = 0; i < 30; i++) {
-//         print("x", i, ": 0x", std::hex, uc->uc_mcontext->__ss.__x[i]);
-//     }
+    // Print all registers
+    for(int i = 0; i < 30; i++) {
+        print("x", i, ": 0x", std::hex, uc->uc_mcontext->__ss.__x[i]);
+    }
     
-//     exit(1);
-// }
+    exit(1);
+}
 
 //Used to read the flags
 uint32_t CSET(int rd, int cond, int sf = 0) {
@@ -1225,11 +1225,14 @@ uint32_t LDP(int rt1, int rt2, int rn, int imm7) {
 }
 
 void emit_prologue() {
+    log(emit_buffer.length(),": emitting prolouge STP");
     emit_buffer << STP(REG_FRAME_POINTER, REG_LINK, REG_SP, -2); //Offset is passed in units of 8
+    log(emit_buffer.length(),": emitting prolouge MOV 29 to SP");
     emit_buffer << 0x910003FD; //MOV x29, sp
 }
 
 void emit_epilogue() {
+    log(emit_buffer.length(),": emitting epilouge LDP");
     emit_buffer << LDP(REG_FRAME_POINTER, REG_LINK, REG_SP, 2);
     emit_return();
 }
@@ -1253,6 +1256,353 @@ void print_emit_buffer() {
         uint32_t instr = emit_buffer[i];
         print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec);
     }
+}
+
+
+
+
+list<g_ptr<Node>> node_buffer;
+list<g_ptr<Value>> value_buffer;
+list<Qual*> qual_buffer;
+void serialize_qual(Qual& qual);
+void serialize_value(g_ptr<Value> value);
+
+void serialize_node(g_ptr<Node> node) {
+    if(node->save_idx==-1) {
+        node->save_idx = node_buffer.length();
+        node_buffer << node;
+
+        if(node->value) serialize_value(node->value);
+
+        for(auto e : node->value_table.entrySet()) {
+            serialize_value(e.value);
+        }
+
+        for(auto& q : node->quals) {
+            serialize_qual(q);
+        }
+
+        list<g_ptr<Node>> to_serialize; 
+        to_serialize << node->children;
+        to_serialize << node->scopes;
+        for(auto s: to_serialize) {
+            serialize_node(s);
+        }
+    }
+}
+
+void serialize_value(g_ptr<Value> value) {
+    if(value->save_idx == -1) {
+        value->save_idx = value_buffer.length();
+        value_buffer << value;
+        
+        for(auto& q : value->quals) {
+            serialize_qual(q);
+        }
+        for(auto v : value->sub_values) {
+            serialize_value(v);
+        }
+
+        if(value->type_scope) serialize_node(value->type_scope);
+    }
+}
+
+void serialize_qual(Qual& qual) {
+    if(qual.save_idx==-1) {
+        qual.save_idx = qual_buffer.length();
+        qual_buffer << &qual;
+
+        if(qual.value) serialize_value(qual.value);
+        if(qual.parent) serialize_qual(*qual.parent);
+    }
+}
+
+template<typename T>
+void write_raw(std::ostream& out, const T& val) {
+    out.write(reinterpret_cast<const char*>(&val), sizeof(T));
+}
+
+void write_string(std::ostream& out, const std::string& s) {
+    uint32_t len = s.length();
+    write_raw(out, len);
+    out.write(s.data(), len);
+}
+
+template<typename T>
+T read_raw(std::istream& in) {
+    T val;
+    in.read(reinterpret_cast<char*>(&val), sizeof(T));
+    return val;
+}
+
+std::string read_string(std::istream& in) {
+    uint32_t len = read_raw<uint32_t>(in);
+    std::string s(len, '\0');
+    in.read(s.data(), len);
+    return s;
+}
+
+void write_qual(Qual& qual, std::ostream& out) {
+    write_raw(out, qual.type);
+    write_raw(out, qual.sub_type);
+    write_raw(out, qual.mute);
+    write_raw<int>(out, qual.value ? qual.value->save_idx : -1);
+    write_raw<int>(out, qual.parent ? qual.parent->save_idx : -1);
+}
+
+void write_value(g_ptr<Value> value, std::ostream& out) {
+    write_raw(out, value->type);
+    write_raw(out, value->sub_type);
+    write_raw(out, value->size);
+    write_raw(out, value->sub_size);
+    write_raw(out, value->reg);
+    write_raw(out, value->address);
+    write_raw(out, value->loc);
+
+    bool has_data = value->data != nullptr;
+    write_raw(out, has_data);
+    if(has_data) {
+        out.write((const char*)value->data, value->size);
+    }
+
+    write_raw<uint32_t>(out, value->quals.length());
+    for(auto& q : value->quals) {
+        write_qual(q, out);
+    }
+
+    write_raw<uint32_t>(out, value->sub_values.length());
+    for(auto v : value->sub_values) {
+        write_raw<int>(out, v->save_idx);
+    }
+
+    write_raw<int>(out, value->type_scope ? value->type_scope->save_idx : -1);
+
+    //We don't have anything to serilize types right now, so just storing a -1 in its place.
+    write_raw<int>(out, -1);
+}
+
+void write_node(g_ptr<Node> node, std::ostream& out) {
+    write_raw(out, node->type);
+    write_string(out, node->name);
+    write_string(out, node->opt_str);
+    write_raw(out, node->is_scope);
+
+    write_raw<int>(out, node->value ? node->value->save_idx : -1);
+
+    write_raw<uint32_t>(out, node->children.length());
+    for(auto c : node->children) {
+        write_raw<int>(out, c->save_idx);
+    }
+
+    write_raw<uint32_t>(out, node->scopes.length());
+    for(auto s : node->scopes) {
+        write_raw<int>(out, s->save_idx);
+    }
+
+    write_raw<uint32_t>(out, node->quals.length());
+    for(auto& q : node->quals) {
+        write_qual(q, out);
+    }
+
+    write_raw<uint32_t>(out, node->value_table.size());
+    for(auto e : node->value_table.entrySet()) {
+        write_string(out, e.key);
+        write_raw<int>(out, e.value ? e.value->save_idx : -1);
+    }
+
+    write_raw<uint32_t>(out, node->node_table.size());
+    for(auto e : node->node_table.entrySet()) {
+        write_string(out, e.key);
+        write_raw<int>(out, e.value ? e.value->save_idx : -1);
+    }
+
+    write_raw<int>(out, node->parent ? node->parent->save_idx : -1);
+    write_raw<int>(out, node->owner ? node->owner->save_idx : -1);
+    write_raw<int>(out, node->in_scope ? node->in_scope->save_idx : -1);
+}
+
+void read_qual(Qual* q, std::istream& in, map<uint32_t,uint32_t>& id_remap) {
+    q->type = id_remap.getOrDefault(read_raw<uint32_t>(in), (unsigned int)0);
+    q->sub_type = id_remap.getOrDefault(read_raw<uint32_t>(in), (unsigned int)0);
+    q->mute = read_raw<bool>(in);
+    int value_idx = read_raw<int>(in);
+    q->value = value_idx != -1 ? value_buffer[value_idx] : nullptr;
+    int parent_idx = read_raw<int>(in);
+    q->parent = parent_idx != -1 ? qual_buffer[parent_idx] : nullptr;
+}
+
+void read_value(g_ptr<Value> value, std::istream& in, map<uint32_t,uint32_t>& id_remap) {
+    value->type = id_remap.getOrDefault(read_raw<uint32_t>(in), (unsigned int)0);
+    value->sub_type = id_remap.getOrDefault(read_raw<uint32_t>(in), (unsigned int)0);
+    value->size = read_raw<size_t>(in);
+    value->sub_size = read_raw<int>(in);
+    value->reg = read_raw<int>(in);
+    value->address = read_raw<int>(in);
+    value->loc = read_raw<int>(in);
+
+    bool has_data = read_raw<bool>(in);
+    if(has_data) {
+        value->data = malloc(value->size);
+        in.read((char*)value->data, value->size);
+    }
+
+    uint32_t qual_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < qual_count; i++) {
+        Qual q;
+        read_qual(&q, in, id_remap);
+        value->quals << q;
+    }
+
+    uint32_t sub_value_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < sub_value_count; i++) {
+        int idx = read_raw<int>(in);
+        if(idx != -1) value->sub_values << value_buffer[idx];
+    }
+
+    int type_scope_idx = read_raw<int>(in);
+    value->type_scope = type_scope_idx != -1 ? node_buffer[type_scope_idx].getPtr() : nullptr;
+
+    read_raw<int>(in); //Placeholder for store
+}
+
+void read_node(g_ptr<Node> node, std::istream& in, map<uint32_t,uint32_t>& id_remap) {
+    node->type = id_remap.getOrDefault(read_raw<uint32_t>(in), (unsigned int)0);
+    node->name = read_string(in);
+    node->opt_str = read_string(in);
+    node->is_scope = read_raw<bool>(in);
+
+    int value_idx = read_raw<int>(in);
+    node->value = value_idx != -1 ? value_buffer[value_idx] : nullptr;
+
+    uint32_t child_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < child_count; i++) {
+        int idx = read_raw<int>(in);
+        if(idx != -1) node->children << node_buffer[idx];
+    }
+
+    uint32_t scope_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < scope_count; i++) {
+        int idx = read_raw<int>(in);
+        if(idx != -1) node->scopes << node_buffer[idx];
+    }
+
+    uint32_t qual_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < qual_count; i++) {
+        Qual q;
+        read_qual(&q, in, id_remap);
+        node->quals << q;
+    }
+
+    uint32_t value_table_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < value_table_count; i++) {
+        std::string key = read_string(in);
+        int idx = read_raw<int>(in);
+        if(idx != -1) node->value_table.put(key, value_buffer[idx]);
+    }
+
+    uint32_t node_table_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < node_table_count; i++) {
+        std::string key = read_string(in);
+        int idx = read_raw<int>(in);
+        if(idx != -1) node->node_table.put(key, node_buffer[idx]);
+    }
+
+    int parent_idx = read_raw<int>(in);
+    node->parent = parent_idx != -1 ? node_buffer[parent_idx].getPtr() : nullptr;
+
+    int owner_idx = read_raw<int>(in);
+    node->owner = owner_idx != -1 ? node_buffer[owner_idx].getPtr() : nullptr;
+
+    int in_scope_idx = read_raw<int>(in);
+    node->in_scope = in_scope_idx != -1 ? node_buffer[in_scope_idx].getPtr() : nullptr;
+}
+
+void saveBinary(std::ostream& out) {
+    write_raw<uint32_t>(out, labels.size());
+    for(auto& e : labels.entrySet()) {
+        write_raw<uint32_t>(out, e.key);
+        write_string(out, e.value);
+    }
+
+    write_raw<uint32_t>(out, value_buffer.length());
+    write_raw<uint32_t>(out, qual_buffer.length());
+    write_raw<uint32_t>(out, node_buffer.length());
+
+    for(auto v : value_buffer) write_value(v, out);
+    for(auto q : qual_buffer) write_qual(*q, out);
+    for(auto n : node_buffer) write_node(n, out);
+
+    node_buffer.clear();
+    value_buffer.clear();
+    qual_buffer.clear();
+}
+
+g_ptr<Node> loadBinary(std::istream& in) {
+    node_buffer.clear();
+    value_buffer.clear();
+    qual_buffer.clear();
+
+    //Remap the ids into a map for ease of acess 
+    map<uint32_t, uint32_t> id_remap;
+    uint32_t label_count = read_raw<uint32_t>(in);
+    for(uint32_t i = 0; i < label_count; i++) {
+        uint32_t saved_id = read_raw<uint32_t>(in);
+        std::string str = read_string(in);
+        bool already_exists = false;
+        for(auto e : labels.entrySet()) {
+            if(e.value == str) { 
+                id_remap.put(saved_id, e.key); 
+                already_exists = true;
+                break; 
+            }
+        }
+        if(!already_exists) {
+            id_remap.put(saved_id,reg_id(str));
+        }
+    }
+
+    uint32_t value_count = read_raw<uint32_t>(in);
+    uint32_t qual_count = read_raw<uint32_t>(in);
+    uint32_t node_count = read_raw<uint32_t>(in);
+
+    //Pre allocate
+    for(uint32_t i = 0; i < value_count; i++) {
+        auto v = make<Value>();
+        v->save_idx = i;
+        value_buffer << v;
+    }
+    for(uint32_t i = 0; i < qual_count; i++) {
+        Qual* q = new Qual();
+        q->save_idx = i;
+        qual_buffer << q;
+    }
+    for(uint32_t i = 0; i < node_count; i++) {
+        auto n = make<Node>();
+        n->save_idx = i;
+        node_buffer << n;
+    }
+
+    //Annotate
+    for(uint32_t i = 0; i < value_count; i++) read_value(value_buffer[i], in, id_remap);
+    for(uint32_t i = 0; i < qual_count; i++) read_qual(qual_buffer[i], in, id_remap);
+    for(uint32_t i = 0; i < node_count; i++) read_node(node_buffer[i], in, id_remap);
+
+    return node_buffer.empty() ? nullptr : node_buffer[0];
+}
+
+void saveBinary(const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) throw std::runtime_error("Can't write to file: " + path);
+    saveBinary(out);
+    out.close();
+}
+
+g_ptr<Node> loadBinary(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("Can't read from file: " + path);
+    g_ptr<Node> to_return = loadBinary(in);
+    in.close();
+    return to_return;
 }
 
 

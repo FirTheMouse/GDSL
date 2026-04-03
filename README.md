@@ -31,7 +31,7 @@ You can turn PRINT_ALL on/off in the kernel to see more or less.
 
 If you're interested in building your own language with GDSL, or creating a module for it, the process can be split into 3 stages.
 
-TAST: Tokenize, assemble, scope, type. This is where the structure of your language gets built.
+TAST: Transform, assemble, scope, type. This is where the structure of your language gets built.
 
 DRE: Discover, resolve, evaluate. Where most of the complex logic lives operating on the finished structure.
 

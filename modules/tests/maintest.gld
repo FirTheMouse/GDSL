@@ -1,11 +1,18 @@
-
-int add(int val){
-    val = val+10;
-    return val;
-}
-
 int main() {
-    int i = 8;
-    i = add(i);
-    print(i);
+    int i = 12;
+    int b = 6;
+    int d = 3;
+
+    if(b>3) {
+        d = b;
+    } else {
+        d = i;
+    }
+
+    while(d<6) {
+        d = d+1;
+    }
+    int c = b+i;
+    print(c);
+    return c;
 }

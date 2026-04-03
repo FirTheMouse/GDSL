@@ -445,6 +445,7 @@ namespace GDSL {
         start_stage(&s_handlers,s_default_function);
         g_ptr<Node> root = make<Node>();
         root->name = "GLOBAL";
+        root->is_scope = true;
         for(auto n : nodes) {
             n->place_in_scope(root.getPtr());
         }

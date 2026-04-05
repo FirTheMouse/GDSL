@@ -200,6 +200,15 @@ namespace GDSL {
         return id;
     }
 
+    //To prove a point about MLIR's tutourial example
+    std::function<void(Context&)> make_involution(size_t involute_id){
+        return [involute_id](Context& ctx){
+            if(ctx.node->children[0]->type == involute_id) {
+                ctx.node->copy(ctx.node->children[0]->children[0]);
+            }
+        };
+    };
+
     #define LOG_A_PARSE 0
 
     g_ptr<Node> a_parse_expression(Context& ctx, int min_bp, g_ptr<Node> left_node = nullptr) {
@@ -1550,6 +1559,7 @@ namespace GDSL {
         };
 
 
+
         span->print_on_line_end = false; //While things aren't crashing
         //span->log_everything = true; //While things are crashing
 
@@ -1560,60 +1570,56 @@ namespace GDSL {
         span2->add_line("TOKENIZE STAGE");
         span2->log_everything = true;
 
-        // //print("TOKENIZE");
-        // list<g_ptr<Node>> tokens = tokenize(code);
-        // span2->end_line();
-        // span2->add_line("A STAGE");
-        // // print("A STAGE");
-        // start_stage(&a_handlers,a_parse_function);
-        // list<g_ptr<Node>> nodes = parse_tokens(tokens);
-        // a_pass_resolve_keywords(nodes);
-        // // for(auto n : nodes) {
-        // //     print(n->to_string());
-        // // }
+        //print("TOKENIZE");
+        list<g_ptr<Node>> tokens = tokenize(code);
+        span2->end_line();
+        span2->add_line("A STAGE");
+        // print("A STAGE");
+        start_stage(&a_handlers,a_parse_function);
+        list<g_ptr<Node>> nodes = parse_tokens(tokens);
+        a_pass_resolve_keywords(nodes);
+        // for(auto n : nodes) {
+        //     print(n->to_string());
+        // }
 
-        // // print("S STAGE");
-        // span2->end_line();
-        // span2->add_line("S STAGE");
-        // start_stage(&s_handlers,s_default_function);
-        // g_ptr<Node> root = parse_scope(nodes);
+        // print("S STAGE");
+        span2->end_line();
+        span2->add_line("S STAGE");
+        start_stage(&s_handlers,s_default_function);
+        g_ptr<Node> root = parse_scope(nodes);
 
-        // //print(root->to_string(0,0,true));
+        //print(root->to_string(0,0,true));
 
-        // // print("T STAGE");
-        // span2->end_line();
-        // span2->add_line("T STAGE");
-        // start_stage(&t_handlers,t_default_function);
-        // standard_resolving_pass(root);
+        // print("T STAGE");
+        span2->end_line();
+        span2->add_line("T STAGE");
+        start_stage(&t_handlers,t_default_function);
+        standard_resolving_pass(root);
 
-        // //print("D STAGE");
-        // span2->end_line();
-        // span2->add_line("D STAGE");
-        // start_stage(&d_handlers,d_default_function);
-        // discover_symbols(root);
+        //print("D STAGE");
+        span2->end_line();
+        span2->add_line("D STAGE");
+        start_stage(&d_handlers,d_default_function);
+        discover_symbols(root);
 
-        // //print("R STAGE");
-        // span2->end_line();
-        // span2->add_line("R STAGE");
-        // start_stage(&r_handlers,r_default_function);
-        // standard_resolving_pass(root);
+        //print("R STAGE");
+        span2->end_line();
+        span2->add_line("R STAGE");
+        start_stage(&r_handlers,r_default_function);
+        standard_resolving_pass(root);
 
         #define EMIT 1
 
         #if EMIT
-            // span2->end_line();
-            // span2->add_line("E STAGE");
-            // start_stage(&e_handlers,e_default_function);
-            // standard_backwards_pass(root);
+            span2->end_line();
+            span2->add_line("E STAGE");
+            start_stage(&e_handlers,e_default_function);
+            standard_backwards_pass(root);
 
-            // span2->end_line();
-            // span2->add_line("M STAGE");
-            // start_stage(&m_handlers,m_default_function);
-            // memory_backwards_pass(root);
-
-            // serialize_node(root);
-            // saveBinary("savetest.wub");
-            g_ptr<Node> root = loadBinary("savetest.wub");
+            span2->end_line();
+            span2->add_line("M STAGE");
+            start_stage(&m_handlers,m_default_function);
+            memory_backwards_pass(root);
         #endif
 
         g_ptr<Node> main_func = nullptr;

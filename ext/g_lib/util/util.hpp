@@ -129,5 +129,30 @@ inline std::string readFile(const std::string& filename) {
     writeFile(filename, text);
   }
 
+  template<typename T>
+  inline void write_raw(std::ostream& out, const T& val) {
+      out.write(reinterpret_cast<const char*>(&val), sizeof(T));
+  }
+
+  inline void write_string(std::ostream& out, const std::string& s) {
+      uint32_t len = s.length();
+      write_raw(out, len);
+      out.write(s.data(), len);
+  }
+
+  template<typename T>
+  inline T read_raw(std::istream& in) {
+      T val;
+      in.read(reinterpret_cast<char*>(&val), sizeof(T));
+      return val;
+  }
+
+  inline std::string read_string(std::istream& in) {
+      uint32_t len = read_raw<uint32_t>(in);
+      std::string s(len, '\0');
+      in.read(s.data(), len);
+      return s;
+  }
+
 
 

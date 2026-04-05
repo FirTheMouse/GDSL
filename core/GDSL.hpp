@@ -1317,31 +1317,6 @@ void serialize_qual(Qual& qual) {
     }
 }
 
-template<typename T>
-void write_raw(std::ostream& out, const T& val) {
-    out.write(reinterpret_cast<const char*>(&val), sizeof(T));
-}
-
-void write_string(std::ostream& out, const std::string& s) {
-    uint32_t len = s.length();
-    write_raw(out, len);
-    out.write(s.data(), len);
-}
-
-template<typename T>
-T read_raw(std::istream& in) {
-    T val;
-    in.read(reinterpret_cast<char*>(&val), sizeof(T));
-    return val;
-}
-
-std::string read_string(std::istream& in) {
-    uint32_t len = read_raw<uint32_t>(in);
-    std::string s(len, '\0');
-    in.read(s.data(), len);
-    return s;
-}
-
 void write_qual(Qual& qual, std::ostream& out) {
     write_raw(out, qual.type);
     write_raw(out, qual.sub_type);

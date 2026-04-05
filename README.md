@@ -14,6 +14,7 @@ From the main.cpp the chosen demo module can be commented/uncommented.
 Compile:
 
 g++ -std=c++17 -O2 -I. main.cpp -o gdsl
+./gdsl
 
 This has only been tested on a Mac, so Windows or Linux systems may require a different command. 
 

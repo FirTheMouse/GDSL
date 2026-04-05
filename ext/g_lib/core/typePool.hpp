@@ -9,7 +9,6 @@ public:
         free_stack_top.store(0);
     }
 
-    std::string type_name = "bullets";
     list<g_ptr<Object>> objects;
     list< std::function<void(g_ptr<Object>)> > init_funcs;
     list<int> free_ids;

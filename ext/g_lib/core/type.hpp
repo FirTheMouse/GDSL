@@ -53,6 +53,9 @@ public:
     list<_note> array; //Ordered array for usage of Type as a MultiArray
     list<_column> columns;
 
+    int save_idx = -1;
+    std::string type_name = "bullets";
+
     std::string make_table_string(int mode) {
         std::string table = "";
         if(columns.length()==0) return table;
@@ -450,6 +453,9 @@ static void write_type(g_ptr<Type> t, std::ostream& out) {
     write_raw<uint32_t>(out, t->notes.size());
     write_raw<uint32_t>(out, t->array.length());
 
+    write_raw<int>(out, t->save_idx);
+    write_string(out, t->type_name);
+
     //Columns
     for(int i = 0; i < t->columns.length(); i++) {
         _column& col = t->columns[i];
@@ -480,6 +486,9 @@ static void read_type(g_ptr<Type> t, std::istream& in) {
     uint32_t col_count   = read_raw<uint32_t>(in);
     uint32_t notes_count = read_raw<uint32_t>(in);
     uint32_t array_count = read_raw<uint32_t>(in);
+
+    t->save_idx = read_raw<int>(in);
+    t->type_name = read_string(in);
 
     //Columns
     for(uint32_t i = 0; i < col_count; i++) {
@@ -518,5 +527,12 @@ static g_ptr<Type> load_type(const std::string& path) {
     read_type(t,in);
     in.close();
     return t;
+}
+
+static void load_type(g_ptr<Type> t, const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if(!in) throw std::runtime_error("Can't read from file: " + path);
+    read_type(t,in);
+    in.close();
 }
 

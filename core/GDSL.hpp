@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../ext/g_lib/core/type.hpp"
+#include "../ext/g_lib/util/logger.hpp"
 #include <sys/mman.h>
 
 namespace GDSL {
@@ -221,7 +222,7 @@ public:
         + (type_scope?", has scope":"")
         + (size!=0?", size: "+std::to_string(size):"")
         + (address!=0?", address: "+std::to_string(address):"")
-        + (store?", store: "+store->type_name:"")
+        + (store?", has store":"")
         + (!sub_values.empty()?", sub: "+std::to_string(sub_values.length()):"");
         if(!quals.empty()) {
             to_return += ", Quals: ";
@@ -1264,8 +1265,10 @@ void print_emit_buffer() {
 list<g_ptr<Node>> node_buffer;
 list<g_ptr<Value>> value_buffer;
 list<Qual*> qual_buffer;
+list<g_ptr<Type>> type_buffer;
 void serialize_qual(Qual& qual);
 void serialize_value(g_ptr<Value> value);
+void serialize_type(g_ptr<Type> type);
 
 void serialize_node(g_ptr<Node> node) {
     if(node->save_idx==-1) {
@@ -1291,6 +1294,13 @@ void serialize_node(g_ptr<Node> node) {
     }
 }
 
+void serialize_type(g_ptr<Type> type) {
+    if(type->save_idx == -1) {
+        type->save_idx = type_buffer.length();
+        type_buffer << type;
+    }
+}
+
 void serialize_value(g_ptr<Value> value) {
     if(value->save_idx == -1) {
         value->save_idx = value_buffer.length();
@@ -1304,6 +1314,7 @@ void serialize_value(g_ptr<Value> value) {
         }
 
         if(value->type_scope) serialize_node(value->type_scope);
+        if(value->store) serialize_type(value->store);
     }
 }
 
@@ -1352,8 +1363,7 @@ void write_value(g_ptr<Value> value, std::ostream& out) {
 
     write_raw<int>(out, value->type_scope ? value->type_scope->save_idx : -1);
 
-    //We don't have anything to serilize types right now, so just storing a -1 in its place.
-    write_raw<int>(out, -1);
+    write_raw<int>(out, value->store ? value->store->save_idx : -1);
 }
 
 void write_node(g_ptr<Node> node, std::ostream& out) {
@@ -1437,7 +1447,8 @@ void read_value(g_ptr<Value> value, std::istream& in, map<uint32_t,uint32_t>& id
     int type_scope_idx = read_raw<int>(in);
     value->type_scope = type_scope_idx != -1 ? node_buffer[type_scope_idx].getPtr() : nullptr;
 
-    read_raw<int>(in); //Placeholder for store
+    int store_idx = read_raw<int>(in);
+    value->store = store_idx != -1 ? type_buffer[store_idx] : nullptr;
 }
 
 void read_node(g_ptr<Node> node, std::istream& in, map<uint32_t,uint32_t>& id_remap) {
@@ -1499,10 +1510,12 @@ void saveBinary(std::ostream& out) {
         write_string(out, e.value);
     }
 
+    write_raw<uint32_t>(out, type_buffer.length());
     write_raw<uint32_t>(out, value_buffer.length());
     write_raw<uint32_t>(out, qual_buffer.length());
     write_raw<uint32_t>(out, node_buffer.length());
 
+    for(auto t : type_buffer) write_type(t, out);
     for(auto v : value_buffer) write_value(v, out);
     for(auto q : qual_buffer) write_qual(*q, out);
     for(auto n : node_buffer) write_node(n, out);
@@ -1536,11 +1549,17 @@ g_ptr<Node> loadBinary(std::istream& in) {
         }
     }
 
+    uint32_t type_count = read_raw<uint32_t>(in);
     uint32_t value_count = read_raw<uint32_t>(in);
     uint32_t qual_count = read_raw<uint32_t>(in);
     uint32_t node_count = read_raw<uint32_t>(in);
 
     //Pre allocate
+    for(uint32_t i = 0; i < type_count; i++) {
+        auto t = make<Type>();
+        t->save_idx = i;
+        type_buffer << t;
+    }
     for(uint32_t i = 0; i < value_count; i++) {
         auto v = make<Value>();
         v->save_idx = i;
@@ -1558,6 +1577,7 @@ g_ptr<Node> loadBinary(std::istream& in) {
     }
 
     //Annotate
+    for(uint32_t i = 0; i < type_count; i++) read_type(type_buffer[i], in);
     for(uint32_t i = 0; i < value_count; i++) read_value(value_buffer[i], in, id_remap);
     for(uint32_t i = 0; i < qual_count; i++) read_qual(qual_buffer[i], in, id_remap);
     for(uint32_t i = 0; i < node_count; i++) read_node(node_buffer[i], in, id_remap);

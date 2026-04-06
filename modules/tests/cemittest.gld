@@ -1,5 +1,16 @@
+int add(int val) {
+    val = val+3;
+    return val;
+}
+
 int main() {
     int i = 0;
+    int d = 0;
+
+    while(d<6) {
+        d = d+1;
+    }
+
     if(i>2) {
         i = 8;
     } else {
@@ -7,5 +18,7 @@ int main() {
             i = i+1;
         }
     }
+    i = add(i);
     print(i);
+    return i;
 }

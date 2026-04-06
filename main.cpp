@@ -12,8 +12,8 @@ int main(int argc, char* argv[]) {
     // GDSL::test_module(path);
     //GDSL::test_module("modules/tests/lisptest.gld");
     //GDSL::test_module("modules/tests/ctest.gld");
-    //GDSL::test_module("modules/tests/cemittest.gld");
-    GDSL::test_module("modules/tests/maintest.gld");
+    GDSL::test_module("modules/tests/cemittest.gld");
+    //GDSL::test_module("modules/tests/maintest.gld");
 
     // g_ptr<Node> n = make<Node>();
     // n->value = make<Value>();

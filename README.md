@@ -17,15 +17,6 @@ g++ -std=c++17 -O2 -I. main.cpp -o gdsl
 ./gdsl
 
 This has only been tested on a Mac, so Windows or Linux systems may require a different command. 
-
-Run ctest (for GDSL-C):
-
-./gdsl ./modules/tests/ctest.gld
-
-Run lisptest (for GDSL-LISP):
-
-./gdsl ./modules/tests/lisptest.gld
-
 You can turn PRINT_ALL on/off in the kernel to see more or less.
 
 # Getting Started

@@ -1,5 +1,6 @@
 #include "../core/GDSL.hpp"
 #include "../modules/Q-AST.hpp"
+#include "../modules/Q-Arm64.hpp"
 #include "../modules/Q-Tokenizer.hpp"
 
 //A subset of C, the ctest.gld file shows of most of what this can do.
@@ -183,7 +184,9 @@ namespace GDSL {
                     ctx.node->value = ctx.node->in_scope->distribute_value(ctx.node->name, ctx.node->value);
                     ctx.node->children.clear();
 
-                    Qual marker(decl_id,true); //Make a muted qual marker
+                    g_ptr<Node> marker = make<Node>(); //Make a muted qual marker
+                    marker->type = decl_id;
+                    marker->mute = true;
                     ctx.node->value->quals << marker;
 
                 } else {
@@ -369,6 +372,7 @@ namespace GDSL {
     size_t identifier_id = reg_id("IDENTIFIER");
     size_t object_id = reg_id("OBJECT");
     size_t literal_id = reg_id("LITERAL");
+    size_t colon_id = add_token(':',"COLON");
     size_t end_id = add_token(';',"END");
     size_t function_id = reg_id("FUNCTION");
     size_t method_id = reg_id("METHOD");
@@ -515,11 +519,11 @@ namespace GDSL {
 
 
         t_handlers[to_prefix_id(typename_id)] = [](Context& ctx){
-            ctx.value->sub_type = ctx.qual.type;
-            ctx.value->type = ctx.qual.type;
-            ctx.value->size = ctx.qual.value->size;
-            if(ctx.qual.value->type_scope)
-                ctx.value->type_scope = ctx.qual.value->type_scope;
+            ctx.value->sub_type = ctx.qual->type;
+            ctx.value->type = ctx.qual->type;
+            ctx.value->size = ctx.qual->value->size;
+            if(ctx.qual->value->type_scope)
+                ctx.value->type_scope = ctx.qual->value->type_scope;
         };
 
 
@@ -967,7 +971,7 @@ namespace GDSL {
         scope_link_handlers.put(rangle_id,scope_link_handlers.get(identifier_id));
 
         t_handlers[identifier_id] = [](Context& ctx) {
-            log("Parsing an idenitifer:\n",ctx.node->to_string(1));
+            // log("Parsing an idenitifer:\n",ctx.node->to_string(1));
             g_ptr<Node> node = ctx.node;
             g_ptr<Value> decl_value = make<Value>();
             
@@ -979,12 +983,12 @@ namespace GDSL {
             int root_idx = -1;
             if(node->value_is_valid() && node->value->sub_type != 0) {
                 //log("I am a qualifier");
-                decl_value->quals << node->value->to_qual();
+                decl_value->quals << value_to_qual(node->value);
                 for(int i = 0; i < node->children.length(); i++) {
                     g_ptr<Node> c = node->children[i];
                     c->find_value_in_scope();
                     if(c->value_is_valid()) {
-                        decl_value->quals << c->value->to_qual();
+                        decl_value->quals << value_to_qual(c->value);
                     } else {
                         root_idx = i;
                         break;
@@ -997,7 +1001,7 @@ namespace GDSL {
                         g_ptr<Node> c = node->children[i];
                         c->find_value_in_scope();
                         if(c->value_is_valid()) {
-                            node->quals << c->value->to_qual();
+                            node->quals << value_to_qual(c->value);
                         } 
                     }
                     node->children = node->children.take(root_idx)->children;
@@ -1051,12 +1055,16 @@ namespace GDSL {
 
                     for(auto c : node->children) { //Parse inline quals for templates
                         if(c->value->type==0) {
-                            c->value->quals << Qual(typename_id,typename_id,c->value);
+                            g_ptr<Node> qual = make<Node>();
+                            qual->type = typename_id;
+                            qual->sub_type = typename_id;
+                            qual->value = c->value;
+                            c->value->quals << qual;
                             c->value->type = typename_id;
                             c->value->sub_type = typename_id;
                             c->in_scope = node->scope().getPtr();
                         } else if(c->value->type!=typename_id) {
-                            node->quals << c->value->to_qual();
+                            node->quals << value_to_qual(c->value);
                             node->children.erase(c);
                         }
                     }
@@ -1103,7 +1111,7 @@ namespace GDSL {
                 }
             }
 
-            log("Returning:\n",node->to_string(1));
+            //log("Returning:\n",node->to_string(1));
         };
 
         x_handlers[identifier_id] = [](Context& ctx){};
@@ -1111,7 +1119,12 @@ namespace GDSL {
         scope_precedence.put(lbrace_id, 10);
         scope_precedence.put(rbrace_id, -10);
 
+        // scope_precedence.put(lbracket_id, 10);
+        // scope_precedence.put(rbracket_id, -10);
+
         char_is_split.put(' ',true);
+        left_binding_power.put(colon_id, 4);
+        right_binding_power.put(colon_id, 9);
         tokenizer_state_functions.put(in_alpha_id,[](Context& ctx) {
             char c = ctx.source.at(ctx.index);
             if(char_is_split.getOrDefault(c,false)) {
@@ -1127,13 +1140,15 @@ namespace GDSL {
         tokenizer_state_functions.put(in_digit_id,[](Context& ctx) {
             char c = ctx.source.at(ctx.index);
             if(char_is_split.getOrDefault(c,false)) {
-                ctx.state = 0; 
-                --ctx.index;
-                return;
+                if(c=='.') {
+                    ctx.node->type = float_id;
+                } else {
+                    ctx.state = 0; 
+                    --ctx.index;
+                    return;
+                }
             } else if(std::isalpha(c)) {
                 ctx.state = in_alpha_id;
-            } else if(c=='.') {
-                ctx.node->type = float_id;
             }
             ctx.node->name += c;
         });
@@ -1196,11 +1211,13 @@ namespace GDSL {
             for(auto c : ctx.node->children) {
                 int found_at = c->value->find_qual(live_qual);
                 if(found_at!=-1) {
-                    ctx.node->value->sub_values.push_if_absent(c->value->quals[found_at].value);
+                    ctx.node->value->sub_values.push_if_absent(c->value->quals[found_at]->value);
                 } else {
                     g_ptr<Value> token = make<Value>();
                     ctx.node->value->sub_values << token;
-                    Qual live(live_qual,token);
+                    g_ptr<Node> live = make<Node>();
+                    live->type = live_qual;
+                    live->value = token;
                     c->value->quals << live;
                 }
             }
@@ -1578,6 +1595,7 @@ namespace GDSL {
         start_stage(&a_handlers,a_parse_function);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
         a_pass_resolve_keywords(nodes);
+
         // for(auto n : nodes) {
         //     print(n->to_string());
         // }
@@ -1588,7 +1606,8 @@ namespace GDSL {
         start_stage(&s_handlers,s_default_function);
         g_ptr<Node> root = parse_scope(nodes);
 
-        //print(root->to_string(0,0,true));
+        // print(root->to_string(0,0,true));
+        // span->print_all();
 
         // print("T STAGE");
         span2->end_line();

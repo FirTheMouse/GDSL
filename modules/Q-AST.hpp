@@ -53,11 +53,11 @@ namespace GDSL {
 
         t_handlers[to_prefix_id(val->type)] = [](Context& ctx){
             if(ctx.value->sub_type == 0) {
-                ctx.value->sub_type = ctx.qual.sub_type;
-                ctx.value->type = ctx.qual.type;
-                ctx.value->size = ctx.qual.value->size;
-                if(ctx.qual.value->type_scope)
-                    ctx.value->type_scope = ctx.qual.value->type_scope;
+                ctx.value->sub_type = ctx.qual->sub_type;
+                ctx.value->type = ctx.qual->type;
+                ctx.value->size = ctx.qual->value->size;
+                if(ctx.qual->value->type_scope)
+                    ctx.value->type_scope = ctx.qual->value->type_scope;
             }
         };
 

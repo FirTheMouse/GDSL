@@ -20,28 +20,21 @@ int main(int argc, char* argv[]) {
     lisp->init();
     root = lisp->process("modules/tests/lisptest.gld");
     lisp->run(root);
-
-    g_ptr<Unit> unit = return_unit();
-    if(g_ptr<C_Compiler> comp = as<C_Compiler>(unit)) {
-        comp->emit_mode = true;
-    }
-    unit->init();
-    root = unit->process("modules/tests/cemittest.gld");
-    
-    unit->serialize_node(root);
-    unit->saveBinary("savetest.wub");
-
-    root = unit->loadBinary("savetest.wub");
-    unit->run(root);
-
-    
-    // if(g_ptr<C_Compiler> comp = as<C_Compiler>(unit)) {
-    //     comp->emit_mode = false;
-    //     comp->span2 = make<Log::Span>();
-    //     comp->emit_buffer.clear();
-    // }
-    // root = unit->process("modules/tests/ctest.gld");
-    // unit->run(root);
+    span = make<Log::Span>();
+    g_ptr<C_Compiler> c = make<C_Compiler>();
+    c->emit_mode = true;
+    c->init();
+    root = c->process("modules/tests/cemittest.gld");
+    c->serialize(root);
+    c->saveBinary("savetest.wub");
+    root = c->loadBinary("savetest.wub");
+    c->run(root);
+    span = make<Log::Span>();
+    c->emit_mode = false;
+    c->span2 = make<Log::Span>();
+    c->emit_buffer.clear();
+    root = c->process("modules/tests/ctest.gld");
+    c->run(root);
 
     print("TEST FINISHED");
 

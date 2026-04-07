@@ -1076,6 +1076,12 @@ struct Unit : public q_object {
         node->in_scope = in_scope_idx != -1 ? node_buffer[in_scope_idx].getPtr() : nullptr;
     }
 
+    void serialize(g_ptr<Node> root) {
+        node_buffer.clear();
+        value_buffer.clear();
+        serialize_node(root);
+    }
+
     void saveBinary(std::ostream& out) {
         write_raw<uint32_t>(out, labels.size());
         for(auto& e : labels.entrySet()) {
@@ -1090,9 +1096,6 @@ struct Unit : public q_object {
         for(auto t : type_buffer) write_type(t, out);
         for(auto v : value_buffer) write_value(v, out);
         for(auto n : node_buffer) write_node(n, out);
-
-        node_buffer.clear();
-        value_buffer.clear();
     }
 
     g_ptr<Node> loadBinary(std::istream& in) {

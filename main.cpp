@@ -27,6 +27,11 @@ int main(int argc, char* argv[]) {
     }
     unit->init();
     root = unit->process("modules/tests/cemittest.gld");
+    
+    unit->serialize_node(root);
+    unit->saveBinary("savetest.wub");
+
+    root = unit->loadBinary("savetest.wub");
     unit->run(root);
 
     

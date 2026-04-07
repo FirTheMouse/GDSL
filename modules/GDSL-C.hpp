@@ -1590,6 +1590,14 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
     }
 
     std::string code_store;
+    void print_scopes(g_ptr<Node> root){
+        for(auto t : root->scopes) {
+            print(node_to_string(t));
+        }
+        for(auto child_scope : root->scopes) {
+            print_scopes(child_scope);
+        }
+    };
 
     g_ptr<Node> process(const std::string& path) override { 
         std::string code = readFile(path);
@@ -1615,6 +1623,9 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         span2->add_line("S STAGE");
         start_stage(&s_handlers,s_default_function);
         g_ptr<Node> root = parse_scope(nodes);
+        
+        // print(node_to_string(root));
+        // print_scopes(root);
         return root;
     };
 
@@ -1673,18 +1684,9 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
         std::string final_time = ftime(timer.end());
 
-        // print("==LOG==");
-        // span->print_all();
-        // print(node_to_string(root));
-
-        std::function<void(g_ptr<Node>)> print_scopes = [&print_scopes,this](g_ptr<Node> root) {
-            for(auto t : root->scopes) {
-                print(node_to_string(t));
-            }
-            for(auto child_scope : root->scopes) {
-                print_scopes(child_scope);
-            }
-        };
+        print("==LOG==");
+        span->print_all();
+        print(node_to_string(root));
         print_scopes(root);
 
         print("Ran:\n",code_store);

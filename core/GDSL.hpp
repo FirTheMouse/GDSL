@@ -938,7 +938,7 @@ struct Unit : public q_object {
 
         write_raw<uint32_t>(out, value->quals.length());
         for(auto q : value->quals) {
-            write_node(q, out);
+            write_raw<int>(out, q->save_idx);
         }
 
         write_raw<uint32_t>(out, value->sub_values.length());
@@ -971,7 +971,7 @@ struct Unit : public q_object {
 
         write_raw<uint32_t>(out, node->quals.length());
         for(auto q : node->quals) {
-            write_node(q, out);
+            write_raw<int>(out, q->save_idx);
         }
 
         write_raw<uint32_t>(out, node->value_table.size());
@@ -1015,7 +1015,7 @@ struct Unit : public q_object {
         uint32_t sub_value_count = read_raw<uint32_t>(in);
         for(uint32_t i = 0; i < sub_value_count; i++) {
             int idx = read_raw<int>(in);
-            if(idx != -1) value->sub_values << value_buffer[idx];
+            if(idx >= 0) value->sub_values << value_buffer[idx];
         }
 
         int type_scope_idx = read_raw<int>(in);
@@ -1120,7 +1120,6 @@ struct Unit : public q_object {
 
         uint32_t type_count = read_raw<uint32_t>(in);
         uint32_t value_count = read_raw<uint32_t>(in);
-        uint32_t qual_count = read_raw<uint32_t>(in);
         uint32_t node_count = read_raw<uint32_t>(in);
 
         //Pre allocate
@@ -1139,11 +1138,11 @@ struct Unit : public q_object {
             n->save_idx = i;
             node_buffer << n;
         }
-
         //Annotate
         for(uint32_t i = 0; i < type_count; i++) read_type(type_buffer[i], in);
         for(uint32_t i = 0; i < value_count; i++) read_value(value_buffer[i], in, id_remap);
         for(uint32_t i = 0; i < node_count; i++) read_node(node_buffer[i], in, id_remap);
+
 
         return node_buffer.empty() ? nullptr : node_buffer[0];
     }

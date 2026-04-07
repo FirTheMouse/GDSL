@@ -1,5 +1,5 @@
 #include "modules/GDSL-C.hpp"
-//#include "modules/GDSL-LISP.hpp"
+#include "modules/GDSL-LISP.hpp"
 
 using namespace GDSL;
 
@@ -12,7 +12,37 @@ int main(int argc, char* argv[]) {
     // GDSL::test_module(path);
     //GDSL::test_module("modules/tests/lisptest.gld");
     //GDSL::test_module("modules/tests/ctest.gld");
-    GDSL::test_module("modules/tests/cemittest.gld");
+
+    print("TEST START");
+    g_ptr<Node> root = nullptr;
+
+    g_ptr<LISP_Unit> lisp = make<LISP_Unit>();
+    lisp->init();
+    root = lisp->process("modules/tests/lisptest.gld");
+    lisp->run(root);
+
+    g_ptr<Unit> unit = return_unit();
+    if(g_ptr<C_Compiler> comp = as<C_Compiler>(unit)) {
+        comp->emit_mode = true;
+    }
+    unit->init();
+    root = unit->process("modules/tests/cemittest.gld");
+    unit->run(root);
+
+    
+    // if(g_ptr<C_Compiler> comp = as<C_Compiler>(unit)) {
+    //     comp->emit_mode = false;
+    //     comp->span2 = make<Log::Span>();
+    //     comp->emit_buffer.clear();
+    // }
+    // root = unit->process("modules/tests/ctest.gld");
+    // unit->run(root);
+
+    print("TEST FINISHED");
+
+
+
+    //comp->test_module("modules/tests/ctest.gld");
     //GDSL::test_module("modules/tests/maintest.gld");
 
     // g_ptr<Node> n = make<Node>();

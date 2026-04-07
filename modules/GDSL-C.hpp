@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../core/GDSL.hpp"
 #include "../modules/Q-AST.hpp"
 #include "../modules/Q-Arm64.hpp"
@@ -7,6 +9,8 @@
 //I'm activly expanding this, generics are next on the roadmap and one day I hope to bootstrap GDSL itself with this.
 
 namespace GDSL {
+
+struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
     map<uint32_t,int> left_binding_power;
     map<uint32_t,int> right_binding_power;
 
@@ -47,7 +51,7 @@ namespace GDSL {
 
     size_t scope_id = reg_id("SCOPE");
 
-    static g_ptr<Node> parse_scope(list<g_ptr<Node>> nodes) {
+    g_ptr<Node> parse_scope(list<g_ptr<Node>> nodes) {
         g_ptr<Node> root_scope = make<Node>();
         root_scope->name = "GLOBAL";
         root_scope->type = scope_id;
@@ -133,7 +137,7 @@ namespace GDSL {
         return root_scope;
     }
 
-    static size_t add_scoped_keyword(const std::string& name, int scope_prec,void(*exec_fn)(Context&))
+    size_t add_scoped_keyword(const std::string& name, int scope_prec)
     {
         size_t id = make_tokenized_keyword(name);
         scope_precedence.put(id, scope_prec);
@@ -149,7 +153,6 @@ namespace GDSL {
             new_scope->name = owner_node->name;
         });
         t_handlers[id] = [](Context& ctx){};
-        x_handlers[id] = exec_fn;
         return id;
     }
 
@@ -167,7 +170,7 @@ namespace GDSL {
         size_t decl_id = reg_id(f+"_decl");
         size_t unary_id = reg_id(f+"_unary");
 
-        t_handlers[id] = [decl_id,unary_id,c](Context& ctx){
+        t_handlers[id] = [this,decl_id,unary_id,c](Context& ctx){
             auto& children = ctx.node->children;
             standard_sub_process(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
             if(children.length() == 2) {
@@ -477,7 +480,11 @@ namespace GDSL {
         node->copy(prop);
     };
 
-    void test_module(const std::string& path) {
+    Log::Line timer;
+    g_ptr<Log::Span> span2;
+    IdPool reg_pool;
+
+    void init() override {
         span = make<Log::Span>();
         
         discard_types.push(undefined_id);
@@ -491,9 +498,9 @@ namespace GDSL {
         });
         x_handlers[literal_id] = [](Context& ctx){};
 
-        a_handlers[identifier_id] = [](Context& ctx){
+        a_handlers[identifier_id] = [this](Context& ctx){
             if(ctx.index>=ctx.nodes.length()) {
-                log("Hey! Index overun by ",ctx.left->info());
+                log("Hey! Index overun by ",node_info(ctx.left));
                 return;
             }
 
@@ -530,7 +537,7 @@ namespace GDSL {
 
         left_binding_power.put(lparen_id, 10);
         right_binding_power.put(lparen_id, 0);
-        a_handlers[lparen_id] = [](Context& ctx) {
+        a_handlers[lparen_id] = [this](Context& ctx) {
             size_t open_id = lparen_id;
             size_t close_id = rparen_id;
 
@@ -577,7 +584,7 @@ namespace GDSL {
         negate_value.put(float_id,[](void* data) {
             *(float*)data = -(*(float*)data);
         });
-        t_handlers[float_id] = [](Context& ctx) {
+        t_handlers[float_id] = [this](Context& ctx) {
             ctx.node->type = literal_id;
 
             g_ptr<Value> value = make<Value>(float_id,4);
@@ -591,7 +598,7 @@ namespace GDSL {
         negate_value.put(int_id,[](void* data) {
             *(int*)data = -(*(int*)data);
         });
-        t_handlers[int_id] = [](Context& ctx) {
+        t_handlers[int_id] = [this](Context& ctx) {
             ctx.node->type = literal_id;
 
             g_ptr<Value> value = make<Value>(int_id,4);
@@ -602,7 +609,7 @@ namespace GDSL {
         value_to_string.put(bool_id,[](void* data){
             return (*(bool*)data) ? "TRUE" : "FALSE";
         });
-        t_handlers[bool_id] = [](Context& ctx) {
+        t_handlers[bool_id] = [this](Context& ctx) {
             ctx.node->type = literal_id;
 
             g_ptr<Value> value = make<Value>(bool_id,1);
@@ -619,17 +626,17 @@ namespace GDSL {
                 ctx.node->name += c;
             }
         });
-        tokenizer_functions.put('"',[](Context& ctx) {
+        tokenizer_functions.put('"',[this](Context& ctx) {
             ctx.state = in_string_id;
             ctx.node = make<Node>();
             ctx.node->type = string_id;
             ctx.node->name = "";
             ctx.result->push(ctx.node);
         });
-        value_to_string.put(string_id,[](void* data){
+        value_to_string.put(string_id,[this](void* data){
             return *(std::string*)data;
         });
-        t_handlers[string_id] = [](Context& ctx) {
+        t_handlers[string_id] = [this](Context& ctx) {
             ctx.node->type = literal_id;
 
             g_ptr<Value> value = make<Value>(string_id,24);
@@ -637,7 +644,7 @@ namespace GDSL {
             ctx.node->value = value;
         }; 
            
-        x_handlers[plus_id] = [](Context& ctx){
+        x_handlers[plus_id] = [this](Context& ctx){
             standard_sub_process(ctx);
             ctx.node->value->set<int>(
                 *(int*)ctx.node->left()->value->data
@@ -646,7 +653,7 @@ namespace GDSL {
             );
         };
 
-        x_handlers[dash_id] = [](Context& ctx){
+        x_handlers[dash_id] = [this](Context& ctx){
             standard_sub_process(ctx);
             ctx.node->value->set<int>(
                 *(int*)ctx.node->left()->value->data
@@ -655,7 +662,7 @@ namespace GDSL {
             );
         };
 
-        x_handlers[rangle_id] = [](Context& ctx){
+        x_handlers[rangle_id] = [this](Context& ctx){
             standard_sub_process(ctx);
             ctx.node->value->set<bool>(
                 *(int*)ctx.node->left()->value->data
@@ -664,7 +671,7 @@ namespace GDSL {
             );
         };
 
-        x_handlers[langle_id] = [](Context& ctx){
+        x_handlers[langle_id] = [this](Context& ctx){
             standard_sub_process(ctx);
             ctx.node->value->set<bool>(
                 *(int*)ctx.node->left()->value->data
@@ -674,7 +681,7 @@ namespace GDSL {
         };
 
 
-        a_handlers[langle_id] = [](Context& ctx) {
+        a_handlers[langle_id] = [this](Context& ctx) {
             int i = ctx.index;
             while(i<ctx.nodes.length()) {
                 if(ctx.nodes[i]->type==end_id||ctx.nodes[i]->type==lbrace_id) {
@@ -697,11 +704,11 @@ namespace GDSL {
 
         // };
         
-        t_handlers[equals_id] = [](Context& ctx){ //So we don't turn things into declerations
+        t_handlers[equals_id] = [this](Context& ctx){ //So we don't turn things into declerations
             standard_sub_process(ctx);
             ctx.node->name = ctx.node->left()->name+"="+ctx.node->right()->name;
         };
-        e_handlers[equals_id] = [](Context& ctx){ 
+        e_handlers[equals_id] = [this](Context& ctx){ 
             if(ctx.node->left()&&ctx.node->right()) {
                 int at_id = ctx.node->left()->value->find_qual(live_qual);
                 if(at_id!=-1) {
@@ -711,7 +718,7 @@ namespace GDSL {
                 }
             }
         };
-        x_handlers[equals_id] = [](Context& ctx) {
+        x_handlers[equals_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             //print("Assinging from:\n",ctx.node->right()->to_string(1),"\nto\n",ctx.node->left()->to_string(1));
             memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
@@ -719,7 +726,7 @@ namespace GDSL {
         };
 
 
-        r_handlers[func_call_id] = [](Context& ctx) {
+        r_handlers[func_call_id] = [this](Context& ctx) {
             if(ctx.node->scope()) {
                 for(int i = 0; i < ctx.node->children.size(); i++) {
                     g_ptr<Node> arg = process_node(ctx, ctx.node->children[i]);
@@ -732,13 +739,13 @@ namespace GDSL {
                 }
             }
         };
-        x_handlers[func_call_id] = [](Context& ctx) {
+        x_handlers[func_call_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             standard_travel_pass(ctx.node->scope());
         };
 
 
-        x_handlers[star_id] = [](Context& ctx){
+        x_handlers[star_id] = [this](Context& ctx){
             standard_sub_process(ctx);
             ctx.node->value->set<int>(
                 *(int*)ctx.node->left()->value->data
@@ -757,14 +764,14 @@ namespace GDSL {
             }
         };
         
-        x_handlers[to_unary_id(star_id)] = [](Context& ctx) {
+        x_handlers[to_unary_id(star_id)] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             ctx.node->value->data = *(void**)ctx.node->left()->value->data;
             ctx.node->value->type = ctx.node->left()->value->type;
             ctx.node->value->size = ctx.node->left()->value->size;
         };
         
-        x_handlers[to_unary_id(amp_id)] = [](Context& ctx) {
+        x_handlers[to_unary_id(amp_id)] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             ctx.node->value->type = ctx.node->left()->value->type;
             ctx.node->value->size = 8;
@@ -772,12 +779,12 @@ namespace GDSL {
         };
 
 
-        d_handlers[to_unary_id(star_id)] = [](Context& ctx) {
+        d_handlers[to_unary_id(star_id)] = [this](Context& ctx) {
             discover_symbol(ctx.node->left(),ctx.root);
             ctx.node->value->copy(ctx.node->left()->value);
         };
 
-        t_handlers[dot_id] = [](Context& ctx) {
+        t_handlers[dot_id] = [this](Context& ctx) {
             g_ptr<Node> left = ctx.node->children[0];
             g_ptr<Node> right = ctx.node->children[1];
             process_node(ctx, left);
@@ -807,7 +814,7 @@ namespace GDSL {
             }
         };
 
-        x_handlers[dot_id] = [](Context& ctx) {
+        x_handlers[dot_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             process_node(ctx, ctx.node->right());
             ctx.node->value->type = ctx.node->right()->value->type;
@@ -824,7 +831,7 @@ namespace GDSL {
 
 
         
-        a_handlers[return_id] = [](Context& ctx) {
+        a_handlers[return_id] = [this](Context& ctx) {
             size_t open_id = return_id;
             size_t close_id = end_id;
             list<g_ptr<Node>>* main_result = ctx.result;
@@ -847,7 +854,7 @@ namespace GDSL {
             ctx.node = result_node;
             ctx.index++;
         };
-        x_handlers[return_id] = [](Context& ctx) {
+        x_handlers[return_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             g_ptr<Node> on_scope = ctx.node->in_scope;
             while(on_scope->owner->type!=func_decl_id) {
@@ -868,7 +875,7 @@ namespace GDSL {
 
 
         left_binding_power.put(lbracket_id, 10);
-        a_handlers[lbracket_id] = [](Context& ctx) {
+        a_handlers[lbracket_id] = [this](Context& ctx) {
             g_ptr<Node> result_node = make<Node>();
             result_node->type = lbracket_id;
             
@@ -884,7 +891,7 @@ namespace GDSL {
             
             ctx.node = result_node;
         };
-        t_handlers[lbracket_id] = [](Context& ctx) {
+        t_handlers[lbracket_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             auto& children = ctx.node->children;
             
@@ -902,7 +909,7 @@ namespace GDSL {
                 //Just an access case
             }
         };
-        x_handlers[lbracket_id] = [](Context& ctx) {
+        x_handlers[lbracket_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left()); //Base
             process_node(ctx, ctx.node->right()); //Index
             
@@ -918,7 +925,7 @@ namespace GDSL {
         t_handlers[var_decl_id] = [](Context& ctx) {
             //Do nothing
         };
-        x_handlers[var_decl_id] = [](Context& ctx) {
+        x_handlers[var_decl_id] = [this](Context& ctx) {
             if(!ctx.node->value->data) {
                 size_t alloc_size = ctx.node->value->size;
                 if(alloc_size == 0 && ctx.node->value->type_scope) {
@@ -934,7 +941,7 @@ namespace GDSL {
             }
         };
 
-        d_handlers[type_decl_id] = [](Context& ctx){
+        d_handlers[type_decl_id] = [this](Context& ctx){
             g_ptr<Node> node  = ctx.node;
             for(auto child : node->scope()->children) {
                 child->value->address = node->value->size;
@@ -950,7 +957,7 @@ namespace GDSL {
             }
         };
         x_handlers[type_decl_id] = [](Context& ctx){};
-        t_handlers[func_decl_id] = [](Context& ctx) {
+        t_handlers[func_decl_id] = [this](Context& ctx) {
             g_ptr<Node> saved_root = ctx.root;
             ctx.root = ctx.node->scope();
             for(auto c : ctx.node->children) {
@@ -970,7 +977,7 @@ namespace GDSL {
         });
         scope_link_handlers.put(rangle_id,scope_link_handlers.get(identifier_id));
 
-        t_handlers[identifier_id] = [](Context& ctx) {
+        t_handlers[identifier_id] = [this](Context& ctx) {
             // log("Parsing an idenitifer:\n",ctx.node->to_string(1));
             g_ptr<Node> node = ctx.node;
             g_ptr<Value> decl_value = make<Value>();
@@ -1125,7 +1132,7 @@ namespace GDSL {
         char_is_split.put(' ',true);
         left_binding_power.put(colon_id, 4);
         right_binding_power.put(colon_id, 9);
-        tokenizer_state_functions.put(in_alpha_id,[](Context& ctx) {
+        tokenizer_state_functions.put(in_alpha_id,[this](Context& ctx) {
             char c = ctx.source.at(ctx.index);
             if(char_is_split.getOrDefault(c,false)) {
                 ctx.state = 0; 
@@ -1137,7 +1144,7 @@ namespace GDSL {
             }
         });
 
-        tokenizer_state_functions.put(in_digit_id,[](Context& ctx) {
+        tokenizer_state_functions.put(in_digit_id,[this](Context& ctx) {
             char c = ctx.source.at(ctx.index);
             if(char_is_split.getOrDefault(c,false)) {
                 if(c=='.') {
@@ -1153,7 +1160,7 @@ namespace GDSL {
             ctx.node->name += c;
         });
 
-        tokenizer_default_function = [](Context& ctx) {
+        tokenizer_default_function = [this](Context& ctx) {
             char c = ctx.source.at(ctx.index);
             if(std::isalpha(c)) {
                 ctx.state = in_alpha_id;
@@ -1173,20 +1180,20 @@ namespace GDSL {
         };
 
 
-        a_parse_function = [](Context& ctx){
+        a_parse_function = [this](Context& ctx){
             g_ptr<Node> expr = a_parse_expression(ctx, 0);
             if(expr && !discard_types.has(expr->getType())) {
                 ctx.result->push(expr);
             }
         };
         s_default_function = [](Context& ctx){};
-        t_default_function = [](Context& ctx){
+        t_default_function = [this](Context& ctx){
             standard_sub_process(ctx);
         };
-        r_default_function = [](Context& ctx){
+        r_default_function = [this](Context& ctx){
             standard_sub_process(ctx);
         };
-        d_default_function = [](Context& ctx){
+        d_default_function = [this](Context& ctx){
             for(auto c : ctx.node->children) {
                 discover_symbol(c,ctx.root);
             }
@@ -1199,15 +1206,17 @@ namespace GDSL {
 
         x_default_function = [](Context& ctx){};
 
-        print_id = add_function("print",[](Context& ctx) {
+        print_id = add_function("print");
+        x_handlers[print_id] = [this](Context& ctx) {
             std::string toPrint = "";
             for(auto r : ctx.node->children) {
                 process_node(ctx, r);
-                toPrint.append(r->value->to_string());
+                toPrint.append(value_as_string(r->value));
             }
             print(toPrint);
-        });
-        e_handlers[print_id] = [](Context& ctx){
+        };
+
+        e_handlers[print_id] = [this](Context& ctx){
             for(auto c : ctx.node->children) {
                 int found_at = c->value->find_qual(live_qual);
                 if(found_at!=-1) {
@@ -1223,17 +1232,19 @@ namespace GDSL {
             }
         };
 
-        randi_id = add_function("randi",[](Context& ctx){
+        randi_id = add_function("randi");
+        x_handlers[randi_id] = [this](Context& ctx){
             standard_sub_process(ctx);
             int min = ctx.node->left()->value->get<int>();
             int max = ctx.node->right()->value->get<int>();
             ctx.node->value->type = int_id;
             ctx.node->value->size = 4;
             ctx.node->value->set<int>(randi(min,max));
-        });
+        };
 
 
-        if_id = add_scoped_keyword("if", 2, [](Context& ctx) {
+        if_id = add_scoped_keyword("if", 2);
+        x_handlers[if_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             if(ctx.node->left()->value->is_true()) {
                 ctx.flag = standard_travel_pass(ctx.node->scope());
@@ -1241,17 +1252,15 @@ namespace GDSL {
             else if(ctx.node->right()) {
                 ctx.flag = standard_travel_pass(ctx.node->right()->scope());
             }
-        });
+        };
         e_handlers[if_id] = [](Context& ctx) {
             //Decisions can be  made here to either replace the scope with the right scope (only else is valid)
             //or to not add it (only main if is valid) depending on the provablility of branch perdiction in the future.
         };
 
 
-        else_id = add_scoped_keyword("else", 1, [](Context& ctx){
-            //This doesn't ever really execute
-        });
-        t_handlers[else_id] = [](Context& ctx) {
+        else_id = add_scoped_keyword("else", 1);
+        t_handlers[else_id] = [this](Context& ctx) {
             int my_id = ctx.root->children.find(ctx.node);
             if(my_id>0) {
                 g_ptr<Node> left = ctx.root->children[my_id-1];
@@ -1264,7 +1273,8 @@ namespace GDSL {
             ctx.node = nullptr;
         };
 
-        while_id = add_scoped_keyword("while", 2, [](Context& ctx) {
+        while_id = add_scoped_keyword("while", 2);
+        x_handlers[while_id] =  [this](Context& ctx) {
             while(true) {
                 process_node(ctx, ctx.node->left());
                 if(!ctx.node->left()->value->is_true()) break;
@@ -1273,8 +1283,8 @@ namespace GDSL {
                     break;
                 } 
             }
-        });
-        e_handlers[while_id] = [](Context& ctx) {
+        };
+        e_handlers[while_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             bool has_dead = false;
             for(auto c : ctx.node->left()->children) {
@@ -1289,7 +1299,8 @@ namespace GDSL {
             }
         };
 
-        for_id = add_scoped_keyword("for", 2, [](Context& ctx) {
+        for_id = add_scoped_keyword("for", 2);
+        x_handlers[for_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->children[0]); //Run var decl;
             while(true) {
                 process_node(ctx, ctx.node->children[1]); //Condition check
@@ -1300,11 +1311,10 @@ namespace GDSL {
                 }
                 process_node(ctx, ctx.node->children[2]); //Incrementer 
             }
-        });
+        };
 
-        IdPool reg_pool;
         reg_pool.init({15, 14, 13, 12, 11, 10, 9}); //Because I'm on a Mac
-        m_default_function = [&reg_pool](Context& ctx){
+        m_default_function = [this](Context& ctx){
             backwards_sub_process(ctx);
             // if(ctx.node->value->reg == -1) {
             //     int r = reg_pool.alloc();
@@ -1327,7 +1337,7 @@ namespace GDSL {
                 ctx.node->value->data = malloc(ctx.node->value->size);
             }
         };
-        m_handlers[var_decl_id] = [&reg_pool](Context& ctx){
+        m_handlers[var_decl_id] = [this](Context& ctx){
             backwards_sub_process(ctx);
             if(!ctx.flag && ctx.node->value->reg != -1) {
                 reg_pool.free(ctx.node->value->reg);
@@ -1335,7 +1345,7 @@ namespace GDSL {
                 ctx.node->value->data = malloc(ctx.node->value->size);
             }
         };
-        m_handlers[equals_id] = [](Context& ctx) {
+        m_handlers[equals_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             if(ctx.node->right()) {
                 ctx.node->right()->value->reg = ctx.node->left()->value->reg;
@@ -1344,13 +1354,13 @@ namespace GDSL {
                 ctx.flag = false;
             }
         };
-        m_handlers[func_call_id] = [&reg_pool](Context& ctx) {
+        m_handlers[func_call_id] = [this](Context& ctx) {
             ctx.flag = true; //Blocks variable decelreations from freeing themselves
             backwards_sub_process(ctx);
             ctx.node->value->reg = REG_RETURN_VALUE;
             ctx.flag = false;
         };
-        m_handlers[func_decl_id] = [&reg_pool](Context& ctx) {
+        m_handlers[func_decl_id] = [this](Context& ctx) {
             ctx.node->value->address = 0;
             reg_pool.init({15, 14, 13, 12, 11, 10, 9});
         };
@@ -1360,23 +1370,23 @@ namespace GDSL {
             //Do nothing
         };
 
-        i_handlers[literal_id] = [](Context& ctx) {
+        i_handlers[literal_id] = [this](Context& ctx) {
             emit_load_literal(ctx.node->value);
         };
-        i_handlers[plus_id] = [](Context& ctx) {
+        i_handlers[plus_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             log(emit_buffer.length(),": add ",ctx.node->left()->value->reg," and ",ctx.node->right()->value->reg," store at ",ctx.node->value->reg);
             emit_add(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value);
         };
-        i_handlers[rangle_id] = [](Context& ctx) {
+        i_handlers[rangle_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             emit_compare(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value, COND_GT);
         };
-        i_handlers[langle_id] = [](Context& ctx) {
+        i_handlers[langle_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             emit_compare(ctx.node->value, ctx.node->left()->value, ctx.node->right()->value, COND_LT);
         };
-        i_handlers[equals_id] = [](Context& ctx) {
+        i_handlers[equals_id] = [this](Context& ctx) {
             // standard_sub_process(ctx);
             // if(ctx.node->left()->value->reg == -1) {
             //     int result_reg = get_reg(ctx.node->right()->value, LEFT_REG);
@@ -1394,7 +1404,7 @@ namespace GDSL {
             }
         };
 
-        i_handlers[if_id] = [](Context& ctx) {
+        i_handlers[if_id] = [this](Context& ctx) {
             //The condition
             process_node(ctx, ctx.node->left());
             int cond_reg = get_reg(ctx.node->left()->value, LEFT_REG);
@@ -1421,7 +1431,7 @@ namespace GDSL {
             }
         };
 
-        i_handlers[while_id] = [](Context& ctx) {
+        i_handlers[while_id] = [this](Context& ctx) {
             push_buffer(); //Mesuring the size of the loop body
             process_node(ctx, ctx.node->left());
             int cond_reg = get_reg(ctx.node->left()->value, LEFT_REG);
@@ -1444,7 +1454,7 @@ namespace GDSL {
             emit_jump(back_offset);
         };
 
-        i_handlers[func_call_id] = [](Context& ctx) {
+        i_handlers[func_call_id] = [this](Context& ctx) {
             for(auto [key, val] : ctx.root->value_table.entrySet()) {
                 if(val->reg > 0) {
                     int ot = (val->reg - 9);
@@ -1473,7 +1483,7 @@ namespace GDSL {
             ctx.flag = false; //Because the return may have set a flag to return from the travel pass
         };
 
-        i_handlers[func_decl_id] = [](Context& ctx) {
+        i_handlers[func_decl_id] = [this](Context& ctx) {
             if(ctx.node->value->loc != -1) return;
             ctx.node->value->loc = emit_buffer.length();
 
@@ -1494,7 +1504,7 @@ namespace GDSL {
             emit_return();
         };
 
-        i_handlers[return_id] = [](Context& ctx) {
+        i_handlers[return_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             int result_reg = get_reg(ctx.node->left()->value, LEFT_REG);
             emit_copy(REG_RETURN_VALUE, result_reg);
@@ -1508,7 +1518,7 @@ namespace GDSL {
             ctx.flag = true;
         };
 
-        i_handlers[print_id] = [](Context& ctx) {
+        i_handlers[print_id] = [this](Context& ctx) {
             for(auto c : ctx.node->children) {
                 if(c->value->reg != -1) {
                     for(auto [key, val] : ctx.root->value_table.entrySet()) {
@@ -1532,8 +1542,8 @@ namespace GDSL {
             }
         };
         
-        size_t jint_id = add_function("jint",[](Context& ctx){});
-        i_handlers[jint_id] = [](Context& ctx) {
+        size_t jint_id = add_function("jint");
+        i_handlers[jint_id] = [this](Context& ctx) {
                 for(auto [key, val] : ctx.root->value_table.entrySet()) {
                     if(val->reg > 0) {
                         int ot = (val->reg - 9);
@@ -1558,57 +1568,59 @@ namespace GDSL {
                 }
         };
 
-        size_t jont_id = add_function("jont",[](Context& ctx){});
-        i_handlers[jont_id] = [](Context& ctx){
+        size_t jont_id = add_function("jont");
+        i_handlers[jont_id] = [this](Context& ctx){
             emit_buffer << STR(REG_LINK, REG_FRAME_POINTER, 0);
             emit_load_64(LEFT_REG, (uint64_t)&jont);
             emit_call_register(LEFT_REG);
             emit_buffer << LDR(REG_LINK, REG_FRAME_POINTER, 0);  
         };
 
-        std::function<void(g_ptr<Node>)> print_scopes = [&print_scopes](g_ptr<Node> root) {
-            for(auto t : root->scopes) {
-                print(t->to_string());
-            }
-            for(auto child_scope : root->scopes) {
-                print_scopes(child_scope);
-            }
-        };
-
-
-
         span->print_on_line_end = false; //While things aren't crashing
         //span->log_everything = true; //While things are crashing
 
         
+        span2 = make<Log::Span>(); 
+
+        // auto now = std::chrono::system_clock::now();
+        // auto t = std::chrono::system_clock::to_time_t(now);
+        // printnl("At: ",std::ctime(&t));
+        //span->print_all();
+
+    }
+
+    std::string code_store;
+
+    g_ptr<Node> process(const std::string& path) override { 
         std::string code = readFile(path);
-        Log::Line timer; timer.start();
-        g_ptr<Log::Span> span2 = make<Log::Span>();
+        code_store = code;
+        timer.start();
         span2->add_line("TOKENIZE STAGE");
         span2->log_everything = true;
 
-        //print("TOKENIZE");
         list<g_ptr<Node>> tokens = tokenize(code);
         span2->end_line();
         span2->add_line("A STAGE");
         // print("A STAGE");
         start_stage(&a_handlers,a_parse_function);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
+        
         a_pass_resolve_keywords(nodes);
 
         // for(auto n : nodes) {
         //     print(n->to_string());
         // }
 
-        // print("S STAGE");
         span2->end_line();
         span2->add_line("S STAGE");
         start_stage(&s_handlers,s_default_function);
         g_ptr<Node> root = parse_scope(nodes);
+        return root;
+    };
 
-        // print(root->to_string(0,0,true));
-        // span->print_all();
+    bool emit_mode = false;
 
+    void run(g_ptr<Node> root) override { 
         // print("T STAGE");
         span2->end_line();
         span2->add_line("T STAGE");
@@ -1627,9 +1639,8 @@ namespace GDSL {
         start_stage(&r_handlers,r_default_function);
         standard_resolving_pass(root);
 
-        #define EMIT 1
 
-        #if EMIT
+        if(emit_mode) {
             span2->end_line();
             span2->add_line("E STAGE");
             start_stage(&e_handlers,e_default_function);
@@ -1639,7 +1650,7 @@ namespace GDSL {
             span2->add_line("M STAGE");
             start_stage(&m_handlers,m_default_function);
             memory_backwards_pass(root);
-        #endif
+        }
 
         g_ptr<Node> main_func = nullptr;
         for(auto c : root->scopes) {
@@ -1649,7 +1660,7 @@ namespace GDSL {
             }
         }
 
-        #if EMIT
+        if(emit_mode) {
             span2->end_line();
             span2->add_line("I STAGE");
             start_stage(&i_handlers,i_default_function);
@@ -1657,31 +1668,37 @@ namespace GDSL {
             emit_buffer << B(0); 
             standard_travel_pass(root);
             emit_buffer[jump_placeholder] = B(main_func->owner->value->loc - jump_placeholder);
-        #endif
+        }
         span2->end_line();
 
         std::string final_time = ftime(timer.end());
 
-        print("==LOG==");
-        span->print_all();
-        print(root->to_string());
+        // print("==LOG==");
+        // span->print_all();
+        // print(node_to_string(root));
+
+        std::function<void(g_ptr<Node>)> print_scopes = [&print_scopes,this](g_ptr<Node> root) {
+            for(auto t : root->scopes) {
+                print(node_to_string(t));
+            }
+            for(auto child_scope : root->scopes) {
+                print_scopes(child_scope);
+            }
+        };
         print_scopes(root);
 
-        print("Ran:\n",code);
-        #if EMIT
+        print("Ran:\n",code_store);
+        if(emit_mode) {
             print_emit_buffer();
-        #endif
+        }
         span2->end_line();
         span2->add_line("X STAGE");
         start_stage(&x_handlers,x_default_function);
 
-        #if EMIT
-            // // Move result into return register
-            // emit_buffer << MOV_reg(0, 9, 0);
-            // // Return
-            // emit_buffer << RET();
+        std::string exec_time = "";
 
-            // Create executable buffer
+        if(emit_mode) {
+            //Make the buffer
             size_t byte_size = emit_buffer.length() * sizeof(uint32_t);
             void* buf = mmap(nullptr, byte_size,
                 PROT_READ | PROT_WRITE,
@@ -1693,69 +1710,65 @@ namespace GDSL {
                 return;
             }
 
-            // Copy instructions
+            //Copy the instructions
             uint32_t* ptr = (uint32_t*)buf;
             for(int i=0;i<emit_buffer.length();i++) {
                 ptr[i] = emit_buffer[i];
             }
 
-            // Make executable
+            //Make executable
             mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
-        #endif
+            struct sigaction sa;
+            sa.sa_sigaction = sigill_handler;
+            sa.sa_flags = SA_SIGINFO;
+            sigemptyset(&sa.sa_mask);
+            sigaction(SIGILL, &sa, nullptr);
 
+            struct sigaction sa2;
+            sa2.sa_sigaction = sigsegv_handler;
+            sa2.sa_flags = SA_SIGINFO;
+            sigemptyset(&sa2.sa_mask);
+            sigaction(SIGSEGV, &sa2, nullptr);
+            sigaction(SIGBUS, &sa2, nullptr);
 
-        timer.start();
-        print("==EXECUTING==");
-        #if EMIT
-        struct sigaction sa;
-        sa.sa_sigaction = sigill_handler;
-        sa.sa_flags = SA_SIGINFO;
-        sigemptyset(&sa.sa_mask);
-        sigaction(SIGILL, &sa, nullptr);
+            jit_buf_start = buf;
+            jit_buf_size = byte_size;
 
-        struct sigaction sa2;
-        sa2.sa_sigaction = sigsegv_handler;
-        sa2.sa_flags = SA_SIGINFO;
-        sigemptyset(&sa2.sa_mask);
-        sigaction(SIGSEGV, &sa2, nullptr);
-        sigaction(SIGBUS, &sa2, nullptr);
-
-        jit_buf_start = buf;
-        jit_buf_size = byte_size;
+            timer.start();
+            print("==EXECUTING==");
 
             typedef int (*JitFunc)();
             JitFunc func = (JitFunc)buf;
             int result = func();
-        #else
-            standard_travel_pass(main_func?main_func:root);
-        #endif
 
+            exec_time =  ftime(timer.end());
+            span2->end_line();
 
-
-        std::string exec_time =  ftime(timer.end());
-        span2->end_line();
-
-        #if EMIT
             print("Native result: ", result);
             munmap(buf, byte_size); //Cleanup
-        #endif
+        } else {
+            timer.start();
+            print("==EXECUTING==");
 
+            standard_travel_pass(main_func?main_func:root);
+
+            exec_time = ftime(timer.end());
+            span2->end_line();
+        }
         
-
-
         span2->print_all();
 
         print("Final time: ",final_time);
         print("Exec time: ",exec_time);
 
         print("==DONE==");
+    };
 
-        // auto now = std::chrono::system_clock::now();
-        // auto t = std::chrono::system_clock::to_time_t(now);
-        // printnl("At: ",std::ctime(&t));
-        //span->print_all();
+};
 
-    }
+g_ptr<Unit> return_unit() {
+    return make<C_Compiler>();
+}
 
 }
 

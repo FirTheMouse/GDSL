@@ -1,9 +1,12 @@
+#pragma once
 #include "../core/GDSL.hpp"
 
 //An example utility module, like Q-AST.
 //Could move more tokenizer functions down here...
 
 namespace GDSL {
+
+struct Tokenizer_Unit : public virtual Unit {
     map<std::string,uint32_t> tokenized_keywords;
     map<char,bool> char_is_split;
     size_t make_tokenized_keyword(const std::string& f) {
@@ -21,11 +24,6 @@ namespace GDSL {
         char_is_split.put(c, true);
         return id;
     }
-
-
-    void init_q_tokenizer() {
-
-    }
-
+};
 
 }

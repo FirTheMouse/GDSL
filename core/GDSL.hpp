@@ -640,7 +640,7 @@ struct Unit : public q_object {
     }
 
     //Doesn't advance it's own index so be wary of infinite recursion with a bad a_parse_function
-    list<g_ptr<Node>> parse_tokens(list<g_ptr<Node>> tokens,bool local = false) {
+    list<g_ptr<Node>> parse_tokens(list<g_ptr<Node>> tokens) {
             newline("Parse tokens pass (A) over: "+std::to_string(tokens.length())+" tokens");
             
             if(!a_parse_function)

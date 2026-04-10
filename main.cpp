@@ -16,23 +16,26 @@ int main(int argc, char* argv[]) {
     print("TEST START");
     g_ptr<Node> root = nullptr;
 
-    g_ptr<LISP_Unit> lisp = make<LISP_Unit>();
-    lisp->init();
-    root = lisp->process("modules/tests/lisptest.gld");
-    lisp->run(root);
-    span = make<Log::Span>();
+    // g_ptr<LISP_Unit> lisp = make<LISP_Unit>();
+    // lisp->init();
+    // root = lisp->process("modules/tests/lisptest.gld");
+    // lisp->run(root);
+    // span = make<Log::Span>();
+
     g_ptr<C_Compiler> c = make<C_Compiler>();
-    c->emit_mode = true;
+
+    // c->emit_mode = true;
     c->init();
-    root = c->process("modules/tests/cemittest.gld");
-    c->serialize(root);
-    c->saveBinary("savetest.wub");
-    root = c->loadBinary("savetest.wub");
-    c->run(root);
-    span = make<Log::Span>();
-    c->emit_mode = false;
-    c->span2 = make<Log::Span>();
-    c->emit_buffer.clear();
+    // root = c->process("modules/tests/cemittest.gld");
+    // c->serialize(root);
+    // c->saveBinary("savetest.wub");
+    // root = c->loadBinary("savetest.wub");
+    // c->run(root);
+    // span = make<Log::Span>();
+    // c->emit_mode = false;
+    // c->span2 = make<Log::Span>();
+    // c->emit_buffer.clear();
+
     root = c->process("modules/tests/ctest.gld");
     c->run(root);
 

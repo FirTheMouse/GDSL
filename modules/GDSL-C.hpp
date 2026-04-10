@@ -1609,7 +1609,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         list<g_ptr<Node>> tokens = tokenize(code);
         span2->end_line();
         span2->add_line("A STAGE");
-        // print("A STAGE");
         start_stage(&a_handlers,a_parse_function);
         list<g_ptr<Node>> nodes = parse_tokens(tokens);
         
@@ -1773,19 +1772,3 @@ g_ptr<Unit> return_unit() {
 }
 
 }
-
-        //-> for sugar
-        // t_handlers[dash_id] = [](Context& ctx) {
-        //     if(ctx.node->right() && ctx.node->right()->type == to_unary_id(rangle_id)) {
-        //         ctx.node->type = dot_id;
-        //         g_ptr<Node> star = make<Node>();
-        //         star->type = to_unary_id(star_id);
-        //         star->children << ctx.node->left();
-        //         star->children[0] = ctx.node->left();
-        //         ctx.node->children[0] = star;
-        //         ctx.node->children[1] = ctx.node->right()->left();
-        //         print("Assembled node: ",ctx.node->to_string());
-        //     } else {
-        //         resolve_sub_nodes(ctx);
-        //     }
-        // };

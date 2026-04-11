@@ -1,0 +1,254 @@
+
+    #define LOG_A_PARSE 0
+
+    g_ptr<Node> a_parse_expression(Context& ctx, int min_bp, g_ptr<Node> left_node = nullptr) {
+        //Prefixual pass
+        if(ctx.index>=ctx.nodes.length()) return nullptr;
+        g_ptr<Node> token = ctx.nodes[ctx.index];
+        #if LOG_A_PARSE
+            newline("a_parse_expression_pass: "+token->info());
+        #endif
+
+        uint32_t type = token->getType();
+        int left_bp = left_binding_power.getOrDefault(type,-1);
+        int right_bp = right_binding_power.getOrDefault(type,-1);
+        bool has_func = a_handlers.hasKey(type);
+
+        #if LOG_A_PARSE
+            log("Starting at index ",ctx.index,", token: ",token->info()," (left_bp: ",left_bp,", right_bp: ",right_bp,", has_func: ",has_func?"yes":"no",")");
+            if(left_node)
+                log("Left_node: ",left_node->info());
+            if(ctx.left) 
+                log("ctx.left: ",ctx.left->info());
+            if(ctx.node) 
+                log("ctx.node: ",ctx.node->info());
+        #endif
+
+        ctx.index++;
+        #if LOG_A_PARSE
+            if(ctx.index<ctx.nodes.length())
+                log("Looking at index ",ctx.index,", token: ",ctx.nodes[ctx.index]->info());
+        #endif
+
+        if(!left_node)
+            left_node = make<Node>();
+
+        bool fallthrough = false;
+
+        if(has_func) { //Has a function but no left: direct node build
+            ctx.left = token;
+            ctx.node = make<Node>();  //Fresh output target
+            #if LOG_A_PARSE
+                newline("Running a_function for "+token->info());
+            #endif
+            a_handlers[type](ctx);
+            #if LOG_A_PARSE
+                if(ctx.node) 
+                    log("Function returned:\n",ctx.node->to_string(1));
+                endline();
+            #endif
+            if(!ctx.node) {
+                fallthrough = true;
+            } else {
+                left_node = ctx.node; //Read result back
+            }
+        }
+        
+        if(fallthrough || (!has_func && right_bp != -1)) { //Prefixual unary: recurse with right
+            g_ptr<Node> right_node = a_parse_expression(
+                ctx,
+                right_bp,
+                nullptr
+            );
+            left_node->type = type;
+            if(right_node)
+                left_node->children << right_node;
+        }
+        else if(!has_func) { //Else atom, like a literal or idenitifer
+            left_node = token;
+            ctx.node = left_node;
+        }
+
+        //Infixual pass
+        #if LOG_A_PARSE
+            newline("Running infix");
+        #endif
+        while(ctx.index < ctx.nodes.length()) {
+            g_ptr<Node> op = ctx.nodes[ctx.index];
+            int op_left_bp = left_binding_power.getOrDefault(op->getType(), -1);
+
+            #if LOG_A_PARSE
+                log("In infix at index ",ctx.index,", op: ",op->info()," (left_bp: ",op_left_bp,")");
+            #endif
+
+            if(op_left_bp < min_bp || op_left_bp==-1) {
+                break;
+            }
+            
+            ctx.index++;
+
+            #if LOG_A_PARSE
+                if(ctx.index<ctx.nodes.length()) log("Looking at index ",ctx.index,", token: ",ctx.nodes[ctx.index]->info());
+            #endif
+
+            fallthrough = false;
+            bool op_has_func = a_handlers.hasKey(op->getType());
+
+            if(op_has_func) {
+                if(left_node->type!=0)
+                    ctx.left = left_node;
+                ctx.node = make<Node>();
+                #if LOG_A_PARSE
+                    newline("Running function in infix from: "+op->info());
+                #endif
+                a_handlers[op->getType()](ctx);
+                #if LOG_A_PARSE
+                    if(ctx.node) 
+                        log("Infix function returned:\n",ctx.node->to_string(1));
+                    endline();
+                #endif
+                if(ctx.node) {
+                    left_node = ctx.node;
+                } else {
+                    if(ctx.flag) {
+                        ctx.flag = false;
+                        fallthrough = true;
+                    } else {
+                        ctx.index--;
+                        break;
+                    }
+                }
+            } 
+            
+            if(!op_has_func || fallthrough) {
+                g_ptr<Node> right_node = a_parse_expression(
+                    ctx,
+                    right_binding_power.getOrDefault(op->getType(), op_left_bp + 1),
+                    nullptr
+                );
+                
+                g_ptr<Node> node = make<Node>();
+                node->type = op->getType();
+                if(left_node)
+                    node->children << left_node;
+                if(right_node) {
+                    if(!discard_types.has(right_node->type))
+                        node->children << right_node;
+                }
+                left_node = node;
+                
+            }
+        }
+        #if LOG_A_PARSE
+            log("Ended infix loop at index ",ctx.index,ctx.index<ctx.nodes.length()?", token: "+ctx.nodes[ctx.index]->info():" OVERSHOT INDEX!!");
+            endline();
+        #endif
+        if(left_node) {
+            ctx.node = left_node;
+            #if LOG_A_PARSE
+                log("Returning left node:\n",left_node->to_string(4));
+            #endif
+        }
+        #if LOG_A_PARSE
+            endline();
+        #endif
+        return left_node;
+    }
+
+        a_handlers[identifier_id] = [this](Context& ctx){
+            if(ctx.index>=ctx.nodes.length()) {
+                log("Hey! Index overun by ",node_info(ctx.left));
+                return;
+            }
+
+            if(ctx.left) {
+                //log("Left looks like: ",ctx.left->info());
+                if(ctx.nodes[ctx.index]->getType()==identifier_id) {
+                    ctx.node = ctx.left;
+                    while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() == identifier_id) {
+                        ctx.node->children << ctx.nodes[ctx.index];
+                        ctx.index++;
+                    }
+                    //log("Folded into the left, forming:\n",ctx.left->to_string(1));
+                    //a_parse_expression(ctx,0,nullptr);
+                } else {
+                    //log("Not an identifier, so no folding");
+                    ctx.node = ctx.left;
+                }
+                //log("Ending on: ",ctx.nodes[ctx.index]->info());
+            } else {
+                //log("Nothing to my left");
+            }
+        };
+
+        a_handlers[lparen_id] = [this](Context& ctx) {
+            size_t open_id = lparen_id;
+            size_t close_id = rparen_id;
+
+            if(ctx.left && ctx.left->type == lbrace_id || ctx.left->type == lbracket_id) {
+                ctx.node = nullptr;
+                return;
+            }
+
+            list<g_ptr<Node>>* main_result = ctx.result;
+            g_ptr<Node> result_node = nullptr;
+            if(ctx.left && ctx.left->type != 0 && ctx.left->type != open_id) {
+                result_node = ctx.left;
+                if(!ctx.left->children.empty())
+                    ctx.left = ctx.left->children.last();
+                ctx.result = &ctx.left->children;
+            } else {
+                result_node = make<Node>();
+                ctx.result = &result_node->children;
+            }
+            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() != close_id) {
+                g_ptr<Node> inner = a_parse_expression(ctx, 0);
+                if(inner && !discard_types.has(inner->getType()))
+                    ctx.result->push(inner);
+            }
+            ctx.result = main_result;
+            if(result_node && discard_types.has(result_node->getType()) && !result_node->children.empty()) {
+                g_ptr<Node> to_promote = result_node->children.take(0);
+                to_promote->children << result_node->children;
+                result_node = to_promote;
+            }
+            ctx.node = result_node;
+            ctx.index++;
+
+            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() == identifier_id) {
+                ctx.node->children << ctx.nodes[ctx.index];
+                ctx.index++;
+            }
+        };
+
+                a_handlers[return_id] = [this](Context& ctx) {
+            size_t open_id = return_id;
+            size_t close_id = end_id;
+            list<g_ptr<Node>>* main_result = ctx.result;
+            g_ptr<Node> result_node = nullptr;
+            if(ctx.left && ctx.left->type != 0) {
+                result_node = ctx.left;
+                if(!ctx.left->children.empty())
+                    ctx.left = ctx.left->children.last();
+                ctx.result = &ctx.left->children;
+            } else {
+                result_node = make<Node>();
+                ctx.result = &result_node->children;
+            }
+            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() != close_id) {
+                g_ptr<Node> inner = a_parse_expression(ctx, 0);
+                if(inner && !discard_types.has(inner->getType()))
+                    ctx.result->push(inner);
+            }
+            ctx.result = main_result;
+            ctx.node = result_node;
+            ctx.index++;
+        };
+
+
+        a_parse_function = [this](Context& ctx){
+            g_ptr<Node> expr = a_parse_expression(ctx, 0);
+            if(expr && !discard_types.has(expr->getType())) {
+                ctx.result->push(expr);
+            }
+        };

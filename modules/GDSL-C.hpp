@@ -51,6 +51,92 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
     size_t scope_id = reg_id("SCOPE");
 
+    // void parse_scope(g_ptr<Node> root) {
+    //     root->name = "GLOBAL";
+    //     root->type = scope_id;
+    //     root->is_scope = true;
+    //     list<g_ptr<Node>> nodes;
+    //     nodes <= root->children;
+    //     g_ptr<Node> current_scope = root;
+    //     list<g_value> stack{g_value()};
+
+    //     #if PRINT_ALL
+    //     newline("Parse scope pass");
+    //     #endif
+
+    //     for (int i = 0; i < nodes.size(); ++i) {
+    //         g_ptr<Node> node = nodes[i];
+    //         g_ptr<Node> owner_node = (i>0) ? nodes[i - 1] : nullptr;
+
+    //         int p = scope_precedence.getOrDefault(node->type,0);
+    //         bool on_stack = stack.last().owner ? true : false;
+    //         if(p<=0) {
+    //             if(p<0) {
+    //                 if (current_scope->parent) {
+    //                     current_scope = current_scope->parent;
+    //                 }
+    //             }
+    //             else {
+    //                 current_scope->children << node; 
+    //                 node->place_in_scope(current_scope.getPtr());
+    //                 if(on_stack && !stack.last().deferred && !stack.last().explc) {
+    //                     if (current_scope->parent) {
+    //                         current_scope = current_scope->parent;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //         else {
+    //             if(p<10) {
+    //                 current_scope->children << node;
+    //                 node->place_in_scope(current_scope.getPtr());
+    //                 owner_node = node;
+    //             }
+
+    //             if(on_stack) {
+    //                 int stack_precedence = scope_precedence.getOrDefault(stack.last().owner->type,0);
+    //                 if(p >= stack_precedence) {
+    //                     stack.last().deferred = true;
+    //                 }
+    //             }
+
+    //             if(p == 10) {
+    //                 if(on_stack) {
+    //                     stack.last().explc = true;
+    //                     if (current_scope->parent) {
+    //                         current_scope = current_scope->parent;
+    //                     }
+    //                 }
+    //             }
+    //             else {
+    //                 stack << g_value(owner_node);
+    //             }
+
+    //             g_ptr<Node> parent_scope = current_scope;
+    //             current_scope = current_scope->spawn_sub_scope();
+    //             current_scope->type = scope_id;
+    //             if (owner_node) {
+    //                 //Deffensive check here
+    //                 try {
+    //                     auto func = scope_link_handlers.get(owner_node->type);
+    //                     func(current_scope,parent_scope,owner_node);
+    //                 }
+    //                 catch(std::exception e) {
+    //                     print("parse_scope::809 missing scope link handler for type: ",labels[owner_node->type]);
+    //                 }
+                
+    //             } else {
+    //                 current_scope->type = 0; //Suppoused to be GET_TYPE(BLOCK), doesn't matter, don't care
+    //             }
+    //         }
+    //     }
+
+    //     #if PRINT_ALL
+    //     //print_scope(root_scope);
+    //     endline();
+    //     #endif
+    // }
+
     g_ptr<Node> parse_scope(list<g_ptr<Node>> nodes) {
         g_ptr<Node> root_scope = make<Node>();
         root_scope->name = "GLOBAL";
@@ -167,10 +253,14 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         left_binding_power.put(id, left_bp);
         right_binding_power.put(id, right_bp);
 
+        // a_handlers[id] = [this,left_bp,right_bp](Context& ctx){
+
+        // };
+
         size_t decl_id = reg_id(f+"_decl");
         size_t unary_id = reg_id(f+"_unary");
 
-        t_handlers[id] = [this,decl_id,unary_id,c](Context& ctx){
+        Handler handler = [this,decl_id,unary_id,c](Context& ctx){
             auto& children = ctx.node->children;
             standard_sub_process(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
             if(children.length() == 2) {
@@ -202,6 +292,8 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
                 ctx.node->value->copy(type_term->value);
             } 
         };
+        t_handlers[id] = handler;
+        t_handlers[unary_id] = handler;
         
         return id;
     }
@@ -215,163 +307,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         };
     };
 
-    #define LOG_A_PARSE 0
-
-    g_ptr<Node> a_parse_expression(Context& ctx, int min_bp, g_ptr<Node> left_node = nullptr) {
-        //Prefixual pass
-        if(ctx.index>=ctx.nodes.length()) return nullptr;
-        g_ptr<Node> token = ctx.nodes[ctx.index];
-        #if LOG_A_PARSE
-            newline("a_parse_expression_pass: "+token->info());
-        #endif
-
-        uint32_t type = token->getType();
-        int left_bp = left_binding_power.getOrDefault(type,-1);
-        int right_bp = right_binding_power.getOrDefault(type,-1);
-        bool has_func = a_handlers.hasKey(type);
-
-        #if LOG_A_PARSE
-            log("Starting at index ",ctx.index,", token: ",token->info()," (left_bp: ",left_bp,", right_bp: ",right_bp,", has_func: ",has_func?"yes":"no",")");
-            if(left_node)
-                log("Left_node: ",left_node->info());
-            if(ctx.left) 
-                log("ctx.left: ",ctx.left->info());
-            if(ctx.node) 
-                log("ctx.node: ",ctx.node->info());
-        #endif
-
-        ctx.index++;
-        #if LOG_A_PARSE
-            if(ctx.index<ctx.nodes.length())
-                log("Looking at index ",ctx.index,", token: ",ctx.nodes[ctx.index]->info());
-        #endif
-
-        if(!left_node)
-            left_node = make<Node>();
-
-        bool fallthrough = false;
-
-        if(has_func) { //Has a function but no left: direct node build
-            ctx.left = token;
-            ctx.node = make<Node>();  //Fresh output target
-            #if LOG_A_PARSE
-                newline("Running a_function for "+token->info());
-            #endif
-            a_handlers[type](ctx);
-            #if LOG_A_PARSE
-                if(ctx.node) 
-                    log("Function returned:\n",ctx.node->to_string(1));
-                endline();
-            #endif
-            if(!ctx.node) {
-                fallthrough = true;
-            } else {
-                left_node = ctx.node; //Read result back
-            }
-        }
-        
-        if(fallthrough || (!has_func && right_bp != -1)) { //Prefixual unary: recurse with right
-            g_ptr<Node> right_node = a_parse_expression(
-                ctx,
-                right_bp,
-                nullptr
-            );
-            left_node->type = type;
-            if(right_node)
-                left_node->children << right_node;
-        }
-        else if(!has_func) { //Else atom, like a literal or idenitifer
-            left_node = token;
-            ctx.node = left_node;
-        }
-
-        //Infixual pass
-        #if LOG_A_PARSE
-            newline("Running infix");
-        #endif
-        while(ctx.index < ctx.nodes.length()) {
-            g_ptr<Node> op = ctx.nodes[ctx.index];
-            int op_left_bp = left_binding_power.getOrDefault(op->getType(), -1);
-
-            #if LOG_A_PARSE
-                log("In infix at index ",ctx.index,", op: ",op->info()," (left_bp: ",op_left_bp,")");
-            #endif
-
-            if(op_left_bp < min_bp || op_left_bp==-1) {
-                break;
-            }
-            
-            ctx.index++;
-
-            #if LOG_A_PARSE
-                if(ctx.index<ctx.nodes.length()) log("Looking at index ",ctx.index,", token: ",ctx.nodes[ctx.index]->info());
-            #endif
-
-            fallthrough = false;
-            bool op_has_func = a_handlers.hasKey(op->getType());
-
-            if(op_has_func) {
-                if(left_node->type!=0)
-                    ctx.left = left_node;
-                ctx.node = make<Node>();
-                #if LOG_A_PARSE
-                    newline("Running function in infix from: "+op->info());
-                #endif
-                a_handlers[op->getType()](ctx);
-                #if LOG_A_PARSE
-                    if(ctx.node) 
-                        log("Infix function returned:\n",ctx.node->to_string(1));
-                    endline();
-                #endif
-                if(ctx.node) {
-                    left_node = ctx.node;
-                } else {
-                    if(ctx.flag) {
-                        ctx.flag = false;
-                        fallthrough = true;
-                    } else {
-                        ctx.index--;
-                        break;
-                    }
-                }
-            } 
-            
-            if(!op_has_func || fallthrough) {
-                g_ptr<Node> right_node = a_parse_expression(
-                    ctx,
-                    right_binding_power.getOrDefault(op->getType(), op_left_bp + 1),
-                    nullptr
-                );
-                
-                g_ptr<Node> node = make<Node>();
-                node->type = op->getType();
-                if(left_node)
-                    node->children << left_node;
-                if(right_node) {
-                    if(!discard_types.has(right_node->type))
-                        node->children << right_node;
-                }
-                left_node = node;
-                
-            }
-        }
-        #if LOG_A_PARSE
-            log("Ended infix loop at index ",ctx.index,ctx.index<ctx.nodes.length()?", token: "+ctx.nodes[ctx.index]->info():" OVERSHOT INDEX!!");
-            endline();
-        #endif
-        if(left_node) {
-            ctx.node = left_node;
-            #if LOG_A_PARSE
-                log("Returning left node:\n",left_node->to_string(4));
-            #endif
-        }
-        #if LOG_A_PARSE
-            endline();
-        #endif
-        return left_node;
-    }
-
-    //Need to define all these globally so that the function pointers can access them
     size_t identifier_id = reg_id("IDENTIFIER");
     size_t object_id = reg_id("OBJECT");
     size_t literal_id = reg_id("LITERAL");
@@ -388,14 +323,15 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
     size_t bool_id = add_type("bool",1);
     size_t string_id = add_type("string",24);
     size_t in_string_id = reg_id("IN_STRING_KEY");
-    size_t plus_id = add_binary_operator('+',"PLUS", 4, 5);
+    size_t plus_id = add_binary_operator('+',"PLUS", 4, 6);
     size_t dash_id = add_binary_operator('-',"DASH", 4, 5);
     size_t rangle_id = add_binary_operator('>',"RANGLE", 2, 3);
     size_t langle_id = add_binary_operator('<',"LANGLE", 2, 3);
-    size_t equals_id = add_binary_operator('=', "ASSIGNMENT", 1, 0);
+    size_t equals_id = add_binary_operator('=', "ASSIGNMENT", 1, 1);
     size_t func_call_id = reg_id("FUNC_CALL");
-    size_t star_id = add_binary_operator('*',"STAR", 6, 7);
-    size_t amp_id = add_binary_operator('&',"AMPERSAND",-1,8);
+    size_t star_id = add_binary_operator('*',"STAR", 5, 7);
+    size_t caret_id = add_binary_operator('^',"CARET", 8, 4);
+    size_t amp_id = add_binary_operator('&',"AMPERSAND",4,8);
     size_t dot_id = add_binary_operator('.', "PROP_ACCESS", 8, 9);
     size_t return_id = make_tokenized_keyword("return");
     size_t break_id = make_tokenized_keyword("break");
@@ -486,44 +422,114 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
     void init() override {
         span = make<Log::Span>();
+
+
+        a_default_function = [this](Context& ctx) {
+            int left_bp = left_binding_power.getOrDefault(ctx.node->type, -1);
+            int right_bp = right_binding_power.getOrDefault(ctx.node->type, -1);
+            
+            if(left_bp == -1 && right_bp == -1) return;
+            
+            if(ctx.left && left_bp > 0 && !discard_types.has(ctx.left->type)) {
+                int left_left_bp = left_binding_power.getOrDefault(ctx.left->type, -1);
+                int left_right_bp = right_binding_power.getOrDefault(ctx.left->type, -1);
+
+                bool right_associative = right_bp < left_bp; //lbp > rbp means right assoc
+                bool should_steal = left_bp > (right_associative ? left_right_bp : left_left_bp);
+                
+                if(!ctx.left->children.empty()) {
+                    if(ctx.left->children.length()==1) {
+                        should_steal = true;
+                    }
+                    else if(discard_types.has(ctx.left->children.last()->type)) {
+                        goto otter;
+                    }
+                }
+
+                if(left_right_bp!=-1 && should_steal) {
+                    if(ctx.left->children.length()>1) {
+                        ctx.node->children << ctx.left->children.pop();
+                    }
+                    ctx.left->children << ctx.result->take(ctx.index);
+                } else {
+                    ctx.node->children << ctx.left;
+                    ctx.result->removeAt(ctx.index - 1);
+                }
+            } else {
+                otter:
+                if(!discard_types.has(ctx.node->type))
+                    ctx.node->type = to_unary_id(ctx.node->type);
+                ctx.index++;
+            }
+            
+            if(right_bp != -1 && ctx.index < ctx.result->length()) {
+                g_ptr<Node> next = ctx.result->get(ctx.index);
+                int next_lbp = left_binding_power.getOrDefault(next->type, -1);
+                if(next_lbp == -1) { //It's an atom so we grab it
+                    ctx.node->children << ctx.result->take(ctx.index);
+                    //log("Grabbed atom: ",node_info(ctx.node->children.last()));
+                } 
+            }
+            ctx.index--;
+        };
+
+        left_binding_power.put(lparen_id,10);
+
+        a_handlers[rparen_id] = [this](Context& ctx) {
+            ctx.result->removeAt(ctx.index);
+            int i = ctx.index-1;
+            list<g_ptr<Node>> gathered;
+            while(i>=0) {
+                g_ptr<Node> on = ctx.result->get(i);
+                while(!on->children.empty()&&on->type!=lparen_id) {
+                    on = on->children.last();
+                }
+                if(on->type==lparen_id) {
+                    gathered.reverse();
+                    bool was_given_children = false;
+                    if(on->children.empty()) {
+                        on->children << gathered;
+                        was_given_children = true;
+                    }
+                    on->copy(on->children.take(0));
+                    if(!was_given_children) {
+                        if(on->children.empty()) {
+                            on->children << gathered;
+                        } else { //This case if for things like int main(int a), where we want the gathered to go under main, not int
+                            on->children.last()->children << gathered;
+                        }
+                    }
+                    ctx.index = i;
+                    break;
+                } else {
+                    gathered << ctx.result->take(i);
+                    i--;
+                }
+            }
+        };
+
+        a_handlers[identifier_id] = [this](Context& ctx){
+            if(ctx.left && ctx.left->type == identifier_id) {
+                // log("Identifier handler, left looks like ",node_info(ctx.left)," my node looks like ",node_info(ctx.node),", the index is ",ctx.index,"/",ctx.result->length());
+                while(ctx.index < ctx.result->length() && ctx.result->get(ctx.index)->type == identifier_id) {
+                    //log("Taking a new child: ",node_info(ctx.result->get(ctx.index)));
+                    ctx.left->children << ctx.result->take(ctx.index);
+                }
+                ctx.index--;
+            } 
+        };
         
         discard_types.push(undefined_id);
         discard_types.push(end_id);
         discard_types.push(lparen_id);
-        discard_types.push(rparen_id);
+        discard_types.push(lbrace_id);
+        // discard_types.push(rparen_id);
         discard_types.push(comma_id);
 
         value_to_string.put(object_id, [](void* data) {
             return std::string("[object @") + std::to_string((size_t)data) + "]";
         });
         x_handlers[literal_id] = [](Context& ctx){};
-
-        a_handlers[identifier_id] = [this](Context& ctx){
-            if(ctx.index>=ctx.nodes.length()) {
-                log("Hey! Index overun by ",node_info(ctx.left));
-                return;
-            }
-
-            if(ctx.left) {
-                //log("Left looks like: ",ctx.left->info());
-                if(ctx.nodes[ctx.index]->getType()==identifier_id) {
-                    ctx.node = ctx.left;
-                    while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() == identifier_id) {
-                        ctx.node->children << ctx.nodes[ctx.index];
-                        ctx.index++;
-                    }
-                    //log("Folded into the left, forming:\n",ctx.left->to_string(1));
-                    //a_parse_expression(ctx,0,nullptr);
-                } else {
-                    //log("Not an identifier, so no folding");
-                    ctx.node = ctx.left;
-                }
-                //log("Ending on: ",ctx.nodes[ctx.index]->info());
-            } else {
-                //log("Nothing to my left");
-            }
-        };
-
 
         t_handlers[to_prefix_id(typename_id)] = [](Context& ctx){
             ctx.value->sub_type = ctx.qual->type;
@@ -532,51 +538,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             if(ctx.qual->value->type_scope)
                 ctx.value->type_scope = ctx.qual->value->type_scope;
         };
-
-
-
-        left_binding_power.put(lparen_id, 10);
-        right_binding_power.put(lparen_id, 0);
-        a_handlers[lparen_id] = [this](Context& ctx) {
-            size_t open_id = lparen_id;
-            size_t close_id = rparen_id;
-
-            if(ctx.left && ctx.left->type == lbrace_id || ctx.left->type == lbracket_id) {
-                ctx.node = nullptr;
-                return;
-            }
-
-            list<g_ptr<Node>>* main_result = ctx.result;
-            g_ptr<Node> result_node = nullptr;
-            if(ctx.left && ctx.left->type != 0 && ctx.left->type != open_id) {
-                result_node = ctx.left;
-                if(!ctx.left->children.empty())
-                    ctx.left = ctx.left->children.last();
-                ctx.result = &ctx.left->children;
-            } else {
-                result_node = make<Node>();
-                ctx.result = &result_node->children;
-            }
-            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() != close_id) {
-                g_ptr<Node> inner = a_parse_expression(ctx, 0);
-                if(inner && !discard_types.has(inner->getType()))
-                    ctx.result->push(inner);
-            }
-            ctx.result = main_result;
-            if(result_node && discard_types.has(result_node->getType()) && !result_node->children.empty()) {
-                g_ptr<Node> to_promote = result_node->children.take(0);
-                to_promote->children << result_node->children;
-                result_node = to_promote;
-            }
-            ctx.node = result_node;
-            ctx.index++;
-
-            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() == identifier_id) {
-                ctx.node->children << ctx.nodes[ctx.index];
-                ctx.index++;
-            }
-        };
-      
 
         value_to_string.put(float_id,[](void* data) {
             return std::to_string(*(float*)data);
@@ -681,23 +642,23 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         };
 
 
-        a_handlers[langle_id] = [this](Context& ctx) {
-            int i = ctx.index;
-            while(i<ctx.nodes.length()) {
-                if(ctx.nodes[i]->type==end_id||ctx.nodes[i]->type==lbrace_id) {
-                    break;
-                } 
-                else if(ctx.nodes[i]->type==rangle_id) {
-                    ctx.nodes[ctx.index-1]->type = lparen_id;
-                    ctx.nodes[i]->type = rparen_id;
-                    ctx.index--;
-                    return;
-                }
-                i++;
-            }
-            ctx.node = nullptr;
-            ctx.flag = true; //A stage uses it's flag for this
-        };
+        // a_handlers[langle_id] = [this](Context& ctx) {
+        //     int i = ctx.index;
+        //     while(i<ctx.nodes.length()) {
+        //         if(ctx.nodes[i]->type==end_id||ctx.nodes[i]->type==lbrace_id) {
+        //             break;
+        //         } 
+        //         else if(ctx.nodes[i]->type==rangle_id) {
+        //             ctx.nodes[ctx.index-1]->type = lparen_id;
+        //             ctx.nodes[i]->type = rparen_id;
+        //             ctx.index--;
+        //             return;
+        //         }
+        //         i++;
+        //     }
+        //     ctx.node = nullptr;
+        //     ctx.flag = true; //A stage uses it's flag for this
+        // };
 
         //Add this one day so we can have C++ style templates if we want
         // t_handlers[template_id] = [](Context& ctx) {
@@ -829,31 +790,23 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             }
         };
 
-
+        // t_handlers[end_id] = [this](Context& ctx){
+        //     print("Removing: ",node_info(ctx.result->get(ctx.index)));
+        //     ctx.result->removeAt(ctx.index);
+        // };
         
         a_handlers[return_id] = [this](Context& ctx) {
-            size_t open_id = return_id;
-            size_t close_id = end_id;
-            list<g_ptr<Node>>* main_result = ctx.result;
-            g_ptr<Node> result_node = nullptr;
-            if(ctx.left && ctx.left->type != 0) {
-                result_node = ctx.left;
-                if(!ctx.left->children.empty())
-                    ctx.left = ctx.left->children.last();
-                ctx.result = &ctx.left->children;
-            } else {
-                result_node = make<Node>();
-                ctx.result = &result_node->children;
-            }
-            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() != close_id) {
-                g_ptr<Node> inner = a_parse_expression(ctx, 0);
-                if(inner && !discard_types.has(inner->getType()))
-                    ctx.result->push(inner);
-            }
-            ctx.result = main_result;
-            ctx.node = result_node;
             ctx.index++;
+            while(ctx.index<ctx.result->length()) {
+                g_ptr<Node> take = ctx.result->take(ctx.index);
+                if(take->type==end_id) {
+                    standard_direct_pass(ctx.node);
+                    break;
+                }
+                ctx.node->children << take;
+            }
         };
+
         x_handlers[return_id] = [this](Context& ctx) {
             process_node(ctx, ctx.node->left());
             g_ptr<Node> on_scope = ctx.node->in_scope;
@@ -875,22 +828,22 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
 
         left_binding_power.put(lbracket_id, 10);
-        a_handlers[lbracket_id] = [this](Context& ctx) {
-            g_ptr<Node> result_node = make<Node>();
-            result_node->type = lbracket_id;
+        // a_handlers[lbracket_id] = [this](Context& ctx) {
+        //     g_ptr<Node> result_node = make<Node>();
+        //     result_node->type = lbracket_id;
             
-            if(ctx.left && ctx.left->type != 0) {
-                result_node->children << ctx.left;
-            }
+        //     if(ctx.left && ctx.left->type != 0) {
+        //         result_node->children << ctx.left;
+        //     }
             
-            while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() != rbracket_id) {
-                g_ptr<Node> expr = a_parse_expression(ctx, 0);
-                if(expr) result_node->children << expr;
-            }
-            ctx.index++;
+        //     while(ctx.index < ctx.nodes.length() && ctx.nodes[ctx.index]->getType() != rbracket_id) {
+        //         g_ptr<Node> expr = a_parse_expression(ctx, 0);
+        //         if(expr) result_node->children << expr;
+        //     }
+        //     ctx.index++;
             
-            ctx.node = result_node;
-        };
+        //     ctx.node = result_node;
+        // };
         t_handlers[lbracket_id] = [this](Context& ctx) {
             standard_sub_process(ctx);
             auto& children = ctx.node->children;
@@ -1180,12 +1133,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         };
 
 
-        a_parse_function = [this](Context& ctx){
-            g_ptr<Node> expr = a_parse_expression(ctx, 0);
-            if(expr && !discard_types.has(expr->getType())) {
-                ctx.result->push(expr);
-            }
-        };
         s_default_function = [](Context& ctx){};
         t_default_function = [this](Context& ctx){
             standard_sub_process(ctx);
@@ -1577,7 +1524,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         };
 
         span->print_on_line_end = false; //While things aren't crashing
-        //span->log_everything = true; //While things are crashing
 
         
         span2 = make<Log::Span>(); 
@@ -1599,32 +1545,43 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         }
     };
 
+    void clean_ends(list<g_ptr<Node>>& nodes) {
+        for(int i=nodes.length()-1;i>=0;i--) {
+            clean_ends(nodes[i]->children);
+            if(nodes[i]->type==end_id) nodes.removeAt(i);
+            if(nodes[i]->type==comma_id) nodes.removeAt(i);
+            for(auto scope : nodes[i]->scopes) {
+                clean_ends(scope->children);
+            }
+        }
+    };
+
     g_ptr<Node> process(const std::string& path) override { 
         std::string code = readFile(path);
         code_store = code;
         timer.start();
+
         span2->add_line("TOKENIZE STAGE");
-        span2->log_everything = true;
-
-        list<g_ptr<Node>> tokens = tokenize(code);
+        g_ptr<Node> root = make<Node>();
+        root->children = tokenize(code);
         span2->end_line();
+
         span2->add_line("A STAGE");
-        start_stage(&a_handlers,a_parse_function);
-        list<g_ptr<Node>> nodes = parse_tokens(tokens);
-        
-        a_pass_resolve_keywords(nodes);
-
-        // for(auto n : nodes) {
-        //     print(n->to_string());
-        // }
-
+        start_stage(&a_handlers,a_default_function);
+        standard_direct_pass(root);
         span2->end_line();
+
+        span2->add_line("A CLEAN");
+        clean_ends(root->children);
+        a_pass_resolve_keywords(root->children);
+        span2->end_line();
+     
         span2->add_line("S STAGE");
         start_stage(&s_handlers,s_default_function);
-        g_ptr<Node> root = parse_scope(nodes);
+        root = parse_scope(root->children);
+        span2->end_line();
         
         // print(node_to_string(root));
-        // print_scopes(root);
         return root;
     };
 

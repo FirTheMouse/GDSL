@@ -3,7 +3,6 @@ num {
     int y;
 
     int inc(int val, num* counter) {
-
         print("Counter x: ",(*counter).x);
         int depth = 0;
         while((*counter).x<val) {
@@ -23,9 +22,9 @@ int main() {
     c.x = 5;
     num j;
     j.x = 0;
-    print(c.inc(6,&j));
+    print("Should be 6: ",c.inc(6,&j));
     print("j.x: ",j.x);
     j.x = 2;
-    print(c.inc(4,&j));
+    print("Should be 4: ",c.inc(4,&j));
 }
 main();

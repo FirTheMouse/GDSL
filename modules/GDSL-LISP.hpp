@@ -394,12 +394,36 @@ namespace GDSL {
                 }
             };
 
-            a_parse_function = [this](Context& ctx){
-                g_ptr<Node> expr = lisp_expression_parse(ctx);
-                if(expr && !discard_types.has(expr->getType())) {
-                    ctx.result->push(expr);
+            a_handlers[rparen_id] = [this](Context& ctx) {
+                ctx.result->removeAt(ctx.index);
+                int i = ctx.index - 1;
+                list<g_ptr<Node>> gathered;
+                
+                while(i >= 0 && ctx.result->get(i)->type != lparen_id) {
+                    gathered << ctx.result->take(i);
+                    i--;
                 }
+                
+                ctx.result->removeAt(i); 
+                gathered.reverse();
+                
+                g_ptr<Node> op = gathered.take(0);
+                op->children << gathered;
+                
+                ctx.result->insert(op, i);
+                ctx.index = i;
             };
+
+            a_default_function = [this](Context& ctx){
+
+            };
+
+            // a_parse_function = [this](Context& ctx){
+            //     g_ptr<Node> expr = lisp_expression_parse(ctx);
+            //     if(expr && !discard_types.has(expr->getType())) {
+            //         ctx.result->push(expr);
+            //     }
+            // };
             s_default_function = [](Context& ctx){};
             t_default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -436,21 +460,22 @@ namespace GDSL {
             code_store = code;
             timer.start();
             print("TOKENIZE");
-            list<g_ptr<Node>> tokens = tokenize(code);
-            print("A STAGE");
-            start_stage(&a_handlers,a_parse_function);
-            list<g_ptr<Node>> nodes = parse_tokens(tokens);
-            a_pass_resolve_keywords(nodes);
-
-            print("S STAGE");
-            start_stage(&s_handlers,s_default_function);
             g_ptr<Node> root = make<Node>();
             root->name = "GLOBAL";
             root->is_scope = true;
-            for(auto n : nodes) {
+            root->children << tokenize(code);
+            print("A STAGE");
+            start_stage(&a_handlers,a_default_function);
+            standard_direct_pass(root);
+
+            a_pass_resolve_keywords(root->children);
+
+            print("S STAGE");
+            start_stage(&s_handlers,s_default_function);
+            for(auto n : root->children) {
                 n->place_in_scope(root.getPtr());
+                print(node_to_string(n));
             }
-            root->children = nodes;
             standard_travel_pass(root);
             return root;
         };

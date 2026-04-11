@@ -438,7 +438,10 @@ struct Unit : public q_object {
     std::string node_info(g_ptr<Node> node) {
         std::string to_return = "";
         
-        to_return += labels[node->type] + " " + green(node->name) + " " + (node->value?value_info(node->value):"") + (node->in_scope?"{"+node->in_scope->name+"}":"");
+        to_return += labels[node->type] + " " + green(node->name) + " " 
+        + (node->value?value_info(node->value):"") 
+        + (!node->children.empty()?"[C:"+std::to_string(node->children.length())+"]":"")  
+        + (node->in_scope?"{"+node->in_scope->name+"}":"");
         return to_return;
     }
 
@@ -515,7 +518,7 @@ struct Unit : public q_object {
     Handler tokenizer_default_function = nullptr;
 
     //TAST
-    map<uint32_t,Handler> a_handlers; Handler a_parse_function;
+    map<uint32_t,Handler> a_handlers; Handler a_parse_function; Handler a_default_function;
     map<uint32_t,Handler> s_handlers; Handler s_default_function;
     map<uint32_t,Handler> t_handlers; Handler t_default_function;
     //DRE
@@ -741,6 +744,16 @@ struct Unit : public q_object {
 
 
 
+    // void standard_sub_process(Context& ctx) {
+    //     int i = 0;
+    //     Context sub_ctx(ctx.node->children,i);
+    //     while(i < ctx.node->children.length()) {
+    //         process_node(sub_ctx, ctx.node->children[i]);
+    //         i++;
+    //     }
+    //     ctx.flag = sub_ctx.flag;
+    // }
+
     void standard_sub_process(Context& ctx) {
         for(int i = 0; i < ctx.node->children.length(); i++) {
             process_node(ctx, ctx.node->children[i]);
@@ -752,6 +765,44 @@ struct Unit : public q_object {
             process_node(ctx, ctx.node->children[i]);
         }
     }
+
+    // void standard_resolving_pass(g_ptr<Node> root) {
+    //     newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+    //     int i = 0;
+    //     Context ctx(root->children,i);
+    //     ctx.root = root;
+    //     while(i < root->children.size()) {
+    //         if(root->children[i]->scope()) {
+    //             ctx.node = root->children[i];
+    //             standard_process(ctx);
+    //             ctx.left = root->children[i];
+    //         }
+    //         i++;
+    //     }
+    //     while(i < root->children.size()) {
+    //         if(!root->children[i]->scope()) {
+    //             ctx.node = root->children[i];
+    //             standard_process(ctx);
+    //             ctx.left = root->children[i];
+    //         }
+    //         i++;
+    //     }
+    //     while(i < root->children.size()) {
+    //         if(root->children[i]->scope()) {
+    //             ctx.result = &root->children[i]->children;
+    //             for(auto c : root->children[i]->children) {
+    //                 ctx.node = c;
+    //                 standard_process(ctx);
+    //                 ctx.left = c;
+    //             }
+    //         }
+    //         i++;
+    //     }
+    //     for(auto child_scope : root->scopes) {
+    //         standard_resolving_pass(child_scope);
+    //     }
+    //     endline();
+    // }
 
     void standard_resolving_pass(g_ptr<Node> root) {
         newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
@@ -793,14 +844,26 @@ struct Unit : public q_object {
 
     void standard_direct_pass(g_ptr<Node> root) {
         newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
-        Context ctx;
+        int i = 0;
+        Context ctx(root->children,i);
         ctx.root = root;
-        ctx.result = &root->children;
-        for(int i = 0; i < root->children.size(); i++) {
-            ctx.index = i;
-            ctx.node = root->children[i];
+        while(i < ctx.result->size()) {
+            
+            // log("  BEFORE");
+            // for(int i = 0; i<ctx.result->length();i++) {
+            //     log(ctx.index==i?"  -> ":"     ",i,":\n",node_to_string(ctx.result->get(i),3));
+            // }
+
+            ctx.node = ctx.result->get(i);
             standard_process(ctx);
-            ctx.left = root->children[i];
+
+            // log("  AFTER");
+            // for(int i = 0; i<ctx.result->length();i++) {
+            //     log(ctx.index==i?"  -> ":"     ",i,": ",node_info(ctx.result->get(i)));
+            // }
+
+            ctx.left = ctx.result->get(i);
+            i++;
         }
 
         for(auto scope : root->scopes) {

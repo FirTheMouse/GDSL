@@ -1,5 +1,6 @@
 #include "modules/GDSL-C.hpp"
 #include "modules/GDSL-LISP.hpp"
+#include "modules/GDSL-Test.hpp"
 
 using namespace GDSL;
 
@@ -19,32 +20,54 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
 
-    g_ptr<LISP_Unit> lisp = make<LISP_Unit>();
-    lisp->init();
+    g_ptr<Test_Unit> test = make<Test_Unit>();
+    test->init();
+    test->run(test->process(""));
 
-    root = lisp->process("modules/tests/lisptest.gld");
-    lisp->run(root);
-    span = make<Log::Span>();
 
-    g_ptr<C_Compiler> c = make<C_Compiler>();
+    // std::string display = "";
+    // display.append("GDSL-C: ");
+    // display.append(readFile("modules/GDSL-C.hpp"));
+    // display.append("Q-Arm64, an example of a Unit: ");
+    // display.append(readFile("modules/Q-Arm64.hpp"));
+    // display.append("GDSL-LISP: ");
+    // display.append(readFile("modules/GDSL-LISP.hpp"));
+    // display.append("And finnaly the core: ");
+    // display.append(readFile("core/GDSL.hpp"));
+    // print(display);
 
-    c->emit_mode = true;
-    c->init();
-    c->span2->log_everything = true;
-    root = c->process("modules/tests/cemittest.gld");
-    c->serialize(root);
-    c->saveBinary("savetest.wub");
-    root = c->loadBinary("savetest.wub");
-    c->run(root);
-    span = make<Log::Span>();
-    c->emit_mode = false;
-    c->span2 = make<Log::Span>();
-    c->emit_buffer.clear();
 
-    root = c->process("modules/tests/ctest.gld");
-    c->run(root);
+    // g_ptr<LISP_Unit> lisp = make<LISP_Unit>();
+    // lisp->init();
+
+    // root = lisp->process(readFile("modules/tests/lisptest.gld"));
+    // lisp->run(root);
+    // span = make<Log::Span>();
+
+    // g_ptr<C_Compiler> c = make<C_Compiler>();
+    // c->init();
+    // c->span2->log_everything = true;
+    // root = c->process(readFile("modules/tests/ctest.gld"));
+    // c->run(root);
+
+    // c->emit_mode = true;
+    // root = c->process(readFile("modules/tests/cemittest.gld"));
+    // c->run(root);
+    // c->serialize(root);
+    // c->saveBinary("savetest.wub");
+    // root = c->loadBinary("savetest.wub");
+    // c->run(root);
+    // span = make<Log::Span>();
+    // c->emit_mode = false;
+    // c->span2 = make<Log::Span>();
+    // c->emit_buffer.clear();
+
+    // root = c->process(readFile("modules/tests/ctest.gld"));
+    // c->run(root);
 
     print("TEST FINISHED");
+
+
 
 
 

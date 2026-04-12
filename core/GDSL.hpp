@@ -7,7 +7,7 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 1
+#define PRINT_ALL 0
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language
@@ -518,7 +518,7 @@ struct Unit : public q_object {
     Handler tokenizer_default_function = nullptr;
 
     //TAST
-    map<uint32_t,Handler> a_handlers; Handler a_parse_function; Handler a_default_function;
+    map<uint32_t,Handler> a_handlers; Handler a_default_function;
     map<uint32_t,Handler> s_handlers; Handler s_default_function;
     map<uint32_t,Handler> t_handlers; Handler t_default_function;
     //DRE
@@ -600,8 +600,6 @@ struct Unit : public q_object {
         
     }
 
-
-
     list<g_ptr<Node>> tokenize(const std::string& code) {
         list<g_ptr<Node>> result;
         uint32_t state = 0;
@@ -641,39 +639,6 @@ struct Unit : public q_object {
 
         return result;
     }
-
-    //Doesn't advance it's own index so be wary of infinite recursion with a bad a_parse_function
-    list<g_ptr<Node>> parse_tokens(list<g_ptr<Node>> tokens) {
-            newline("Parse tokens pass (A) over: "+std::to_string(tokens.length())+" tokens");
-            
-            if(!a_parse_function)
-                print("GDSL::parse_tokens a_stage requires a parsing function!");
-
-            list<g_ptr<Node>> result;
-            int index = 0;
-            
-            while(index < tokens.length()) {
-                if(!tokens[index]) break;
-                Context ctx(result, index);
-                ctx.nodes = tokens;
-                
-                newline("Parsing (A): "+node_info(tokens[index]));
-                a_parse_function(ctx);
-                endline();
-                //index++;
-            }
-
-            log("==A_NODES==");
-            int i = 0;
-            for (auto& node : result) {
-                log(node_to_string(node,0,i++));
-            }
-
-            endline();
-            return result;
-    }
-
-
 
     g_ptr<Node> find_scope(g_ptr<Node> start, std::function<bool(g_ptr<Node>)> check) {
         g_ptr<Node> on_scope = start;
@@ -724,11 +689,15 @@ struct Unit : public q_object {
     }
 
 
-    g_ptr<Node> standard_process(Context& ctx) {
+    inline g_ptr<Node> standard_process(Context& ctx) {
         newline("Processing: "+node_info(ctx.node));
         (*active_handlers).getOrDefault(ctx.node->type,active_default_function)(ctx);
         endline();
         return ctx.node;
+    }
+
+    inline void standard_process(Context& ctx, size_t type) {
+        (*active_handlers).getOrDefault(type,active_default_function)(ctx);
     }
 
     g_ptr<Node> process_node(Context& ctx, g_ptr<Node> node, g_ptr<Node> left = nullptr) {
@@ -742,22 +711,28 @@ struct Unit : public q_object {
         return to_return;
     }
 
+    g_ptr<Node> process_node(g_ptr<Node> node, g_ptr<Node> left = nullptr) {
+        Context ctx;
+        return process_node(ctx,node,left);
+    }
 
-
-    // void standard_sub_process(Context& ctx) {
-    //     int i = 0;
-    //     Context sub_ctx(ctx.node->children,i);
-    //     while(i < ctx.node->children.length()) {
-    //         process_node(sub_ctx, ctx.node->children[i]);
-    //         i++;
-    //     }
-    //     ctx.flag = sub_ctx.flag;
-    // }
+    void standard_sub_process_node(g_ptr<Node> root) {
+        Context ctx;
+        ctx.node = root;
+        standard_sub_process(ctx);
+    }
 
     void standard_sub_process(Context& ctx) {
-        for(int i = 0; i < ctx.node->children.length(); i++) {
-            process_node(ctx, ctx.node->children[i]);
+        int i = 0;
+        Context sub_ctx(ctx.node->children,i);
+        sub_ctx.root = ctx.node;
+        g_ptr<Node> left = nullptr;
+        while(i < ctx.node->children.length()) {
+            process_node(sub_ctx, ctx.node->children[i], left);
+            left = ctx.node->children[i];
+            i++;
         }
+        ctx.flag = sub_ctx.flag;
     }
 
     void backwards_sub_process(Context& ctx) {
@@ -766,75 +741,34 @@ struct Unit : public q_object {
         }
     }
 
-    // void standard_resolving_pass(g_ptr<Node> root) {
-    //     newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
-    //     int i = 0;
-    //     Context ctx(root->children,i);
-    //     ctx.root = root;
-    //     while(i < root->children.size()) {
-    //         if(root->children[i]->scope()) {
-    //             ctx.node = root->children[i];
-    //             standard_process(ctx);
-    //             ctx.left = root->children[i];
-    //         }
-    //         i++;
-    //     }
-    //     while(i < root->children.size()) {
-    //         if(!root->children[i]->scope()) {
-    //             ctx.node = root->children[i];
-    //             standard_process(ctx);
-    //             ctx.left = root->children[i];
-    //         }
-    //         i++;
-    //     }
-    //     while(i < root->children.size()) {
-    //         if(root->children[i]->scope()) {
-    //             ctx.result = &root->children[i]->children;
-    //             for(auto c : root->children[i]->children) {
-    //                 ctx.node = c;
-    //                 standard_process(ctx);
-    //                 ctx.left = c;
-    //             }
-    //         }
-    //         i++;
-    //     }
-    //     for(auto child_scope : root->scopes) {
-    //         standard_resolving_pass(child_scope);
-    //     }
-    //     endline();
-    // }
-
     void standard_resolving_pass(g_ptr<Node> root) {
         newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
-        Context ctx;
+        int i = 0;
+        Context ctx(root->children,i);
         ctx.root = root;
-        ctx.result = &root->children;
-        for(int i = 0; i < root->children.size(); i++) {
-            ctx.index = i;
+        while(i < root->children.size()) {
             if(root->children[i]->scope()) {
                 ctx.node = root->children[i];
                 standard_process(ctx);
                 ctx.left = root->children[i];
             }
+            i++;
         }
-        for(int i = 0; i < root->children.size(); i++) {
-            ctx.index = i;
+        i = 0;
+        while(i < root->children.size()) {
             if(!root->children[i]->scope()) {
                 ctx.node = root->children[i];
                 standard_process(ctx);
                 ctx.left = root->children[i];
             }
+            i++;
         }
-        for(int i = 0; i < root->children.size(); i++) {
-            ctx.index = i;
+        i = 0;
+        while(i < root->children.size()) {
             if(root->children[i]->scope()) {
-                ctx.result = &root->children[i]->children;
-                for(auto c : root->children[i]->children) {
-                    ctx.node = c;
-                    standard_process(ctx);
-                    ctx.left = c;
-                }
+                standard_sub_process_node(root->children[i]);
             }
+            i++;
         }
         for(auto child_scope : root->scopes) {
             standard_resolving_pass(child_scope);
@@ -848,20 +782,8 @@ struct Unit : public q_object {
         Context ctx(root->children,i);
         ctx.root = root;
         while(i < ctx.result->size()) {
-            
-            // log("  BEFORE");
-            // for(int i = 0; i<ctx.result->length();i++) {
-            //     log(ctx.index==i?"  -> ":"     ",i,":\n",node_to_string(ctx.result->get(i),3));
-            // }
-
             ctx.node = ctx.result->get(i);
             standard_process(ctx);
-
-            // log("  AFTER");
-            // for(int i = 0; i<ctx.result->length();i++) {
-            //     log(ctx.index==i?"  -> ":"     ",i,": ",node_info(ctx.result->get(i)));
-            // }
-
             ctx.left = ctx.result->get(i);
             i++;
         }

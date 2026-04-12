@@ -51,102 +51,17 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
     size_t scope_id = reg_id("SCOPE");
 
-    // void parse_scope(g_ptr<Node> root) {
-    //     root->name = "GLOBAL";
-    //     root->type = scope_id;
-    //     root->is_scope = true;
-    //     list<g_ptr<Node>> nodes;
-    //     nodes <= root->children;
-    //     g_ptr<Node> current_scope = root;
-    //     list<g_value> stack{g_value()};
-
-    //     #if PRINT_ALL
-    //     newline("Parse scope pass");
-    //     #endif
-
-    //     for (int i = 0; i < nodes.size(); ++i) {
-    //         g_ptr<Node> node = nodes[i];
-    //         g_ptr<Node> owner_node = (i>0) ? nodes[i - 1] : nullptr;
-
-    //         int p = scope_precedence.getOrDefault(node->type,0);
-    //         bool on_stack = stack.last().owner ? true : false;
-    //         if(p<=0) {
-    //             if(p<0) {
-    //                 if (current_scope->parent) {
-    //                     current_scope = current_scope->parent;
-    //                 }
-    //             }
-    //             else {
-    //                 current_scope->children << node; 
-    //                 node->place_in_scope(current_scope.getPtr());
-    //                 if(on_stack && !stack.last().deferred && !stack.last().explc) {
-    //                     if (current_scope->parent) {
-    //                         current_scope = current_scope->parent;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         else {
-    //             if(p<10) {
-    //                 current_scope->children << node;
-    //                 node->place_in_scope(current_scope.getPtr());
-    //                 owner_node = node;
-    //             }
-
-    //             if(on_stack) {
-    //                 int stack_precedence = scope_precedence.getOrDefault(stack.last().owner->type,0);
-    //                 if(p >= stack_precedence) {
-    //                     stack.last().deferred = true;
-    //                 }
-    //             }
-
-    //             if(p == 10) {
-    //                 if(on_stack) {
-    //                     stack.last().explc = true;
-    //                     if (current_scope->parent) {
-    //                         current_scope = current_scope->parent;
-    //                     }
-    //                 }
-    //             }
-    //             else {
-    //                 stack << g_value(owner_node);
-    //             }
-
-    //             g_ptr<Node> parent_scope = current_scope;
-    //             current_scope = current_scope->spawn_sub_scope();
-    //             current_scope->type = scope_id;
-    //             if (owner_node) {
-    //                 //Deffensive check here
-    //                 try {
-    //                     auto func = scope_link_handlers.get(owner_node->type);
-    //                     func(current_scope,parent_scope,owner_node);
-    //                 }
-    //                 catch(std::exception e) {
-    //                     print("parse_scope::809 missing scope link handler for type: ",labels[owner_node->type]);
-    //                 }
-                
-    //             } else {
-    //                 current_scope->type = 0; //Suppoused to be GET_TYPE(BLOCK), doesn't matter, don't care
-    //             }
-    //         }
-    //     }
-
-    //     #if PRINT_ALL
-    //     //print_scope(root_scope);
-    //     endline();
-    //     #endif
-    // }
-
-    g_ptr<Node> parse_scope(list<g_ptr<Node>> nodes) {
-        g_ptr<Node> root_scope = make<Node>();
-        root_scope->name = "GLOBAL";
-        root_scope->type = scope_id;
-        root_scope->is_scope = true;
-        g_ptr<Node> current_scope = root_scope;
+    void parse_scope(g_ptr<Node> root) {
+        root->name = "GLOBAL";
+        root->type = scope_id;
+        root->is_scope = true;
+        list<g_ptr<Node>> nodes;
+        nodes <= root->children;
+        g_ptr<Node> current_scope = root;
         list<g_value> stack{g_value()};
 
         #if PRINT_ALL
-        newline("Parse scope pass");
+            newline("Parse scope pass");
         #endif
 
         for (int i = 0; i < nodes.size(); ++i) {
@@ -220,7 +135,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         //print_scope(root_scope);
         endline();
         #endif
-        return root_scope;
     }
 
     size_t add_scoped_keyword(const std::string& name, int scope_prec)
@@ -241,8 +155,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         t_handlers[id] = [](Context& ctx){};
         return id;
     }
-
-
 
     size_t var_decl_id = reg_id("VAR_DECL");
     size_t to_decl_id(size_t id) {return id+1;}
@@ -419,6 +331,7 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
     Log::Line timer;
     g_ptr<Log::Span> span2;
     IdPool reg_pool;
+    std::string output_string = "";
 
     void init() override {
         span = make<Log::Span>();
@@ -467,7 +380,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
                 int next_lbp = left_binding_power.getOrDefault(next->type, -1);
                 if(next_lbp == -1) { //It's an atom so we grab it
                     ctx.node->children << ctx.result->take(ctx.index);
-                    //log("Grabbed atom: ",node_info(ctx.node->children.last()));
                 } 
             }
             ctx.index--;
@@ -523,7 +435,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         discard_types.push(end_id);
         discard_types.push(lparen_id);
         discard_types.push(lbrace_id);
-        // discard_types.push(rparen_id);
         discard_types.push(comma_id);
 
         value_to_string.put(object_id, [](void* data) {
@@ -790,10 +701,15 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             }
         };
 
-        // t_handlers[end_id] = [this](Context& ctx){
-        //     print("Removing: ",node_info(ctx.result->get(ctx.index)));
-        //     ctx.result->removeAt(ctx.index);
-        // };
+        t_handlers[end_id] = [this](Context& ctx){
+            ctx.result->removeAt(ctx.index);
+            ctx.index--;
+        };
+
+        t_handlers[comma_id] = [this](Context& ctx){
+            ctx.result->removeAt(ctx.index);
+            ctx.index--;
+        };
         
         a_handlers[return_id] = [this](Context& ctx) {
             ctx.index++;
@@ -1161,6 +1077,7 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
                 toPrint.append(value_as_string(r->value));
             }
             print(toPrint);
+            output_string.append(toPrint+"\n");
         };
 
         e_handlers[print_id] = [this](Context& ctx){
@@ -1545,19 +1462,7 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         }
     };
 
-    void clean_ends(list<g_ptr<Node>>& nodes) {
-        for(int i=nodes.length()-1;i>=0;i--) {
-            clean_ends(nodes[i]->children);
-            if(nodes[i]->type==end_id) nodes.removeAt(i);
-            if(nodes[i]->type==comma_id) nodes.removeAt(i);
-            for(auto scope : nodes[i]->scopes) {
-                clean_ends(scope->children);
-            }
-        }
-    };
-
-    g_ptr<Node> process(const std::string& path) override { 
-        std::string code = readFile(path);
+    g_ptr<Node> process(const std::string& code) override { 
         code_store = code;
         timer.start();
 
@@ -1572,13 +1477,12 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         span2->end_line();
 
         span2->add_line("A CLEAN");
-        clean_ends(root->children);
         a_pass_resolve_keywords(root->children);
         span2->end_line();
      
         span2->add_line("S STAGE");
         start_stage(&s_handlers,s_default_function);
-        root = parse_scope(root->children);
+        parse_scope(root);
         span2->end_line();
         
         // print(node_to_string(root));
@@ -1640,15 +1544,17 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
         std::string final_time = ftime(timer.end());
 
-        print("==LOG==");
-        span->print_all();
-        print(node_to_string(root));
-        print_scopes(root);
+        #if PRINT_ALL
+            print("==LOG==");
+            span->print_all();
+            print(node_to_string(root));
+            print_scopes(root);
 
-        print("Ran:\n",code_store);
-        if(emit_mode) {
-            print_emit_buffer();
-        }
+            print("Ran:\n",code_store);
+            if(emit_mode) {
+                print_emit_buffer();
+            }
+        #endif
         span2->end_line();
         span2->add_line("X STAGE");
         start_stage(&x_handlers,x_default_function);
@@ -1706,7 +1612,9 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             munmap(buf, byte_size); //Cleanup
         } else {
             timer.start();
-            print("==EXECUTING==");
+            #if PRINT_ALL
+                print("==EXECUTING==");
+            #endif
 
             standard_travel_pass(main_func?main_func:root);
 
@@ -1714,12 +1622,14 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             span2->end_line();
         }
         
-        span2->print_all();
+        #if PRINT_ALL
+            span2->print_all();
 
-        print("Final time: ",final_time);
-        print("Exec time: ",exec_time);
+            print("Final time: ",final_time);
+            print("Exec time: ",exec_time);
 
-        print("==DONE==");
+            print("==DONE==");
+        #endif
     };
 
 };

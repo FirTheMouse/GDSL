@@ -85,9 +85,5 @@ struct AST_Unit : public virtual Unit {
             size_t call_id = val->sub_type;
             return call_id;
         }
-
-        // void init() {
-
-        // }
 };
 }

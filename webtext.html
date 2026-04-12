@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <textarea id="code" rows="20" cols="80"
+        autocorrect="off" 
+        autocapitalize="off" 
+        spellcheck="false">
+    </textarea>
+    <br>
+    <button id="mode" onclick="toggleMode()">C</button>
+    <button onclick="compile()">Compile</button>
+    <pre id="output"></pre>
+    <script>
+        let mode = 'c';
+        function toggleMode() {
+            mode = mode === 'c' ? 'lisp' : 'c';
+            document.getElementById('mode').innerText = mode.toUpperCase();
+        }
+        async function compile() {
+            const code = document.getElementById('code').value;
+            const response = await fetch('/', {
+                method: 'POST',
+                body: mode + '\n' + code
+            });
+            const result = await response.text();
+            document.getElementById('output').innerText = result;
+        }
+    </script>
+</body>
+</html>

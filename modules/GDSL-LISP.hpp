@@ -97,6 +97,7 @@ namespace GDSL {
         }
 
         Log::Line timer; 
+        std::string output_string = "";
 
         void init() override {
             span = make<Log::Span>(); //<- This is the logging primitve, what all the log, newline, endline, work with
@@ -447,6 +448,7 @@ namespace GDSL {
                     toPrint.append(value_as_string(r->value));
                 }
                 print(toPrint);
+                output_string.append(toPrint);
             };
 
             span->print_on_line_end = false; //While things aren't crashing
@@ -455,8 +457,7 @@ namespace GDSL {
 
         std::string code_store = "";
 
-        g_ptr<Node> process(const std::string& path) override {
-            std::string code = readFile(path);
+        g_ptr<Node> process(const std::string& code) override {
             code_store = code;
             timer.start();
             print("TOKENIZE");

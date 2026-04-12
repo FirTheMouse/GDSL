@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <cstring>
 
 #include "../util/list.hpp"
 #include "../util/map.hpp"

@@ -1,6 +1,9 @@
 #pragma once
 
 #include "../core/GDSL.hpp"
+#include <bitset>
+
+
 
 namespace GDSL {
 
@@ -33,48 +36,54 @@ namespace GDSL {
     //x31 - again
     const int REG_SP = 31;
 
-    #include <signal.h>
-    #include <execinfo.h>
     static void* jit_buf_start = nullptr;
     static size_t jit_buf_size = 0;
 
-    static void sigill_handler(int sig, siginfo_t* info, void* ctx) {
-        ucontext_t* uc = (ucontext_t*)ctx;
-        // PC is in the machine context
-        uint64_t pc = uc->uc_mcontext->__ss.__pc;
-        print("Illegal instruction at PC: 0x", std::hex, pc);
-        
-        if(jit_buf_start) {
-            uint64_t offset = pc - (uint64_t)jit_buf_start;
-            int instruction_index = offset / 4;
-            print("Buffer offset: ", offset, " bytes, instruction index: ", std::dec, instruction_index);
-        }
-        exit(1);
-    }
+    // #include <signal.h>
+    // #include <execinfo.h>
 
-    static void sigsegv_handler(int sig, siginfo_t* info, void* ctx) {
-        ucontext_t* uc = (ucontext_t*)ctx;
-        uint64_t pc = uc->uc_mcontext->__ss.__pc;
-        uint64_t sp = uc->uc_mcontext->__ss.__sp;
-        // uint64_t x29 = uc->uc_mcontext->__ss.__x[29];
-        // uint64_t x30 = uc->uc_mcontext->__ss.__x[30];
+
+    // static void sigill_handler(int sig, siginfo_t* info, void* ctx) {
+    //     ucontext_t* uc = (ucontext_t*)ctx;
+    //     // PC is in the machine context
+    //     #ifdef __APPLE__
+    //         uint64_t pc = uc->uc_mcontext->__ss.__pc;
+    //     #else
+    //         uint64_t pc = uc->uc_mcontext.pc;
+    //     #endif
+    //     print("Illegal instruction at PC: 0x", std::hex, pc);
         
-        print("SIGSEGV/SIGBUS at PC: 0x", std::hex, pc);
-        //print("SP: 0x", sp, " X29: 0x", x29, " X30: 0x", x30);
+    //     if(jit_buf_start) {
+    //         uint64_t offset = pc - (uint64_t)jit_buf_start;
+    //         int instruction_index = offset / 4;
+    //         print("Buffer offset: ", offset, " bytes, instruction index: ", std::dec, instruction_index);
+    //     }
+    //     exit(1);
+    // }
+
+    // static void sigsegv_handler(int sig, siginfo_t* info, void* ctx) {
+    //     ucontext_t* uc = (ucontext_t*)ctx;
+    //     uint64_t pc = uc->uc_mcontext->__ss.__pc;
+    //     uint64_t sp = uc->uc_mcontext->__ss.__sp;
+    //     // uint64_t x29 = uc->uc_mcontext->__ss.__x[29];
+    //     // uint64_t x30 = uc->uc_mcontext->__ss.__x[30];
         
-        if(jit_buf_start) {
-            uint64_t offset = pc - (uint64_t)jit_buf_start;
-            int instruction_index = offset / 4;
-            print("Buffer offset: ", std::dec, instruction_index);
-        }
+    //     print("SIGSEGV/SIGBUS at PC: 0x", std::hex, pc);
+    //     //print("SP: 0x", sp, " X29: 0x", x29, " X30: 0x", x30);
         
-        // Print all registers
-        for(int i = 0; i < 30; i++) {
-            print("x", i, ": 0x", std::hex, uc->uc_mcontext->__ss.__x[i]);
-        }
+    //     if(jit_buf_start) {
+    //         uint64_t offset = pc - (uint64_t)jit_buf_start;
+    //         int instruction_index = offset / 4;
+    //         print("Buffer offset: ", std::dec, instruction_index);
+    //     }
         
-        exit(1);
-    }
+    //     // Print all registers
+    //     for(int i = 0; i < 30; i++) {
+    //         print("x", i, ": 0x", std::hex, uc->uc_mcontext->__ss.__x[i]);
+    //     }
+        
+    //     exit(1);
+    // }
 
     struct ARM64_Unit : public virtual Unit {
         list<uint32_t> emit_buffer;

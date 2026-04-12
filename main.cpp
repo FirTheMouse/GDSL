@@ -1,6 +1,9 @@
+#include "modules/GDSL-Test.hpp"
+#include "modules/Q-HTML.hpp"
+#include "modules/Twig-Snap.hpp"
 #include "modules/GDSL-C.hpp"
 #include "modules/GDSL-LISP.hpp"
-#include "modules/GDSL-Test.hpp"
+
 
 using namespace GDSL;
 
@@ -20,9 +23,19 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
 
-    g_ptr<Test_Unit> test = make<Test_Unit>();
-    test->init();
-    test->run(test->process(""));
+    // g_ptr<Test_Unit> test = make<Test_Unit>();
+    // test->init();
+    // test->run(test->process(""));
+
+    // g_ptr<TwigSnap_Unit> twig = make<TwigSnap_Unit>();
+    // twig->init();
+    // twig->run(root);
+
+    g_ptr<C_Compiler> c = make<C_Compiler>();
+    c->init();
+    //c->emit_mode = true;
+    root = c->process(readFile("modules/tests/ctest.gld"));
+    c->run(root);
 
 
     // std::string display = "";

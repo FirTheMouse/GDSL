@@ -1563,6 +1563,13 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
         if(emit_mode) {
             //Make the buffer
+
+            #ifdef __APPLE__
+
+            #else
+                #define MAP_JIT 0x0800
+            #endif
+
             size_t byte_size = emit_buffer.length() * sizeof(uint32_t);
             void* buf = mmap(nullptr, byte_size,
                 PROT_READ | PROT_WRITE,
@@ -1582,18 +1589,18 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
             //Make executable
             mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
-            struct sigaction sa;
-            sa.sa_sigaction = sigill_handler;
-            sa.sa_flags = SA_SIGINFO;
-            sigemptyset(&sa.sa_mask);
-            sigaction(SIGILL, &sa, nullptr);
+            // struct sigaction sa;
+            // sa.sa_sigaction = sigill_handler;
+            // sa.sa_flags = SA_SIGINFO;
+            // sigemptyset(&sa.sa_mask);
+            // sigaction(SIGILL, &sa, nullptr);
 
-            struct sigaction sa2;
-            sa2.sa_sigaction = sigsegv_handler;
-            sa2.sa_flags = SA_SIGINFO;
-            sigemptyset(&sa2.sa_mask);
-            sigaction(SIGSEGV, &sa2, nullptr);
-            sigaction(SIGBUS, &sa2, nullptr);
+            // struct sigaction sa2;
+            // sa2.sa_sigaction = sigsegv_handler;
+            // sa2.sa_flags = SA_SIGINFO;
+            // sigemptyset(&sa2.sa_mask);
+            // sigaction(SIGSEGV, &sa2, nullptr);
+            // sigaction(SIGBUS, &sa2, nullptr);
 
             jit_buf_start = buf;
             jit_buf_size = byte_size;
@@ -1622,14 +1629,14 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             span2->end_line();
         }
         
-        #if PRINT_ALL
+        // #if PRINT_ALL
             span2->print_all();
 
             print("Final time: ",final_time);
             print("Exec time: ",exec_time);
 
             print("==DONE==");
-        #endif
+        //#endif
     };
 
 };

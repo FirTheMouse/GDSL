@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <random>
+#include <chrono>
 
 template<typename... Args>
 void print(Args&&... args) {

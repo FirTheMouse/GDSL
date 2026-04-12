@@ -65,6 +65,7 @@ static int _ctx_dummy_index = 0;
 
 struct Context {
     Context() : index(_ctx_dummy_index) {}
+    Context(int& _index) : index(_index) {}
     Context(list<g_ptr<Node>>& _result, int& _index) : result(&_result), index(_index) {}
 
     g_ptr<Node> node;
@@ -153,8 +154,23 @@ public:
     Node() {
         value = make<Value>();
     }
+    Node(std::string _name) : name(_name) {
+        value = make<Value>();
+    }
+    Node(std::string _name, std::string _opt_str) : name(_name), opt_str(_opt_str) {
+        value = make<Value>();
+    }
     Node(uint32_t _type, char c) : type(_type) {
         name += c;
+        value = make<Value>();
+    }
+    Node(uint32_t _type) : type(_type) {
+        value = make<Value>();
+    }
+    Node(uint32_t _type, std::string _name) : type(_type), name(_name) {
+        value = make<Value>();
+    }
+    Node(uint32_t _type, uint32_t _sub_type, std::string _name) : type(_type), sub_type(_sub_type), name(_name) {
         value = make<Value>();
     }
 

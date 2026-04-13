@@ -40,6 +40,20 @@ namespace GDSL {
         };
     
         size_t scope_id = reg_id("SCOPE");
+        void standard_scope_link_handler(g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
+            if(owner_node->scope()) { //To handle implicit scoping
+                owner_node->in_scope->scopes.erase(owner_node->scopes.take(0));
+            } 
+            new_scope->owner = owner_node.getPtr();
+            owner_node->scopes << new_scope.getPtr();
+            for(auto c : owner_node->children) {
+                c->place_in_scope(new_scope.getPtr());
+            }
+            new_scope->name = owner_node->name;
+        }
+        std::function<void(g_ptr<Node>, g_ptr<Node>, g_ptr<Node>)> default_scope_function = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node){
+            standard_scope_link_handler(new_scope,current_scope,owner_node);
+        };
     
         void parse_scope(g_ptr<Node> root) {
             root->name = "GLOBAL";
@@ -106,15 +120,8 @@ namespace GDSL {
                     current_scope = current_scope->spawn_sub_scope();
                     current_scope->type = scope_id;
                     if (owner_node) {
-                        //Deffensive check here
-                        try {
-                            auto func = scope_link_handlers.get(owner_node->type);
-                            func(current_scope,parent_scope,owner_node);
-                        }
-                        catch(std::exception e) {
-                            print("parse_scope::809 missing scope link handler for type: ",labels[owner_node->type]);
-                        }
-                    
+                        auto func = scope_link_handlers.getOrDefault(owner_node->type,default_scope_function);
+                        func(current_scope,parent_scope,owner_node);
                     } else {
                         current_scope->type = 0; //Suppoused to be GET_TYPE(BLOCK), doesn't matter, don't care
                     }
@@ -131,29 +138,10 @@ namespace GDSL {
         {
             size_t id = make_tokenized_keyword(name);
             scope_precedence.put(id, scope_prec);
-            scope_link_handlers.put(id, [](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-                if(owner_node->scope()) { //To handle implicit scoping
-                    owner_node->in_scope->scopes.erase(owner_node->scopes.take(0));
-                } 
-                new_scope->owner = owner_node.getPtr();
-                owner_node->scopes << new_scope.getPtr();
-                for(auto c : owner_node->children) {
-                    c->place_in_scope(new_scope.getPtr());
-                }
-                new_scope->name = owner_node->name;
-            });
-            t_handlers[id] = [](Context& ctx){};
             return id;
         }
 
-        void standard_scope_link_handler(g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-            new_scope->owner = owner_node.getPtr();
-            owner_node->scopes << new_scope.getPtr();
-            for(auto c : owner_node->children) {
-                c->place_in_scope(new_scope.getPtr());
-            }
-            new_scope->name = owner_node->name;
-        }
+
 
         void init() override {
             Tokenizer_Unit::init();

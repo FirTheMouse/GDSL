@@ -8,6 +8,16 @@ namespace GDSL {
     struct Starter_DSL_Frontend : public virtual Scope_Unit, public virtual Function_Unit, public virtual Precedence_Unit  {
         Starter_DSL_Frontend() { init(); }
 
+        map<uint32_t, Handler> n_handlers; Handler n_default_function;
+
+        void n_take_right(Context& ctx, int amt) {
+            for(int i = 0; i<amt; i++) {
+                if(ctx.index + 1 < ctx.result->length()) {
+                    ctx.node->children << ctx.result->take(ctx.index + 1);
+                }
+            }
+        }
+
         void init() override {
             Scope_Unit::init();
             Function_Unit::init();
@@ -24,15 +34,6 @@ namespace GDSL {
             set_binding_powers(amp_id, 4,8);
             set_binding_powers(dot_id, 8,9);
 
-            scope_link_handlers[identifier_id] = [](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-                new_scope->owner = owner_node.getPtr();
-                owner_node->scopes << new_scope.getPtr();
-                for(auto c : owner_node->children) {
-                    c->place_in_scope(new_scope.getPtr());
-                }
-                new_scope->name = owner_node->name;
-            };
-
             t_handlers[end_id] = [this](Context& ctx){
                 ctx.result->removeAt(ctx.index);
                 ctx.index--;
@@ -43,6 +44,9 @@ namespace GDSL {
                 ctx.index--;
             };
 
+            n_default_function = [this](Context& ctx){
+                standard_sub_process(ctx);
+            };
             s_default_function = [](Context& ctx){};
             t_default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -55,7 +59,7 @@ namespace GDSL {
                     discover_symbol(c,ctx.root);
                 }
             };
-            e_default_function=  [](Context& ctx){};
+            e_default_function = [](Context& ctx){};
             x_default_function = [](Context& ctx){};
         }
 
@@ -73,10 +77,15 @@ namespace GDSL {
             start_stage(&a_handlers,a_default_function);
             standard_direct_pass(root);
 
+            start_stage(&n_handlers,n_default_function);
+            standard_direct_pass(root);
+
             a_pass_resolve_keywords(root->children);
 
             start_stage(&s_handlers,s_default_function);
             parse_scope(root);
+
+            // print_root(root);
             
             return root;
         };
@@ -84,7 +93,7 @@ namespace GDSL {
         void run(g_ptr<Node> root) override { 
             start_stage(&t_handlers,t_default_function);
             standard_resolving_pass(root);
-    
+
             start_stage(&d_handlers,d_default_function);
             discover_symbols(root);
 
@@ -93,7 +102,7 @@ namespace GDSL {
     
             start_stage(&e_handlers,e_default_function);
             standard_backwards_pass(root);
-
+            print("==FINAL==");
             #if PRINT_ALL
                 print_root(root);
             #endif

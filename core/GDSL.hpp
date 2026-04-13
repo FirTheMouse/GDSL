@@ -80,9 +80,11 @@ struct Context {
     uint32_t state = 0;
     bool flag = false;
 
+    Context* sub;
+
     std::string source;
 
-    Context sub() {
+    Context duplicate() {
         return Context((*result), index);
     }
 };
@@ -454,7 +456,9 @@ struct Unit : public q_object {
     std::string node_info(g_ptr<Node> node) {
         std::string to_return = "";
         
-        to_return += labels[node->type] + " " + green(node->name) + " " 
+        to_return += labels[node->type]
+        + (node->sub_type==0?"":":"+labels[node->sub_type])
+        + " " + green(node->name) + " " 
         + (node->value?value_info(node->value):"") 
         + (!node->children.empty()?"[C:"+std::to_string(node->children.length())+"]":"")  
         + (node->in_scope?"{"+node->in_scope->name+"}":"");
@@ -742,6 +746,7 @@ struct Unit : public q_object {
         int i = 0;
         Context sub_ctx(ctx.node->children,i);
         sub_ctx.root = ctx.node;
+        sub_ctx.sub = ctx.sub;
         g_ptr<Node> left = nullptr;
         while(i < ctx.node->children.length()) {
             process_node(sub_ctx, ctx.node->children[i], left);
@@ -758,7 +763,7 @@ struct Unit : public q_object {
     }
 
     void standard_resolving_pass(g_ptr<Node> root) {
-        newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+        newline("Resolving pass over "+std::to_string(root->children.size())+" nodes");
         int i = 0;
         Context ctx(root->children,i);
         ctx.root = root;
@@ -793,7 +798,7 @@ struct Unit : public q_object {
     }
 
     void standard_direct_pass(g_ptr<Node> root) {
-        newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+        newline("Direct pass over "+std::to_string(root->children.size())+" nodes");
         int i = 0;
         Context ctx(root->children,i);
         ctx.root = root;
@@ -811,13 +816,13 @@ struct Unit : public q_object {
     }
 
     //Returns true if flagged for a return/break
-    bool standard_travel_pass(g_ptr<Node> root) {
-        newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
-        Context ctx;
+    bool standard_travel_pass(g_ptr<Node> root, Context* sub = nullptr) {
+        newline("Travel pass over "+std::to_string(root->children.size())+" nodes");
+        int i = 0;
+        Context ctx(root->children, i);
         ctx.root = root;
-        ctx.result = &root->children;
-        for(int i = 0; i < root->children.size(); i++) {
-            ctx.index = i;
+        if(sub) ctx.sub = sub;
+        while(i < root->children.size()) {
             ctx.node = root->children[i];
             standard_process(ctx);
             ctx.left = root->children[i];
@@ -825,6 +830,7 @@ struct Unit : public q_object {
                 endline();
                 return true;
             }
+            i++;
         }
         endline();
         return false;

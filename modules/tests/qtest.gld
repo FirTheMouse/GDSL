@@ -1,0 +1,18 @@
+"test" {
+    type {
+        print("Overrode but my name is: ",node.name);
+    }
+
+    execute {
+        node.name = "wub";
+    }
+}
+
+type direct_pass {
+    test;
+}
+
+execute travel_pass {
+    test;
+}
+

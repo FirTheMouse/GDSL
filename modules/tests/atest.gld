@@ -1,7 +1,3 @@
-server(8080) {
-
-}
-
 style default_button {
     height : "16px";
     width  : "15px";
@@ -22,13 +18,22 @@ style default_button {
 
     button submit {
         id : submit;
-        onclick : "sendCode(this)";
+        onclick : "postTo('/',this)";
         "data-active" : "false";
         default_button;
     }
 
     target {
         paragraph "Output appears here";
+    }
+
+    post {
+        int i = 0;
+        while(i<4) {
+            print("Wub");
+            i = i+1;
+        }
+        source = "wub wub wub";
     }
 
     script "
@@ -75,3 +80,9 @@ style default_button {
 "/wub/house" {
     paragraph "Wub House";
 }
+
+execute direct_pass {
+    server(8080);
+}
+
+

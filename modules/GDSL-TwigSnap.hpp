@@ -1,12 +1,15 @@
 #pragma once
 
 #include "../modules/Q-TwigSnap.hpp"
-#include "../modules/GDSL-Starter.hpp"
+#include "../modules/GDSL-Script.hpp"
 #include "../modules/Q-Web.hpp"
 
 namespace GDSL {
-    struct TwigSnap_DSL_Frontend : public virtual TwigSnap_Unit, public virtual Starter_DSL_Frontend, public virtual Web_Unit {
+    struct TwigSnap_DSL_Frontend : public virtual TwigSnap_Unit, public virtual Q_Script_Unit, public virtual Web_Unit {
         TwigSnap_DSL_Frontend() { init(); }
+
+
+        size_t post_stage = add_stage_lookup("post",&p_handlers,&p_default_function);
 
         void add_text_component(const std::string& f, uint32_t type) {
             tokenized_keywords.put(f,type);
@@ -38,9 +41,6 @@ namespace GDSL {
                     }
                 }
             };
-            scope_link_handlers[type] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-                standard_scope_link_handler(new_scope,current_scope,owner_node);
-            };
             t_handlers[type] = [this](Context& ctx) {
                 if(ctx.node->scope()) {
                     g_ptr<Node> properties = make<Node>(properties_id);
@@ -62,22 +62,17 @@ namespace GDSL {
 
         void init() override {
             TwigSnap_Unit::init();
-            Starter_DSL_Frontend::init();
+            Q_Script_Unit::init();
             Web_Unit::init();
 
             tokenized_keywords.put("server",server_id);
-            scope_link_handlers[server_id] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-                standard_scope_link_handler(new_scope,current_scope,owner_node);
-            };
-            scope_link_handlers[identifier_id] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-                standard_scope_link_handler(new_scope,current_scope,owner_node);
-            };
-            scope_link_handlers[style_id] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-                standard_scope_link_handler(new_scope,current_scope,owner_node);
-            };
             scope_link_handlers[string_id] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
                 standard_scope_link_handler(new_scope,current_scope,owner_node);
-                owner_node->type = route_id;
+                if(owner_node->name.at(0)=='/') {
+                    owner_node->type = route_id;
+                } else {
+                    owner_node->type = node_block_id;
+                }
                 new_scope->name = owner_node->name;
             };
 
@@ -86,12 +81,14 @@ namespace GDSL {
 
             add_text_component("paragraph",paragraph_subtype);
 
-            t_handlers[route_id] = [this](Context& ctx) {
+            t_handlers[route_id] = [this](Context& ctx) {          
                 size_t this_route = routes.getOrDefault(ctx.node->name,make_route(ctx.node->name));
+                ctx.node->sub_type = this_route;
                 g_ptr<Node> html_root = make<Node>(html_id);
                 g_ptr<Node> body = ctx.node->scope();
                 body->type = body_id;
-                html_root->children << body;
+                html_root->children << body;    
+
                 x_handlers[this_route] = [this,html_root](Context& ctx) {
                     std::string page = "<!DOCTYPE html>\n";
                     int depth = 0;
@@ -118,8 +115,12 @@ namespace GDSL {
                     // ctx.source = page;
                 };
             };
+            x_handlers[route_id] = x_handlers[node_block_id];
+            html_handlers[handler_block_id] = [this](Context& ctx) {
+                //Don't emit this
+            };
 
-            html_handlers[identifier_id] = [this](Context& ctx) {
+            html_handlers[type_decl_id] = [this](Context& ctx) {
                 if(ctx.node->scope()) {
                     if(ctx.node->scope()->type!=div_id) {
                         ctx.node->scope()->type = div_id;
@@ -210,7 +211,8 @@ namespace GDSL {
             }
 
             start_stage(&x_handlers,x_default_function);
-            process_node(server);
+            // process_node(server);
+            standard_travel_pass(root);
         }
 
     };

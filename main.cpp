@@ -4,6 +4,7 @@
 #include "modules/GDSL-C.hpp"
 #include "modules/GDSL-LISP.hpp"
 #include "modules/GDSL-TwigSnap.hpp"
+#include "modules/GDSL-Script.hpp"
 
 
 using namespace GDSL;
@@ -31,7 +32,10 @@ int main(int argc, char* argv[]) {
     g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
     twig->init();
     twig->run(twig->process(readFile("modules/tests/atest.gld")));
-
+    
+    // g_ptr<Q_Script_Unit> q_script = make<Q_Script_Unit>();
+    // q_script->init();
+    // q_script->run(q_script->process(readFile("modules/tests/qtest.gld")));
 
     // std::string display = "";
     // display.append("GDSL-C: ");

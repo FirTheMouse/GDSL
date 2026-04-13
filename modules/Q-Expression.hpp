@@ -8,8 +8,11 @@ namespace GDSL {
 
         list<size_t> binary_op_catalog;
 
-        size_t add_binary_operator(char c, const std::string& f) {
-            size_t id = add_token(c,f);
+        size_t add_binary_operator(char c, const std::string& f, int use_id = -1) {
+            size_t id = use_id;
+            if(id==-1) {
+                id = add_token(c,f);
+            }
             binary_op_catalog << id;
         
             size_t decl_id = reg_id(f+"_decl");
@@ -50,6 +53,10 @@ namespace GDSL {
             t_handlers[unary_id] = handler;
             
             return id;
+        }
+
+        size_t register_binary_operator(int use_id) {
+            return add_binary_operator(' ',labels[use_id],use_id);
         }
 
         size_t plus_id = add_binary_operator('+',"PLUS");

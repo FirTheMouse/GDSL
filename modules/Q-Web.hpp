@@ -42,13 +42,14 @@ struct Web_Unit : public virtual Unit {
         };
 
         x_handlers[server_id] = [this](Context& ctx){
+            print("Starting a server");
             int server_fd = socket(AF_INET, SOCK_STREAM, 0);
             if(server_fd < 0) {
                 print(red("server_id::x_handler socket() failed"));
                 return;
             }
             int port = 8080;
-            if(ctx.node->left()->type==port_id) {
+            if(ctx.node->left()) {
                 port = ctx.node->left()->value->get<int>();
             }
 
@@ -80,14 +81,6 @@ struct Web_Unit : public virtual Unit {
                     return;
                 }
                 print("Accepted: ",client_fd);
-                // int flags = fcntl(client_fd, F_GETFL, 0);
-                // fcntl(client_fd, F_SETFL, flags & ~O_NONBLOCK);
-
-                // fd_set readfds;
-                // FD_ZERO(&readfds);
-                // FD_SET(client_fd, &readfds);
-                // struct timeval timeout = {5, 0}; // 5 second timeout
-                // select(client_fd + 1, &readfds, NULL, NULL, &timeout);
     
                 char buffer[4096];
                 memset(buffer, 0, sizeof(buffer));
@@ -97,13 +90,13 @@ struct Web_Unit : public virtual Unit {
                     print(red("server_id::x_handler read() failed"));
                     return;
                 }
-                print("Buffer: ",buffer);
     
                 std::string request(buffer);
                 std::string first_line = request.substr(0, request.find("\r\n"));
                 std::string method = first_line.substr(0, first_line.find(" "));
                 std::string path = first_line.substr(first_line.find(" ") + 1);
                 path = path.substr(0, path.find(" ")); //strip the HTTP/1.1
+                print("Method: ",method);
                 print("Path: ",path);
     
                 if(method=="POST") {
@@ -149,10 +142,6 @@ struct Web_Unit : public virtual Unit {
         p_default_function = [this](Context& ctx){
 
         };
-    }
-
-    g_ptr<Node> process(const std::string& code) override {
-        return nullptr;
     }
 
     void run(g_ptr<Node> server) override {

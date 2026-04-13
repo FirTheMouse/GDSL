@@ -146,6 +146,15 @@ namespace GDSL {
             return id;
         }
 
+        void standard_scope_link_handler(g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
+            new_scope->owner = owner_node.getPtr();
+            owner_node->scopes << new_scope.getPtr();
+            for(auto c : owner_node->children) {
+                c->place_in_scope(new_scope.getPtr());
+            }
+            new_scope->name = owner_node->name;
+        }
+
         void init() override {
             Tokenizer_Unit::init();
             scope_precedence[lbrace_id] = 10;

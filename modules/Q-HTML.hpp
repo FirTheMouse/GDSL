@@ -23,6 +23,8 @@ namespace GDSL {
         size_t suffix_style_id = reg_id("style");
         size_t property_id = reg_id("property");
 
+        size_t properties_id = reg_id("properties");
+
         map<uint32_t,Handler> html_handlers; Handler html_default_function;
         std::string html_encode_node(g_ptr<Node> node, int& depth) {
             Context ctx(depth);
@@ -57,8 +59,10 @@ namespace GDSL {
 
                 std::string indent(ctx.index * 3, ' ');
                 if(!ctx.node->opt_str.empty()) {
+                    std::string old_str = ctx.node->opt_str;
                     indent_multiline(ctx.node->opt_str,indent);
                     s += ctx.node->opt_str+"\n";
+                    ctx.node->opt_str = old_str;
                 } 
 
                 if(ctx.index>0) ctx.index--;
@@ -90,6 +94,14 @@ namespace GDSL {
             };
             html_handlers[prefix_style_id] = [this](Context& ctx) {};
             html_handlers[suffix_style_id] = [this](Context& ctx) {};
+
+            html_handlers[properties_id] = [this](Context& ctx) {
+                std::string s = "";
+                for(auto c : ctx.node->children) {
+                    s += c->name + "=\"" + c->opt_str + "\" ";
+                }
+                ctx.source = s;
+            };
         }
     };
 }

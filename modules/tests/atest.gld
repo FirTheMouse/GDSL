@@ -1,0 +1,77 @@
+server(8080) {
+
+}
+
+style default_button {
+    height : "16px";
+    width  : "15px";
+    "background-color" : "red";
+}
+
+"/" {
+    paragraph "Home page";
+
+    textarea {
+        id="code";
+        rows="20";
+        cols="80";
+        autocorrect="off";
+        autocapitalize="off";
+        spellcheck="false";
+    }
+
+    button submit {
+        id : submit;
+        onclick : "sendCode(this)";
+        "data-active" : "false";
+        default_button;
+    }
+
+    target {
+        paragraph "Output appears here";
+    }
+
+    script "
+        async function sendCode(el) {
+            toggleBtn(el);
+            const code = document.getElementById('code').value;
+            const response = await fetch('/', {
+                method: 'POST',
+                body: code
+            });
+            document.getElementById('target').innerHTML = await response.text();
+        }
+
+        function toggleBtn(el) {
+            if(el.dataset.active === 'false') {
+                el.style.backgroundColor = 'green';
+                el.dataset.active = 'true';
+            } else {
+                el.style.backgroundColor = 'red';
+                el.dataset.active = 'false';
+            }
+        }
+
+        async function postTo(route, el) {
+            const response = await fetch(route, {
+                method: 'POST',
+                body: el.id
+            });
+            document.open();
+            document.write(await response.text());
+            document.close();
+        }
+    ";
+}
+
+"/wub" {
+    paragraph "Wub Wub";
+    paragraph "Wub Wub Wub";
+    target {
+        paragraph "From a div";
+    }
+}
+
+"/wub/house" {
+    paragraph "Wub House";
+}

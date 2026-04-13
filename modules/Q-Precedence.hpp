@@ -61,7 +61,7 @@ namespace GDSL {
                 if(right_bp != -1 && ctx.index < ctx.result->length()) {
                     g_ptr<Node> next = ctx.result->get(ctx.index);
                     int next_lbp = left_binding_power.getOrDefault(next->type, -1);
-                    if(next_lbp == -1) { //It's an atom so we grab it
+                    if(next_lbp == -1 && !discard_types.has(next->type)) { //It's an atom so we grab it
                         ctx.node->children << ctx.result->take(ctx.index);
                     } 
                 }

@@ -1,8 +1,9 @@
 #include "modules/GDSL-Test.hpp"
 #include "modules/Q-HTML.hpp"
-#include "modules/Twig-Snap.hpp"
+#include "modules/Q-TwigSnap.hpp"
 #include "modules/GDSL-C.hpp"
 #include "modules/GDSL-LISP.hpp"
+#include "modules/GDSL-TwigSnap.hpp"
 
 
 using namespace GDSL;
@@ -27,15 +28,9 @@ int main(int argc, char* argv[]) {
     // test->init();
     // test->run(test->process(""));
 
-    // g_ptr<TwigSnap_Unit> twig = make<TwigSnap_Unit>();
-    // twig->init();
-    // twig->run(root);
-
-    g_ptr<C_Compiler> c = make<C_Compiler>();
-    c->init();
-    //c->emit_mode = true;
-    root = c->process(readFile("modules/tests/ctest.gld"));
-    c->run(root);
+    g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
+    twig->init();
+    twig->run(twig->process(readFile("modules/tests/atest.gld")));
 
 
     // std::string display = "";
@@ -52,14 +47,13 @@ int main(int argc, char* argv[]) {
 
     // g_ptr<LISP_Unit> lisp = make<LISP_Unit>();
     // lisp->init();
-
     // root = lisp->process(readFile("modules/tests/lisptest.gld"));
     // lisp->run(root);
-    // span = make<Log::Span>();
+    
+    //span = make<Log::Span>();
 
     // g_ptr<C_Compiler> c = make<C_Compiler>();
     // c->init();
-    // c->span2->log_everything = true;
     // root = c->process(readFile("modules/tests/ctest.gld"));
     // c->run(root);
 

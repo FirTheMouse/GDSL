@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../modules/Twig-Snap.hpp"
-#include "../modules/GDSL-Web.hpp"
+#include "../modules/Q-TwigSnap.hpp"
+#include "../modules/Q-Web.hpp"
 #include "../modules/GDSL-C.hpp"
 #include "../modules/GDSL-LISP.hpp"
 

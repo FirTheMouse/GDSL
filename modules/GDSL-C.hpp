@@ -1,215 +1,17 @@
 #pragma once
 
 #include "../core/GDSL.hpp"
-#include "../modules/Q-AST.hpp"
 #include "../modules/Q-Arm64.hpp"
-#include "../modules/Q-Tokenizer.hpp"
+#include "../modules/Q-Scope.hpp"
+#include "../modules/Q-Function.hpp"
+#include "../modules/Q-Precedence.hpp"
 
 //A subset of C, the ctest.gld file shows of most of what this can do.
 //I'm activly expanding this, generics are next on the roadmap and one day I hope to bootstrap GDSL itself with this.
 
 namespace GDSL {
 
-struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
-    map<uint32_t,int> left_binding_power;
-    map<uint32_t,int> right_binding_power;
-
-    map<uint32_t, std::function<void(g_ptr<Node>, g_ptr<Node>, g_ptr<Node>)>> scope_link_handlers;
-    map<uint32_t, int> scope_precedence;
-
-    void print_scope(g_ptr<Node> scope, int depth = 0) {
-        std::string indent(depth * 2, ' ');
-        
-        if (depth > 0) {
-            log(indent, "{");
-        }
-        
-        for (auto& subnode : scope->children) {
-            log(indent, "  ", labels[subnode->type]);
-        
-            
-            if(!subnode->scopes.empty()) {
-                for(auto subscope : subnode->scopes) {
-                    print_scope(subscope, depth + 1);
-                }
-            }
-        }
-        
-        if (depth > 0) {
-            log(indent, "}");
-        }
-    }
-
-    struct g_value {
-    public:
-        g_value() {}
-        g_value(g_ptr<Node> _owner) : owner(_owner) {}
-        bool explc = false;
-        g_ptr<Node> owner = nullptr;
-        bool deferred = false;
-    };
-
-    size_t scope_id = reg_id("SCOPE");
-
-    void parse_scope(g_ptr<Node> root) {
-        root->name = "GLOBAL";
-        root->type = scope_id;
-        root->is_scope = true;
-        list<g_ptr<Node>> nodes;
-        nodes <= root->children;
-        g_ptr<Node> current_scope = root;
-        list<g_value> stack{g_value()};
-
-        #if PRINT_ALL
-            newline("Parse scope pass");
-        #endif
-
-        for (int i = 0; i < nodes.size(); ++i) {
-            g_ptr<Node> node = nodes[i];
-            g_ptr<Node> owner_node = (i>0) ? nodes[i - 1] : nullptr;
-
-            int p = scope_precedence.getOrDefault(node->type,0);
-            bool on_stack = stack.last().owner ? true : false;
-            if(p<=0) {
-                if(p<0) {
-                    if (current_scope->parent) {
-                        current_scope = current_scope->parent;
-                    }
-                }
-                else {
-                    current_scope->children << node; 
-                    node->place_in_scope(current_scope.getPtr());
-                    if(on_stack && !stack.last().deferred && !stack.last().explc) {
-                        if (current_scope->parent) {
-                            current_scope = current_scope->parent;
-                        }
-                    }
-                }
-            }
-            else {
-                if(p<10) {
-                    current_scope->children << node;
-                    node->place_in_scope(current_scope.getPtr());
-                    owner_node = node;
-                }
-
-                if(on_stack) {
-                    int stack_precedence = scope_precedence.getOrDefault(stack.last().owner->type,0);
-                    if(p >= stack_precedence) {
-                        stack.last().deferred = true;
-                    }
-                }
-
-                if(p == 10) {
-                    if(on_stack) {
-                        stack.last().explc = true;
-                        if (current_scope->parent) {
-                            current_scope = current_scope->parent;
-                        }
-                    }
-                }
-                else {
-                    stack << g_value(owner_node);
-                }
-
-                g_ptr<Node> parent_scope = current_scope;
-                current_scope = current_scope->spawn_sub_scope();
-                current_scope->type = scope_id;
-                if (owner_node) {
-                    //Deffensive check here
-                    try {
-                        auto func = scope_link_handlers.get(owner_node->type);
-                        func(current_scope,parent_scope,owner_node);
-                    }
-                    catch(std::exception e) {
-                        print("parse_scope::809 missing scope link handler for type: ",labels[owner_node->type]);
-                    }
-                
-                } else {
-                    current_scope->type = 0; //Suppoused to be GET_TYPE(BLOCK), doesn't matter, don't care
-                }
-            }
-        }
-
-        #if PRINT_ALL
-        //print_scope(root_scope);
-        endline();
-        #endif
-    }
-
-    size_t add_scoped_keyword(const std::string& name, int scope_prec)
-    {
-        size_t id = make_tokenized_keyword(name);
-        scope_precedence.put(id, scope_prec);
-        scope_link_handlers.put(id, [](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
-            if(owner_node->scope()) { //To handle implicit scoping
-                owner_node->in_scope->scopes.erase(owner_node->scopes.take(0));
-            } 
-            new_scope->owner = owner_node.getPtr();
-            owner_node->scopes << new_scope.getPtr();
-            for(auto c : owner_node->children) {
-                c->place_in_scope(new_scope.getPtr());
-            }
-            new_scope->name = owner_node->name;
-        });
-        t_handlers[id] = [](Context& ctx){};
-        return id;
-    }
-
-    size_t var_decl_id = reg_id("VAR_DECL");
-    size_t to_decl_id(size_t id) {return id+1;}
-    size_t to_unary_id(size_t id) {return id+2;}
-
-    size_t add_binary_operator(char c, const std::string& f,int left_bp, int right_bp) {
-        size_t id = add_token(c,f);
-        left_binding_power.put(id, left_bp);
-        right_binding_power.put(id, right_bp);
-
-        // a_handlers[id] = [this,left_bp,right_bp](Context& ctx){
-
-        // };
-
-        size_t decl_id = reg_id(f+"_decl");
-        size_t unary_id = reg_id(f+"_unary");
-
-        Handler handler = [this,decl_id,unary_id,c](Context& ctx){
-            auto& children = ctx.node->children;
-            standard_sub_process(ctx); //This causes us to double distribute because if the left term becomes a var decl from a user defined type it distirbutes itself, we don't overwritte though so its just wasted compute, not a bug
-            if(children.length() == 2) {
-                g_ptr<Node> type_term = children[0];
-                g_ptr<Node> id_term = children[1];
-
-                ctx.node->name = type_term->name+c+id_term->name;
-                
-                if(type_term->type==var_decl_id) {
-                    ctx.node->type = decl_id;
-                    ctx.node->value = type_term->value;
-                    ctx.node->name = id_term->name;
-                    ctx.node->value->sub_type = 0;
-                    ctx.node->value = ctx.node->in_scope->distribute_value(ctx.node->name, ctx.node->value);
-                    ctx.node->children.clear();
-
-                    g_ptr<Node> marker = make<Node>(); //Make a muted qual marker
-                    marker->type = decl_id;
-                    marker->mute = true;
-                    ctx.node->value->quals << marker;
-
-                } else {
-                    ctx.node->value->copy(type_term->value);
-                }
-            } else if(children.length() == 1) {
-                g_ptr<Node> type_term = children[0];
-                ctx.node->name = c+type_term->name;
-                ctx.node->type = unary_id;
-                ctx.node->value->copy(type_term->value);
-            } 
-        };
-        t_handlers[id] = handler;
-        t_handlers[unary_id] = handler;
-        
-        return id;
-    }
-
+struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, virtual public Precedence_Unit, virtual public ARM64_Unit {
     //To prove a point about MLIR's tutourial example
     std::function<void(Context&)> make_involution(size_t involute_id){
         return [involute_id](Context& ctx){
@@ -219,43 +21,9 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         };
     };
 
-    size_t identifier_id = reg_id("IDENTIFIER");
-    size_t object_id = reg_id("OBJECT");
-    size_t literal_id = reg_id("LITERAL");
-    size_t colon_id = add_token(':',"COLON");
-    size_t end_id = add_token(';',"END");
-    size_t function_id = reg_id("FUNCTION");
-    size_t method_id = reg_id("METHOD");
-    size_t func_decl_id = reg_id("FUNC_DECL");
-    size_t lparen_id = add_token('(',"LPAREN");
-    size_t rparen_id = add_token(')',"RPAREN");
-    size_t comma_id = add_token(',',"COMMA");
-    size_t float_id = add_type("float",4);
-    size_t int_id = add_type("int",4);
-    size_t bool_id = add_type("bool",1);
-    size_t string_id = add_type("string",24);
-    size_t in_string_id = reg_id("IN_STRING_KEY");
-    size_t plus_id = add_binary_operator('+',"PLUS", 4, 6);
-    size_t dash_id = add_binary_operator('-',"DASH", 4, 5);
-    size_t rangle_id = add_binary_operator('>',"RANGLE", 2, 3);
-    size_t langle_id = add_binary_operator('<',"LANGLE", 2, 3);
-    size_t equals_id = add_binary_operator('=', "ASSIGNMENT", 1, 1);
-    size_t func_call_id = reg_id("FUNC_CALL");
-    size_t star_id = add_binary_operator('*',"STAR", 5, 7);
-    size_t caret_id = add_binary_operator('^',"CARET", 8, 4);
-    size_t amp_id = add_binary_operator('&',"AMPERSAND",4,8);
-    size_t dot_id = add_binary_operator('.', "PROP_ACCESS", 8, 9);
-    size_t return_id = make_tokenized_keyword("return");
-    size_t break_id = make_tokenized_keyword("break");
-    size_t lbracket_id = add_token('[', "LBRACKET");
-    size_t rbracket_id = add_token(']', "RBRACKET");
-    size_t type_decl_id = reg_id("TYPE_DECL");
     size_t method_scope_id = reg_id("METHOD_SCOPE");
     size_t type_scope_id = reg_id("TYPE_SCOPE");
-    size_t lbrace_id = add_token('{', "LBRACE");
-    size_t rbrace_id = add_token('}', "RBRACE");
-    size_t in_alpha_id = reg_id("IN_ALPHA");
-    size_t in_digit_id = reg_id("IN_DIGIT");
+
     size_t if_id = 0;
     size_t else_id = 0;
     size_t while_id = 0;
@@ -277,6 +45,7 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
     size_t live_qual = reg_id("LIVE");
     size_t ptr_qual = reg_id("POINTER");
     size_t paren_qual = reg_id("PAREN");
+
 
 
     void inject_this_param(Context& ctx) {
@@ -333,115 +102,27 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
     IdPool reg_pool;
     std::string output_string = "";
 
+
+
     void init() override {
         span = make<Log::Span>();
+        Function_Unit::init();
+        Precedence_Unit::init();
+        Scope_Unit::init();
+
+        set_binding_powers(plus_id, 4,6);
+        set_binding_powers(dash_id, 4,5);
+        set_binding_powers(slash_id, 4,5);
+        set_binding_powers(rangle_id, 2,3);
+        set_binding_powers(langle_id, 2,3);
+        set_binding_powers(equals_id, 1,1);
+        set_binding_powers(star_id, 5,7);
+        set_binding_powers(caret_id, 8,4);
+        set_binding_powers(amp_id, 4,8);
+        set_binding_powers(dot_id, 8,9);
 
 
-        a_default_function = [this](Context& ctx) {
-            int left_bp = left_binding_power.getOrDefault(ctx.node->type, -1);
-            int right_bp = right_binding_power.getOrDefault(ctx.node->type, -1);
-            
-            if(left_bp == -1 && right_bp == -1) return;
-            
-            if(ctx.left && left_bp > 0 && !discard_types.has(ctx.left->type)) {
-                int left_left_bp = left_binding_power.getOrDefault(ctx.left->type, -1);
-                int left_right_bp = right_binding_power.getOrDefault(ctx.left->type, -1);
-
-                bool right_associative = right_bp < left_bp; //lbp > rbp means right assoc
-                bool should_steal = left_bp > (right_associative ? left_right_bp : left_left_bp);
-                
-                if(!ctx.left->children.empty()) {
-                    if(ctx.left->children.length()==1) {
-                        should_steal = true;
-                    }
-                    else if(discard_types.has(ctx.left->children.last()->type)) {
-                        goto otter;
-                    }
-                }
-
-                if(left_right_bp!=-1 && should_steal) {
-                    if(ctx.left->children.length()>1) {
-                        ctx.node->children << ctx.left->children.pop();
-                    }
-                    ctx.left->children << ctx.result->take(ctx.index);
-                } else {
-                    ctx.node->children << ctx.left;
-                    ctx.result->removeAt(ctx.index - 1);
-                }
-            } else {
-                otter:
-                if(!discard_types.has(ctx.node->type))
-                    ctx.node->type = to_unary_id(ctx.node->type);
-                ctx.index++;
-            }
-            
-            if(right_bp != -1 && ctx.index < ctx.result->length()) {
-                g_ptr<Node> next = ctx.result->get(ctx.index);
-                int next_lbp = left_binding_power.getOrDefault(next->type, -1);
-                if(next_lbp == -1) { //It's an atom so we grab it
-                    ctx.node->children << ctx.result->take(ctx.index);
-                } 
-            }
-            ctx.index--;
-        };
-
-        left_binding_power.put(lparen_id,10);
-
-        a_handlers[rparen_id] = [this](Context& ctx) {
-            ctx.result->removeAt(ctx.index);
-            int i = ctx.index-1;
-            list<g_ptr<Node>> gathered;
-            while(i>=0) {
-                g_ptr<Node> on = ctx.result->get(i);
-                while(!on->children.empty()&&on->type!=lparen_id) {
-                    on = on->children.last();
-                }
-                if(on->type==lparen_id) {
-                    gathered.reverse();
-                    bool was_given_children = false;
-                    if(on->children.empty()) {
-                        on->children << gathered;
-                        was_given_children = true;
-                    }
-                    on->copy(on->children.take(0));
-                    if(!was_given_children) {
-                        if(on->children.empty()) {
-                            on->children << gathered;
-                        } else { //This case if for things like int main(int a), where we want the gathered to go under main, not int
-                            on->children.last()->children << gathered;
-                        }
-                    }
-                    ctx.index = i;
-                    break;
-                } else {
-                    gathered << ctx.result->take(i);
-                    i--;
-                }
-            }
-        };
-
-        a_handlers[identifier_id] = [this](Context& ctx){
-            if(ctx.left && ctx.left->type == identifier_id) {
-                // log("Identifier handler, left looks like ",node_info(ctx.left)," my node looks like ",node_info(ctx.node),", the index is ",ctx.index,"/",ctx.result->length());
-                while(ctx.index < ctx.result->length() && ctx.result->get(ctx.index)->type == identifier_id) {
-                    //log("Taking a new child: ",node_info(ctx.result->get(ctx.index)));
-                    ctx.left->children << ctx.result->take(ctx.index);
-                }
-                ctx.index--;
-            } 
-        };
-        
-        discard_types.push(undefined_id);
-        discard_types.push(end_id);
-        discard_types.push(lparen_id);
-        discard_types.push(lbrace_id);
-        discard_types.push(comma_id);
-
-        value_to_string.put(object_id, [](void* data) {
-            return std::string("[object @") + std::to_string((size_t)data) + "]";
-        });
-        x_handlers[literal_id] = [](Context& ctx){};
-
+       
         t_handlers[to_prefix_id(typename_id)] = [](Context& ctx){
             ctx.value->sub_type = ctx.qual->type;
             ctx.value->type = ctx.qual->type;
@@ -449,108 +130,8 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             if(ctx.qual->value->type_scope)
                 ctx.value->type_scope = ctx.qual->value->type_scope;
         };
-
-        value_to_string.put(float_id,[](void* data) {
-            return std::to_string(*(float*)data);
-        });
-        negate_value.put(float_id,[](void* data) {
-            *(float*)data = -(*(float*)data);
-        });
-        t_handlers[float_id] = [this](Context& ctx) {
-            ctx.node->type = literal_id;
-
-            g_ptr<Value> value = make<Value>(float_id,4);
-            value->set<float>(std::stof(ctx.node->name));
-            ctx.node->value = value;
-        }; 
-
-        value_to_string.put(int_id,[](void* data) {
-            return std::to_string(*(int*)data);
-        });
-        negate_value.put(int_id,[](void* data) {
-            *(int*)data = -(*(int*)data);
-        });
-        t_handlers[int_id] = [this](Context& ctx) {
-            ctx.node->type = literal_id;
-
-            g_ptr<Value> value = make<Value>(int_id,4);
-            value->set<int>(std::stoi(ctx.node->name));
-            ctx.node->value = value;
-        }; 
-
-        value_to_string.put(bool_id,[](void* data){
-            return (*(bool*)data) ? "TRUE" : "FALSE";
-        });
-        t_handlers[bool_id] = [this](Context& ctx) {
-            ctx.node->type = literal_id;
-
-            g_ptr<Value> value = make<Value>(bool_id,1);
-            value->set<bool>(ctx.node->name=="true" ? true : false); 
-            ctx.node->value = value;
-        }; 
-
-        tokenizer_state_functions.put(in_string_id,[](Context& ctx) {
-            char c = ctx.source.at(ctx.index);
-            if(c=='"') {
-                ctx.state=0;
-            }
-            else {
-                ctx.node->name += c;
-            }
-        });
-        tokenizer_functions.put('"',[this](Context& ctx) {
-            ctx.state = in_string_id;
-            ctx.node = make<Node>();
-            ctx.node->type = string_id;
-            ctx.node->name = "";
-            ctx.result->push(ctx.node);
-        });
-        value_to_string.put(string_id,[this](void* data){
-            return *(std::string*)data;
-        });
-        t_handlers[string_id] = [this](Context& ctx) {
-            ctx.node->type = literal_id;
-
-            g_ptr<Value> value = make<Value>(string_id,24);
-            value->set<std::string>(ctx.node->name);
-            ctx.node->value = value;
-        }; 
            
-        x_handlers[plus_id] = [this](Context& ctx){
-            standard_sub_process(ctx);
-            ctx.node->value->set<int>(
-                *(int*)ctx.node->left()->value->data
-                +
-                *(int*)ctx.node->right()->value->data
-            );
-        };
-
-        x_handlers[dash_id] = [this](Context& ctx){
-            standard_sub_process(ctx);
-            ctx.node->value->set<int>(
-                *(int*)ctx.node->left()->value->data
-                -
-                *(int*)ctx.node->right()->value->data
-            );
-        };
-
-        x_handlers[rangle_id] = [this](Context& ctx){
-            standard_sub_process(ctx);
-            ctx.node->value->set<bool>(
-                *(int*)ctx.node->left()->value->data
-                >
-                *(int*)ctx.node->right()->value->data
-            );
-        };
-
-        x_handlers[langle_id] = [this](Context& ctx){
-            standard_sub_process(ctx);
-            ctx.node->value->set<bool>(
-                *(int*)ctx.node->left()->value->data
-                <
-                *(int*)ctx.node->right()->value->data
-            );
-        };
+        
 
 
         // a_handlers[langle_id] = [this](Context& ctx) {
@@ -575,11 +156,26 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
         // t_handlers[template_id] = [](Context& ctx) {
 
         // };
-        
-        t_handlers[equals_id] = [this](Context& ctx){ //So we don't turn things into declerations
-            standard_sub_process(ctx);
-            ctx.node->name = ctx.node->left()->name+"="+ctx.node->right()->name;
+
+        t_handlers[var_decl_id] = [](Context& ctx) {
+            //Do nothing
         };
+        x_handlers[var_decl_id] = [this](Context& ctx) {
+            if(!ctx.node->value->data) {
+                size_t alloc_size = ctx.node->value->size;
+                if(alloc_size == 0 && ctx.node->value->type_scope) {
+                    alloc_size = ctx.node->value->type_scope->owner->value->size;
+                    ctx.node->value->size = alloc_size;
+                }
+                if(!ctx.node->children.empty()) { //Arrays
+                    process_node(ctx, ctx.node->children[0]);
+                    int count = ctx.node->children[0]->value->get<int>();
+                    alloc_size *= count;
+                }
+                ctx.node->value->data = malloc(alloc_size);
+            }
+        };
+    
         e_handlers[equals_id] = [this](Context& ctx){ 
             if(ctx.node->left()&&ctx.node->right()) {
                 int at_id = ctx.node->left()->value->find_qual(live_qual);
@@ -589,71 +185,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
                     ctx.node = nullptr;
                 }
             }
-        };
-        x_handlers[equals_id] = [this](Context& ctx) {
-            standard_sub_process(ctx);
-            //print("Assinging from:\n",ctx.node->right()->to_string(1),"\nto\n",ctx.node->left()->to_string(1));
-            memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
-            //print("Assignment finished, value is: ",ctx.node->left()->value->info());
-        };
-
-
-        r_handlers[func_call_id] = [this](Context& ctx) {
-            if(ctx.node->scope()) {
-                for(int i = 0; i < ctx.node->children.size(); i++) {
-                    g_ptr<Node> arg = process_node(ctx, ctx.node->children[i]);
-                    g_ptr<Node> param = ctx.node->scope()->owner->children[i];
-                    g_ptr<Node> assignment = make<Node>();
-                    assignment->type = equals_id;
-                    assignment->children << param;
-                    assignment->children << arg;
-                    ctx.node->children[i] = assignment;
-                }
-            }
-        };
-        x_handlers[func_call_id] = [this](Context& ctx) {
-            standard_sub_process(ctx);
-            standard_travel_pass(ctx.node->scope());
-        };
-
-
-        x_handlers[star_id] = [this](Context& ctx){
-            standard_sub_process(ctx);
-            ctx.node->value->set<int>(
-                *(int*)ctx.node->left()->value->data
-                *
-                *(int*)ctx.node->right()->value->data
-            );
-        };
-
-        d_handlers[to_decl_id(star_id)] = [](Context& ctx) {
-            ctx.node->value->size = 8;
-        };
-
-        x_handlers[to_decl_id(star_id)] = [](Context& ctx) {
-            if(!ctx.node->value->data) {
-                ctx.node->value->data = malloc(8);
-            }
-        };
-        
-        x_handlers[to_unary_id(star_id)] = [this](Context& ctx) {
-            process_node(ctx, ctx.node->left());
-            ctx.node->value->data = *(void**)ctx.node->left()->value->data;
-            ctx.node->value->type = ctx.node->left()->value->type;
-            ctx.node->value->size = ctx.node->left()->value->size;
-        };
-        
-        x_handlers[to_unary_id(amp_id)] = [this](Context& ctx) {
-            process_node(ctx, ctx.node->left());
-            ctx.node->value->type = ctx.node->left()->value->type;
-            ctx.node->value->size = 8;
-            ctx.node->value->set<void*>(ctx.node->left()->value->data);
-        };
-
-
-        d_handlers[to_unary_id(star_id)] = [this](Context& ctx) {
-            discover_symbol(ctx.node->left(),ctx.root);
-            ctx.node->value->copy(ctx.node->left()->value);
         };
 
         t_handlers[dot_id] = [this](Context& ctx) {
@@ -711,36 +242,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             ctx.index--;
         };
         
-        a_handlers[return_id] = [this](Context& ctx) {
-            ctx.index++;
-            while(ctx.index<ctx.result->length()) {
-                g_ptr<Node> take = ctx.result->take(ctx.index);
-                if(take->type==end_id) {
-                    standard_direct_pass(ctx.node);
-                    break;
-                }
-                ctx.node->children << take;
-            }
-        };
-
-        x_handlers[return_id] = [this](Context& ctx) {
-            process_node(ctx, ctx.node->left());
-            g_ptr<Node> on_scope = ctx.node->in_scope;
-            while(on_scope->owner->type!=func_decl_id) {
-                if(on_scope->owner) {
-                    on_scope = on_scope->owner->in_scope;
-                } else {
-                    on_scope = ctx.node->in_scope;
-                    break;
-                }
-            }
-            on_scope->owner->value->copy(ctx.node->left()->value);
-            ctx.flag = true;
-        };
-
-        x_handlers[break_id] = [](Context& ctx) {
-            ctx.flag = true;
-        };
 
 
         left_binding_power.put(lbracket_id, 10);
@@ -791,50 +292,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             ctx.node->value->data = (char*)ctx.node->children[0]->value->data + i * element_size;
         };
 
-        t_handlers[var_decl_id] = [](Context& ctx) {
-            //Do nothing
-        };
-        x_handlers[var_decl_id] = [this](Context& ctx) {
-            if(!ctx.node->value->data) {
-                size_t alloc_size = ctx.node->value->size;
-                if(alloc_size == 0 && ctx.node->value->type_scope) {
-                    alloc_size = ctx.node->value->type_scope->owner->value->size;
-                    ctx.node->value->size = alloc_size;
-                }
-                if(!ctx.node->children.empty()) { //Arrays
-                    process_node(ctx, ctx.node->children[0]);
-                    int count = ctx.node->children[0]->value->get<int>();
-                    alloc_size *= count;
-                }
-                ctx.node->value->data = malloc(alloc_size);
-            }
-        };
-
-        d_handlers[type_decl_id] = [this](Context& ctx){
-            g_ptr<Node> node  = ctx.node;
-            for(auto child : node->scope()->children) {
-                child->value->address = node->value->size;
-                if(child->type == var_decl_id) {
-                    if(child->value->type_scope) {
-                        node->value->size+=child->value->type_scope->owner->value->size; //Note to self: too indirect, should make this path more direct at some point
-                    } else {
-                        node->value->size+=child->value->size;
-                    }
-                } else if(child->type == to_decl_id(star_id)) {
-                    node->value->size+=8;
-                }
-            }
-        };
-        x_handlers[type_decl_id] = [](Context& ctx){};
-        t_handlers[func_decl_id] = [this](Context& ctx) {
-            g_ptr<Node> saved_root = ctx.root;
-            ctx.root = ctx.node->scope();
-            for(auto c : ctx.node->children) {
-                g_ptr<Node> child = process_node(ctx, c);
-            }
-            ctx.root = saved_root;
-        };
-        x_handlers[func_decl_id] = [](Context& ctx){};
         
         scope_link_handlers.put(identifier_id,[](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
             new_scope->owner = owner_node.getPtr();
@@ -992,62 +449,8 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
 
         x_handlers[identifier_id] = [](Context& ctx){};
 
-        scope_precedence.put(lbrace_id, 10);
-        scope_precedence.put(rbrace_id, -10);
-
-        // scope_precedence.put(lbracket_id, 10);
-        // scope_precedence.put(rbracket_id, -10);
-
-        char_is_split.put(' ',true);
         left_binding_power.put(colon_id, 4);
         right_binding_power.put(colon_id, 9);
-        tokenizer_state_functions.put(in_alpha_id,[this](Context& ctx) {
-            char c = ctx.source.at(ctx.index);
-            if(char_is_split.getOrDefault(c,false)) {
-                ctx.state = 0; 
-                --ctx.index;
-                ctx.node->type = tokenized_keywords.getOrDefault(ctx.node->name,ctx.node->type);
-                return;
-            } else {
-                ctx.node->name += c;
-            }
-        });
-
-        tokenizer_state_functions.put(in_digit_id,[this](Context& ctx) {
-            char c = ctx.source.at(ctx.index);
-            if(char_is_split.getOrDefault(c,false)) {
-                if(c=='.') {
-                    ctx.node->type = float_id;
-                } else {
-                    ctx.state = 0; 
-                    --ctx.index;
-                    return;
-                }
-            } else if(std::isalpha(c)) {
-                ctx.state = in_alpha_id;
-            }
-            ctx.node->name += c;
-        });
-
-        tokenizer_default_function = [this](Context& ctx) {
-            char c = ctx.source.at(ctx.index);
-            if(std::isalpha(c)) {
-                ctx.state = in_alpha_id;
-                ctx.node = make<Node>(identifier_id,c);
-                ctx.result->push(ctx.node);
-            }
-            else if(std::isdigit(c)) {
-                ctx.state = in_digit_id;
-                ctx.node = make<Node>(int_id,c);
-                ctx.result->push(ctx.node);
-            } else if(c==' '||c=='\t'||c=='\n') {
-                //just skip
-            }
-            else {
-                print("tokenize::default_function missing handling for char: ",c);
-            }
-        };
-
 
         s_default_function = [](Context& ctx){};
         t_default_function = [this](Context& ctx){
@@ -1066,7 +469,6 @@ struct C_Compiler : public AST_Unit, public Tokenizer_Unit, public ARM64_Unit {
             //Doing nothing for now
         };
         
-
         x_default_function = [](Context& ctx){};
 
         print_id = add_function("print");
@@ -1646,3 +1048,203 @@ g_ptr<Unit> return_unit() {
 }
 
 }
+
+
+//Potential future Q-OOP Unit, for now just grouped down here for convinent drop-in
+
+// size_t method_scope_id = reg_id("METHOD_SCOPE");
+// size_t type_scope_id = reg_id("TYPE_SCOPE");
+// size_t template_id = make_tokenized_keyword("template");
+// size_t typename_id = add_type("typename");
+// void inject_this_param(Context& ctx) {
+//     g_ptr<Node> node = ctx.node;
+//     g_ptr<Node> star = make<Node>();
+//     star->type = star_id;
+//     star->place_in_scope(node->scope().getPtr());
+//     star->name = "made_by_this";
+
+//     g_ptr<Node> type_term = make<Node>();
+//     type_term->type = identifier_id;
+//     type_term->name = node->in_scope->owner->name;
+//     type_term->place_in_scope(node->scope().getPtr());
+//     star->children << type_term;
+
+//     g_ptr<Node> id_term = make<Node>();
+//     id_term->type = identifier_id;
+//     id_term->name = "this";
+//     id_term->place_in_scope(node->scope().getPtr());
+//     star->children << id_term;
+
+//     node->children.insert(star, 0);
+// };
+// void inject_member_access(Context& ctx) {
+//     g_ptr<Node> node = ctx.node;
+//     g_ptr<Node> prop = make<Node>();
+//     prop->type = dot_id;
+//     prop->place_in_scope(node->in_scope);
+    
+//     g_ptr<Node> star = make<Node>();
+//     star->type = star_id;
+//     star->place_in_scope(node->in_scope);
+    
+//     g_ptr<Node> this_id = make<Node>();
+//     this_id->type = identifier_id;
+//     this_id->name = "this";
+//     this_id->place_in_scope(node->in_scope);
+//     star->children << this_id;
+    
+//     g_ptr<Node> member_id = make<Node>();
+//     member_id->type = identifier_id;
+//     member_id->name = node->name;
+//     member_id->place_in_scope(node->in_scope);
+    
+//     prop->children << star;
+//     prop->children << member_id;
+//     //We parse this node because it won't resolve again like something in a type scope would
+//     process_node(ctx, prop);
+//     node->copy(prop);
+// };
+
+// t_handlers[identifier_id] = [this](Context& ctx) {
+//     // log("Parsing an idenitifer:\n",ctx.node->to_string(1));
+//     g_ptr<Node> node = ctx.node;
+//     g_ptr<Value> decl_value = make<Value>();
+    
+//     bool had_a_value = (bool)(node->value);
+//     bool had_a_scope = (bool)(node->scope());
+//     bool found_a_value = node->find_value_in_scope();
+//     bool is_qualifier = node->value_is_valid();
+
+//     int root_idx = -1;
+//     if(node->value_is_valid() && node->value->sub_type != 0) {
+//         //log("I am a qualifier");
+//         decl_value->quals << value_to_qual(node->value);
+//         for(int i = 0; i < node->children.length(); i++) {
+//             g_ptr<Node> c = node->children[i];
+//             c->find_value_in_scope();
+//             if(c->value_is_valid()) {
+//                 decl_value->quals << value_to_qual(c->value);
+//             } else {
+//                 root_idx = i;
+//                 break;
+//             }
+//         }
+//         if(root_idx!=-1) {
+//             g_ptr<Node> root = node->children[root_idx];
+//             node->name = root->name;
+//             for(int i = root_idx+1; i < node->children.length(); i++) {
+//                 g_ptr<Node> c = node->children[i];
+//                 c->find_value_in_scope();
+//                 if(c->value_is_valid()) {
+//                     node->quals << value_to_qual(c->value);
+//                 } 
+//             }
+//             node->children = node->children.take(root_idx)->children;
+//         }
+//     } else {
+//         //log("no valid value, I am the root");
+//     }
+    
+//     if(!node->scope()) { //Defer, the r_stage will do this later for scoped nodes
+//         standard_sub_process(ctx);
+//     }
+
+//     if(keywords.hasKey(node->name)) {
+//         node->type = node->value->sub_type;
+//         return;
+//     }
+
+//     node->value = decl_value;
+//     fire_quals(ctx, decl_value);
+
+//     bool has_scope = node->scope() != nullptr;
+//     bool has_type_scope = node->value->type_scope != nullptr;
+//     bool has_sub_type = node->value->sub_type != 0;
+    
+//     if(has_scope) {
+//         node->scope()->owner = node.getPtr();
+//         node->scope()->name = node->name;
+//         if(has_sub_type) {
+//             node->type = func_decl_id;
+//             node->scopes[0] = node->in_scope->distribute_node(node->name,node->scope());
+//             node->value->type_scope = node->scope().getPtr();
+//             node->value = node->in_scope->distribute_value(node->name,node->value);
+//             if(node->value->sub_type!=typename_id)
+//                 node->value->sub_type = 0;
+
+//             if(node->in_scope->type==type_scope_id) {
+//                 node->scope()->type = method_scope_id;
+//             }
+
+//             //The 'this' field passed to a func_decl with members
+//             if(node->in_scope->value_table.hasKey(node->in_scope->name)) {
+//                 inject_this_param(ctx);
+//             }
+//         } else {
+//             node->type = type_decl_id;
+//             node->value->copy(make_type(node->name,0));
+//             node->value->type_scope = node->scope().getPtr();
+//             node->value = node->in_scope->distribute_value(node->name,node->value);
+
+//             node->scope()->type = type_scope_id;
+
+//             for(auto c : node->children) { //Parse inline quals for templates
+//                 if(c->value->type==0) {
+//                     g_ptr<Node> qual = make<Node>();
+//                     qual->type = typename_id;
+//                     qual->sub_type = typename_id;
+//                     qual->value = c->value;
+//                     c->value->quals << qual;
+//                     c->value->type = typename_id;
+//                     c->value->sub_type = typename_id;
+//                     c->in_scope = node->scope().getPtr();
+//                 } else if(c->value->type!=typename_id) {
+//                     node->quals << value_to_qual(c->value);
+//                     node->children.erase(c);
+//                 }
+//             }
+//         }
+//     } else {
+//         has_scope = node->find_node_in_scope(); //To distinquish func_calls from object identifiers
+//         if(has_sub_type) {
+//             if(node->value->sub_type == typename_id && node->in_scope->value_table.hasKey(node->name)) {
+//                 //Reference to existing typename-typed variable, not a new declaration
+//                 node->find_value_in_scope();
+//                 node->type = identifier_id;
+//             } else {
+//                 node->type = var_decl_id;
+//                 if(node->in_scope->type==type_scope_id) {
+//                     node->in_scope->value_table.put(node->name, decl_value);
+//                 } else {
+//                     node->value = node->in_scope->distribute_value(node->name, decl_value);
+//                 }
+//             }
+//             if(node->value->sub_type!=typename_id)
+//                 node->value->sub_type = 0;
+//         } else if(has_scope) {
+//             node->type = func_call_id;
+//             node->find_value_in_scope(); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
+//             if(node->value->type_scope)
+//                 node->scopes[0] = node->value->type_scope; //Swap to the type scope
+
+//             node->name.append("(");
+//             for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
+//         } else if(found_a_value) { //if we already had a value and nothing interesting happened to us, reclaim it
+//             node->find_value_in_scope();
+//         } else {                                         
+//             if(node->in_scope->value_table.hasKey("this")) { //The has check is so we don't inject this on the names of declared variables at the top
+//                 if(node->in_scope->owner->type==func_decl_id&&!node->in_scope->children.has(node)) {
+
+//                 } else {
+//                     inject_member_access(ctx);
+//                 }
+//             } else {
+//                 //HM Tracing goes here.
+//                 //Attatch a qual with handlers for it
+//                 //Borrow checker too, maybe not here though.
+//             }
+//         }
+//     }
+
+//     //log("Returning:\n",node->to_string(1));
+// };

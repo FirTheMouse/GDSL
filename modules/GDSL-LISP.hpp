@@ -1,8 +1,7 @@
 #pragma once
 
 #include "../core/GDSL.hpp"
-#include "../modules/Q-AST.hpp"
-#include "../modules/Q-Tokenizer.hpp"
+#include "../modules/Q-Function.hpp"
 
 //GDSL-LISP
 //Quick implmentation of LISP, I've never actually used the language, so I had to learn the syntax as I went
@@ -12,7 +11,7 @@
 
 namespace GDSL {
 
-    struct LISP_Unit : public AST_Unit, public Tokenizer_Unit {
+    struct LISP_Unit : public Function_Unit {
         size_t add_scoped_keyword(const std::string& name, int scope_prec)
         {
             size_t id = make_tokenized_keyword(name);
@@ -28,21 +27,6 @@ namespace GDSL {
             return id;
         }
 
-        size_t to_decl_id(size_t id) {return id+1;}
-        size_t to_unary_id(size_t id) {return id+2;}
-
-        size_t add_binary_operator(char c, const std::string& f,int left_bp, int right_bp) {
-            size_t id = add_token(c,f);
-            labels[to_decl_id(id)] = f+"_DECL";
-            labels[to_unary_id(id)] = f+"_UNARY";   
-            t_handlers[id] = [this](Context& ctx) {
-                standard_sub_process(ctx);
-                if(!ctx.node->value) 
-                    ctx.node->value = make<Value>();
-                ctx.node->value->copy(ctx.node->left()->value);
-            }; 
-            return id;
-        }
 
         //Need to define all these globally so that the function pointers can access them
         size_t if_id = 0;
@@ -51,257 +35,31 @@ namespace GDSL {
         size_t while_id = 0;
         size_t print_id = 0;
         size_t defun_id = 0;
-        size_t int_id = add_type("int",4);
-        size_t bool_id = add_type("bool",1);
-        size_t float_id = add_type("float",4);
-        size_t string_id = add_type("string",24);
-        size_t literal_id = reg_id("LITERAL");
-        size_t var_decl_id = reg_id("VAR_DECL");
-        size_t in_alpha_id = reg_id("IN_ALPHA");
-        size_t in_digit_id = reg_id("IN_DIGIT");
-        size_t comma_id = add_token(',',"COMMA");
-        size_t func_decl_id = reg_id("FUNC_DECL");
-        size_t func_call_id = reg_id("FUNC_CALL");
-        size_t lparen_id = add_token('(',"LPAREN");
-        size_t rparen_id = add_token(')',"RPAREN");
-        size_t identifier_id = reg_id("IDENTIFIER");
-        size_t in_string_id = reg_id("IN_STRING_KEY");
         size_t wubless_qual = add_qualifier("wubless");
         size_t wubfull_qual = add_qualifier("wubfull");
-        size_t plus_id = add_binary_operator('+',"PLUS", 4, 5);
-        size_t dash_id = add_binary_operator('-',"DASH", 4, 5);
-        size_t star_id = add_binary_operator('*',"STAR", 6, 7);
-        size_t rangle_id = add_binary_operator('>',"RANGLE", 2, 3);
-        size_t langle_id = add_binary_operator('<',"LANGLE", 2, 3);
-        size_t equals_id = add_binary_operator('=', "ASSIGNMENT", 1, 0);
-
-        g_ptr<Node> lisp_expression_parse(Context& ctx) {
-            if(ctx.index >= ctx.nodes.length()) return nullptr;
-            g_ptr<Node> token = ctx.nodes[ctx.index];
-            ctx.index++;
-            
-            if(token->type == lparen_id) {
-                g_ptr<Node> op = ctx.nodes[ctx.index];
-                ctx.index++;
-                op->children.clear();
-                while(ctx.index < ctx.nodes.length() &&
-                    ctx.nodes[ctx.index]->type != rparen_id) {
-                    g_ptr<Node> arg = lisp_expression_parse(ctx);
-                    if(arg) op->children << arg;
-                }
-                ctx.index++;
-                return op;
-            }
-            
-            return token;
-        }
 
         Log::Line timer; 
         std::string output_string = "";
 
         void init() override {
             span = make<Log::Span>(); //<- This is the logging primitve, what all the log, newline, endline, work with
-            discard_types.push(undefined_id);
-            discard_types.push(lparen_id);
-            discard_types.push(rparen_id);
-            discard_types.push(comma_id);
-            char_is_split.put(' ',true);
-            tokenizer_state_functions.put(in_alpha_id,[this](Context& ctx) {
-                char c = ctx.source.at(ctx.index);
-                if(char_is_split.getOrDefault(c,false)) {
-                    ctx.state = 0; 
-                    --ctx.index;
-                    ctx.node->type = tokenized_keywords.getOrDefault(ctx.node->name,ctx.node->type);
-                    return;
-                } else {
-                    ctx.node->name += c;
-                }
-            });
+            Function_Unit::init();
 
-            tokenizer_state_functions.put(in_digit_id,[this](Context& ctx) {
-                char c = ctx.source.at(ctx.index);
-                if(char_is_split.getOrDefault(c,false)) {
-                    ctx.state = 0; 
-                    --ctx.index;
-                    return;
-                } else if(std::isalpha(c)) {
-                    ctx.state = in_alpha_id;
-                } else if(c=='.') {
-                    ctx.node->type = float_id;
-                }
-                ctx.node->name += c;
-            });
-
-            tokenizer_default_function = [this](Context& ctx) {
-                char c = ctx.source.at(ctx.index);
-                if(std::isalpha(c)) {
-                    ctx.state = in_alpha_id;
-                    ctx.node = make<Node>(identifier_id,c);
-                    ctx.result->push(ctx.node);
-                }
-                else if(std::isdigit(c)) {
-                    ctx.state = in_digit_id;
-                    ctx.node = make<Node>(int_id,c);
-                    ctx.result->push(ctx.node);
-                } else if(c==' '||c=='\t'||c=='\n') {
-                    //just skip
-                }
-                else {
-                    print("tokenize::default_function missing handling for char: ",c);
-                }
-            };
-
-
-            x_handlers[literal_id] = [](Context& ctx){};
-        
-            value_to_string.put(float_id,[this](void* data) {
-                return std::to_string(*(float*)data);
-            });
-            negate_value.put(float_id,[this](void* data) {
-                *(float*)data = -(*(float*)data);
-            });
-            t_handlers[float_id] = [this](Context& ctx) {
-                ctx.node->type = literal_id;
-
-                g_ptr<Value> value = make<Value>(float_id,4);
-                value->set<float>(std::stof(ctx.node->name));
-                ctx.node->value = value;
-            }; 
-
-            value_to_string.put(int_id,[this](void* data) {
-                return std::to_string(*(int*)data);
-            });
-            negate_value.put(int_id,[this](void* data) {
-                *(int*)data = -(*(int*)data);
-            });
-            t_handlers[int_id] = [this](Context& ctx) {
-                ctx.node->type = literal_id;
-
-                g_ptr<Value> value = make<Value>(int_id,4);
-                value->set<int>(std::stoi(ctx.node->name));
-                ctx.node->value = value;
-            }; 
-
-            value_to_string.put(bool_id,[this](void* data){
-                return (*(bool*)data) ? "TRUE" : "FALSE";
-            });
-            t_handlers[bool_id] = [this](Context& ctx) {
-                ctx.node->type = literal_id;
-
-                g_ptr<Value> value = make<Value>(bool_id,1);
-                value->set<bool>(ctx.node->name=="true" ? true : false); 
-                ctx.node->value = value;
-            }; 
-
-            tokenizer_state_functions.put(in_string_id,[this](Context& ctx) {
-                char c = ctx.source.at(ctx.index);
-                if(c=='"') {
-                    ctx.state=0;
-                }
-                else {
-                    ctx.node->name += c;
-                }
-            });
-            tokenizer_functions.put('"',[this](Context& ctx) {
-                ctx.state = in_string_id;
-                ctx.node = make<Node>();
-                ctx.node->type = string_id;
-                ctx.node->name = "";
-                ctx.result->push(ctx.node);
-            });
-            value_to_string.put(string_id,[this](void* data){
-                return *(std::string*)data;
-            });
-            t_handlers[string_id] = [this](Context& ctx) {
-                ctx.node->type = literal_id;
-
-                g_ptr<Value> value = make<Value>(string_id,24);
-                value->set<std::string>(ctx.node->name);
-                ctx.node->value = value;
-            }; 
+            for(int i=0;i<binary_op_catalog.length();i++) {
+                t_handlers[binary_op_catalog[i]] = [this](Context& ctx) {
+                    standard_sub_process(ctx);
+                    if(!ctx.node->value) 
+                        ctx.node->value = make<Value>();
+                    ctx.node->value->copy(ctx.node->left()->value);
+                }; 
+            }
             
-            x_handlers[plus_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                ctx.node->value->set<int>(
-                    *(int*)ctx.node->left()->value->data
-                    +
-                    *(int*)ctx.node->right()->value->data
-                );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
-            };
 
-            x_handlers[dash_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                ctx.node->value->set<int>(
-                    *(int*)ctx.node->left()->value->data
-                    -
-                    *(int*)ctx.node->right()->value->data
-                );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
-            };
-
-            x_handlers[rangle_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                ctx.node->value->set<bool>(
-                    *(int*)ctx.node->left()->value->data
-                    >
-                    *(int*)ctx.node->right()->value->data
-                );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
-            };
-
-            x_handlers[langle_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                ctx.node->value->set<bool>(
-                    *(int*)ctx.node->left()->value->data
-                    <
-                    *(int*)ctx.node->right()->value->data
-                );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
-            };
-
-            x_handlers[star_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                ctx.node->value->set<int>(
-                    *(int*)ctx.node->left()->value->data
-                    *
-                    *(int*)ctx.node->right()->value->data
-                );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
-            };
-            
-            x_handlers[equals_id] = [this](Context& ctx) {
-                standard_sub_process(ctx);
-                if(!ctx.node->left()->value->data) {
-                    ctx.node->left()->value->size = ctx.node->right()->value->size;
-                    ctx.node->left()->value->type = ctx.node->right()->value->type;
-                    ctx.node->left()->value->data = malloc(ctx.node->right()->value->size);
-                }
-                memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
-            };
-
-            r_handlers[func_call_id] = [this](Context& ctx) {
-                if(ctx.node->scope()) {
-                    for(int i = 0; i < ctx.node->children.size(); i++) {
-                        g_ptr<Node> arg = process_node(ctx, ctx.node->children[i]);
-                        g_ptr<Node> param = ctx.node->scope()->owner->children[i];
-                        g_ptr<Node> assignment = make<Node>();
-                        assignment->type = equals_id;
-                        assignment->children << param;
-                        assignment->children << arg;
-                        ctx.node->children[i] = assignment;
-                    }
-                }
-            };
             x_handlers[func_call_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 process_node(ctx, ctx.node->scope()->owner->children.last());
             };
+            
 
             defun_id = add_scoped_keyword("defun",2);
             t_handlers[defun_id] = [this](Context& ctx) {
@@ -419,12 +177,6 @@ namespace GDSL {
 
             };
 
-            // a_parse_function = [this](Context& ctx){
-            //     g_ptr<Node> expr = lisp_expression_parse(ctx);
-            //     if(expr && !discard_types.has(expr->getType())) {
-            //         ctx.result->push(expr);
-            //     }
-            // };
             s_default_function = [](Context& ctx){};
             t_default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -440,7 +192,6 @@ namespace GDSL {
             x_default_function = [](Context& ctx){};
 
             print_id = add_function("print");
-
             x_handlers[print_id] = [this](Context& ctx) {
                 std::string toPrint = "";
                 for(auto r : ctx.node->children) {
@@ -450,9 +201,6 @@ namespace GDSL {
                 print(toPrint);
                 output_string.append(toPrint);
             };
-
-            span->print_on_line_end = false; //While things aren't crashing
-            //span->log_everything = true; //While things are crashing
         }
 
         std::string code_store = "";

@@ -47,7 +47,7 @@ namespace GDSL {
         }
 
         size_t assemble_stage = add_stage_lookup("assemble",&a_handlers,&a_default_function);
-        size_t scope_stage = add_stage_lookup("scope",&s_handlers,&s_default_function);
+        size_t scope_stage = add_stage_lookup("scoping",&s_handlers,&s_default_function);
         size_t type_stage = add_stage_lookup("type",&t_handlers,&t_default_function);
         size_t resolve = add_stage_lookup("resolve",&r_handlers,&r_default_function);
         size_t execute_stage = add_stage_lookup("execute",&x_handlers,&x_default_function);
@@ -61,14 +61,21 @@ namespace GDSL {
 
         size_t test_id = make_tokenized_keyword("test");
         size_t ctx_node_id = make_tokenized_keyword("node");
+        size_t ctx_root_id = make_tokenized_keyword("root");
         size_t ctx_name_id = make_tokenized_keyword("name");
         size_t ctx_source_id = make_tokenized_keyword("source");
+        size_t ctx_scope_id = make_tokenized_keyword("scope");
+        size_t ctx_children_id = make_tokenized_keyword("children");
+
+        size_t read_file_id = make_tokenized_keyword("read_file");
 
         size_t type_scope_id = reg_id("TYPE_SCOPE");
         size_t print_id = add_function("print");
         size_t while_id = add_scoped_keyword("while", 2);
         size_t if_id = add_scoped_keyword("if", 2);
         size_t else_id = add_scoped_keyword("else", 1);
+
+        size_t list_id = reg_id("list");
 
 
         
@@ -133,25 +140,44 @@ namespace GDSL {
             };
 
             x_handlers[ctx_node_id] = [this](Context& ctx){
-                if(ctx.sub) {
-                    if(ctx.node->value->quals.empty()) {
-                        ctx.node->value->quals << ctx.sub->node;
-                    } else {
-                        ctx.node->value->quals[0] = ctx.sub->node;
-                    }
-                }
+                ctx.node->value->set<g_ptr<Node>>(ctx.sub->node);
             };
-            x_handlers[ctx_name_id] = [this](Context& ctx){
-                if(ctx.left) {
-                    ctx.node->value->type = string_id;
-                    ctx.node->value->data = &ctx.left->value->quals[0]->name;
-                }
+            x_handlers[ctx_root_id] = [this](Context& ctx){
+                ctx.node->value->set<g_ptr<Node>>(ctx.sub->root);
             };
             x_handlers[ctx_source_id] = [this](Context& ctx){
-                if(ctx.sub) {
-                    ctx.node->value->type = string_id;
-                    ctx.node->value->data = &ctx.sub->source;
+                g_ptr<Value> v = ctx.node->value;
+                v->type = string_id;
+                v->size = sizeof(std::string);
+                v->data = &ctx.sub->source;
+            };
+            x_handlers[ctx_name_id] = [this](Context& ctx){
+                g_ptr<Value> v = ctx.node->value;
+                v->type = string_id;
+                v->size = sizeof(std::string);
+                v->data = &ctx.left->value->get<g_ptr<Node>>()->name;
+            };
+            x_handlers[ctx_scope_id] = [this](Context& ctx){
+                ctx.node->value->set<g_ptr<Node>>(ctx.left->value->get<g_ptr<Node>>()->scope());
+            };
+            x_handlers[ctx_children_id] = [this](Context& ctx){
+                if(ctx.node->left()) {
+                    ctx.node->value->type = object_id;
+                    int idx = ctx.node->left()->value->get<int>();
+                    list<g_ptr<Node>>& children = ctx.left->value->get<g_ptr<Node>>()->children;
+                    if(idx<children.length()) {
+                        ctx.node->value->set<g_ptr<Node>>(children[idx]);
+                    } else {
+                        print(red("ctx_children:x_handler index out of bounds for children"));
+                    }
+                } else {
+                    ctx.node->value->type = list_id;
+                    ctx.node->value->data = &ctx.left->value->get<g_ptr<Node>>()->children;
                 }
+            };
+
+            x_handlers[read_file_id] = [this](Context& ctx){
+                ctx.node->value->set<std::string>(readFile(ctx.node->left()->value->get<std::string>()));
             };
 
             x_handlers[test_id] = [this](Context& ctx){
@@ -294,8 +320,10 @@ namespace GDSL {
                         node->find_value_in_scope(); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
                         if(node->value->type_scope)
                             node->scopes[0] = node->value->type_scope; //Swap to the type scope
-                        node->name.append("(");
-                        for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
+                        if(!node->children.empty()) {
+                            node->name.append("(");
+                            for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
+                        }
                     } else if(found_a_value) { //if we already had a value and nothing interesting happened to us, reclaim it
                         node->find_value_in_scope();
                     } else {                                         

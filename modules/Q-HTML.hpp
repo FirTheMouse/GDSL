@@ -54,6 +54,7 @@ namespace GDSL {
                 s+=">\n";
 
                 for(auto c : ctx.node->children) {
+                    if(c->type == style_id) continue;
                     s += html_encode_node(c,ctx.index);
                 }
 
@@ -74,7 +75,19 @@ namespace GDSL {
 
             html_handlers[text_id] = [this](Context& ctx){
                 std::string s = "";
-                s+= "<"+labels[ctx.node->sub_type]+">"+ctx.node->name+"</"+labels[ctx.node->sub_type]+">\n";
+                s+= "<"+labels[ctx.node->sub_type];
+                int zero_depth = -1;
+                for(auto q : ctx.node->quals) {
+                    s += " "+html_encode_node(q,zero_depth);
+                    zero_depth = -1;
+                }
+
+                if(ctx.node->left()) {
+                    process_node(ctx, ctx.node->left());
+                    ctx.node->name = ctx.node->left()->value->get<std::string>();
+                }
+                
+                s+=">"+ctx.node->name+"</"+labels[ctx.node->sub_type]+">\n";
                 ctx.source = s;
                 // ctx.index--;
             };

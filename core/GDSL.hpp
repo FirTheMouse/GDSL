@@ -458,7 +458,7 @@ struct Unit : public q_object {
         
         to_return += labels[node->type]
         + (node->sub_type==0?"":":"+labels[node->sub_type])
-        + " " + green(node->name) + " " 
+        + (node->name.empty()?"":" "+green(node->name)+" ")  
         + (node->value?value_info(node->value):"") 
         + (!node->children.empty()?"[C:"+std::to_string(node->children.length())+"]":"")  
         + (node->in_scope?"{"+node->in_scope->name+"}":"");
@@ -517,7 +517,7 @@ struct Unit : public q_object {
             }
         }
         if(node->owner) {
-            to_return +=  "\n" + indent + "  Owner: " + node->owner->name;
+            to_return +=  "\n" + indent + "  Owner: " + node_info(node->owner);
         }
 
         if(!node->children.empty()) {
@@ -837,7 +837,7 @@ struct Unit : public q_object {
     }
 
     void standard_backwards_pass(g_ptr<Node> root){
-        newline("Standard pass over "+std::to_string(root->children.size())+" nodes");
+        newline("Backwards pass over "+std::to_string(root->children.size())+" nodes");
         Context ctx;
         ctx.root = root;
         ctx.result = &root->children;
@@ -849,8 +849,9 @@ struct Unit : public q_object {
                 root->children.removeAt(i);
             } else {
                 for(auto scope : root->children[i]->scopes) {
-                    if(scope->owner==root->children[i])
+                    if(scope->owner&&scope->owner==root->children[i]) {
                         standard_backwards_pass(scope);
+                    }
                 }
                 ctx.left = root->children[i];
             }

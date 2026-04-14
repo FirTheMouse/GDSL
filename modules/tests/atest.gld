@@ -4,8 +4,16 @@ style default_button {
     "background-color" : "red";
 }
 
+style big_center {
+    "font-size" : "48px";
+    "text-align" : "center";
+    "margin-top" : "20%";
+}
+
 "/" {
-    paragraph "Home page";
+    paragraph "Hello, World!" {
+        big_center;
+    }
 
     textarea {
         id="code";
@@ -27,13 +35,12 @@ style default_button {
         paragraph "Output appears here";
     }
 
-    post {
-        int i = 0;
-        while(i<4) {
-            print("Wub");
-            i = i+1;
-        }
-        source = "wub wub wub";
+    on execute {
+        source = serve(node.scope);
+    }
+
+    on post {
+        source = serve(node.scope.children(0));
     }
 
     script "
@@ -78,11 +85,21 @@ style default_button {
 }
 
 "/wub/house" {
+    on execute {
+        source = serve(node.scope);
+    }
+
     paragraph "Wub House";
 }
 
-execute direct_pass {
-    server(8080);
+server {
+    port(8080);
+    listen {
+        accept;
+        request;
+        response;
+        close;
+    }
 }
 
 

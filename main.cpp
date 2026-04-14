@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
 
     g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
     twig->init();
-    twig->run(twig->process(readFile("modules/tests/atest.gld")));
+    twig->run(twig->process(readFile("modules/tests/testpage.gld")));
     
     // g_ptr<Q_Script_Unit> q_script = make<Q_Script_Unit>();
     // q_script->init();

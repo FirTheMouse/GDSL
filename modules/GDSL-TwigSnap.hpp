@@ -13,13 +13,10 @@ namespace GDSL {
 
         void add_text_component(const std::string& f, uint32_t type) {
             tokenized_keywords.put(f,type);
-            a_handlers[type] = [this](Context& ctx) {
+            n_handlers[type] = [this](Context& ctx) {
                 if(ctx.index+1<ctx.result->length()) {
-                    g_ptr<Node> next = ctx.result->get(ctx.index+1);
-                    if(next->type==string_id) {
-                        ctx.node->name = next->name;
-                        ctx.result->removeAt(ctx.index+1);
-                    }
+                    ctx.node->children << ctx.result->take(ctx.index+1);
+                    ctx.node->name = ctx.node->left()->name;
                 }
                 ctx.node->sub_type = ctx.node->type;
                 ctx.node->type = text_id;
@@ -32,7 +29,7 @@ namespace GDSL {
             } else {
                 tokenized_keywords.put(f,type);
             }
-            a_handlers[type] = [this](Context& ctx) {
+            n_handlers[type] = [this](Context& ctx) {
                 if(ctx.index+1<ctx.result->length()) {
                     g_ptr<Node> next = ctx.result->get(ctx.index+1);
                     if(next->type==identifier_id||next->type==string_id) {
@@ -59,13 +56,21 @@ namespace GDSL {
 
         size_t route_id = reg_id("route");
         size_t find_id = make_tokenized_keyword("find");
+        size_t serve_id = make_tokenized_keyword("serve");
 
         void init() override {
             TwigSnap_Unit::init();
             Q_Script_Unit::init();
             Web_Unit::init();
 
-            tokenized_keywords.put("server",server_id);
+            tokenized_keywords.put(labels[server_id],server_id);
+            tokenized_keywords.put(labels[port_id],port_id);
+            tokenized_keywords.put(labels[listen_id],listen_id);
+            tokenized_keywords.put(labels[accept_id],accept_id);
+            tokenized_keywords.put(labels[request_id],request_id);
+            tokenized_keywords.put(labels[response_id],response_id);
+            tokenized_keywords.put(labels[close_id],close_id);
+
             scope_link_handlers[string_id] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
                 standard_scope_link_handler(new_scope,current_scope,owner_node);
                 if(owner_node->name.at(0)=='/') {
@@ -80,44 +85,126 @@ namespace GDSL {
             discard_types.push_if_absent(lbrace_id);
 
             add_text_component("paragraph",paragraph_subtype);
+            t_handlers[text_id] = [this](Context& ctx) {
+                if(ctx.node->scope()) {
+                    g_ptr<Node> properties = make<Node>(properties_id);
+                    ctx.node->quals << properties;
+                    properties->mute = true; //So nobody fires it as a qual on accident
+                    for(auto c : ctx.node->scope()->children) {
+                        if(c->children.length()==2) {
+                            properties->children << make_property(c->left()->name, c->right()->name);
+                        } else if(ctx.root->node_table.hasKey(c->name)) {
+                            ctx.node->quals << ctx.root->node_table.get(c->name);
+                        }
+                    }
+                }
+            };
 
             t_handlers[route_id] = [this](Context& ctx) {          
                 size_t this_route = routes.getOrDefault(ctx.node->name,make_route(ctx.node->name));
                 ctx.node->sub_type = this_route;
-                g_ptr<Node> html_root = make<Node>(html_id);
-                g_ptr<Node> body = ctx.node->scope();
-                body->type = body_id;
-                html_root->children << body;    
+                g_ptr<Node> body_node = ctx.node->scope();
+                body_node->type = body_id;
+                route_nodes[this_route] = ctx.node;
 
-                x_handlers[this_route] = [this,html_root](Context& ctx) {
+                x_handlers[this_route] = [this,body_node](Context& ctx){
                     std::string page = "<!DOCTYPE html>\n";
+                    page += "<html>\n";
+                    std::string body = "";
+
                     int depth = 0;
-                    page += html_encode_node(html_root, depth);
+                    body += html_encode_node(body_node, depth);
+
+                    page += body;
+                    page += "</html>";
                     ctx.source = page;
                 };
-                p_handlers[this_route] = [this,body,html_root](Context& ctx) {
-                    // for(auto c : body->children) {
-                    //     if(c->type == button_id && c->name == "btn") {
-                    //         for(auto q : c->quals) {
-                    //             if(q->type == style_id) {
-                    //                 for(auto p : q->children) {
-                    //                     if(p->name == "background-color") {
-                    //                         p->opt_str = p->opt_str == "green" ? "red" : "green";
-                    //                     }
-                    //                 }
-                    //             }
-                    //         }
-                    //     }
-                    // }
-                    // std::string page = "<!DOCTYPE html>\n";
-                    // int depth = 0;
-                    // page += html_encode_node(html_root, depth);
-                    // ctx.source = page;
-                };
             };
+
+            r_handlers[route_id] = [this](Context& ctx){
+                if(ctx.node->scope()) {
+                    g_ptr<Node> properties = make<Node>(properties_id);
+                    ctx.node->scope()->quals << properties;
+                    properties->mute = true; //So nobody fires it as a qual on accident
+                    for(auto c : ctx.node->scope()->children) {
+                        if(c->type==func_call_id) {
+                            ctx.node->scope()->quals << ctx.root->node_table[c->name];
+                        } else if(c->type==var_decl_id) {
+                            if(c->children.empty()) {
+                                c->type = div_id;
+                                c->children = c->value->type_scope->children;
+                                for(auto idk : c->value->type_scope->children) {
+                                    if(idk->type==func_call_id) {
+                                        c->quals << ctx.root->node_table[idk->name];
+                                    }
+                                }
+                            }
+                        } else if(c->children.length()==2) {
+                            properties->children << make_property(c->left()->name, c->right()->name);
+                        }
+                    }
+                }
+            };
+
+            x_handlers[serve_id] = [this](Context& ctx){
+                std::string page = "<!DOCTYPE html>\n";
+                page += "<html>\n";
+                std::string body = "";
+                if(ctx.sub) {
+                    if(ctx.node->left()) {
+                        process_node(ctx,ctx.node->left());
+                        g_ptr<Node> retrived = ctx.node->left()->value->get<g_ptr<Node>>();
+                        if(retrived->type!=body_id) body+= "<body>\n";
+
+                        int depth = 0;
+                        body += html_encode_node(retrived, depth);
+
+                        if(retrived->type!=body_id) body+= "</body>\n";
+                    } else {
+                        print("No left");
+                    }
+                } else {
+                    body = "serve:x_handler context has no sub";
+                }
+                page += body;
+                page += "</html>";
+                ctx.node->value->set<std::string>(page);
+            };
+
             x_handlers[route_id] = x_handlers[node_block_id];
             html_handlers[handler_block_id] = [this](Context& ctx) {
                 //Don't emit this
+            };
+            html_handlers[on_id] = [this](Context& ctx) {
+                //Don't emit this
+            };
+
+
+            r_handlers[type_decl_id] = [this](Context& ctx) {
+                if(ctx.node->scope()) {
+                    g_ptr<Node> properties = make<Node>(properties_id);
+                    ctx.node->quals << properties;
+                    properties->mute = true; //So nobody fires it as a qual on accident
+                    for(auto c : ctx.node->scope()->children) {
+                        if(c->type==func_call_id) {
+                            ctx.node->quals << ctx.root->node_table[c->name];
+                        } else if(c->children.length()==2) {
+                            properties->children << make_property(c->left()->name, c->right()->name);
+                        }
+                    }
+                }
+            };
+            html_handlers[func_call_id] = [this](Context& ctx) {
+                //Don't emit
+            };
+            html_handlers[identifier_id] = [this](Context& ctx) {
+                //Don't emit
+            };
+            html_handlers[colon_id] = [this](Context& ctx) {
+                //Don't emit
+            };
+            html_handlers[literal_id] = [this](Context& ctx) {
+                //Don't emit
             };
 
             html_handlers[type_decl_id] = [this](Context& ctx) {
@@ -126,9 +213,12 @@ namespace GDSL {
                         ctx.node->scope()->type = div_id;
                         ctx.node->scope()->name = "id=\"" + ctx.node->name + "\"";
                     }
+                    ctx.node->scope()->quals = ctx.node->quals;
                     ctx.source = html_encode_node(ctx.node->scope(), ctx.index);
                 }
             };
+
+
 
             tokenized_keywords.put("script",script_id);
             a_handlers[script_id] = [this](Context& ctx) {
@@ -185,13 +275,13 @@ namespace GDSL {
         void run(g_ptr<Node> root) override {
             start_stage(&t_handlers,t_default_function);
             standard_resolving_pass(root);
-    
+
             start_stage(&d_handlers,d_default_function);
             discover_symbols(root);
 
             start_stage(&r_handlers,r_default_function);
             standard_resolving_pass(root);
-    
+
             start_stage(&e_handlers,e_default_function);
             standard_backwards_pass(root);
 

@@ -18,6 +18,7 @@ namespace GDSL {
 struct Web_Unit : public virtual Unit {
 
     map<std::string,size_t> routes;
+    map<size_t,g_ptr<Node>> route_nodes;
 
     size_t make_route(const std::string& path) {
         size_t id = reg_id(path);
@@ -29,18 +30,15 @@ struct Web_Unit : public virtual Unit {
     size_t port_id = reg_id("port");
     size_t request_id = reg_id("request");
     size_t response_id = reg_id("response");
+    size_t accept_id = reg_id("accept");
+    size_t listen_id = reg_id("listen");
+    size_t close_id = reg_id("close");
 
     size_t root_route = make_route("/");
 
     map<uint32_t,Handler> p_handlers; Handler p_default_function;
 
     void init() override {
-
-
-        x_handlers[port_id] = [this](Context& ctx) {
-            //Does nothing because the value would have already been set earlier via literal in the t stage.
-        };
-
         x_handlers[server_id] = [this](Context& ctx){
             print("Starting a server");
             int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -48,18 +46,113 @@ struct Web_Unit : public virtual Unit {
                 print(red("server_id::x_handler socket() failed"));
                 return;
             }
+            ctx.node->value->set<int>(server_fd);
+
+            if(ctx.node->scope()) {
+                standard_travel_pass(ctx.node->scope(),&ctx);
+            }
+        };
+
+        x_handlers[listen_id] = [this](Context& ctx){
+            ctx.node->value->set<int>(ctx.root->owner->value->get<int>()); //Propagate the server_fd
+            if(ctx.node->scope()) {
+                while(true) {
+                    standard_travel_pass(ctx.node->scope(),ctx.sub);
+                }
+            }
+        };
+
+        x_handlers[accept_id] = [this](Context& ctx){
+            int server_fd = ctx.root->owner->value->get<int>();
+            struct sockaddr_in client_addr;
+            memset(&client_addr, 0, sizeof(client_addr));
+            ::socklen_t client_len = sizeof(client_addr);
+            int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
+            if(client_fd < 0) { //The socket to accept inputs into, accept sets the port and such per client
+                print(red("server_id::x_handler accept() failed"));
+                return;
+            }
+            ctx.sub->state = client_fd;
+        };
+
+        x_handlers[request_id] = [this](Context& ctx){
+            char buffer[4096];
+            memset(buffer, 0, sizeof(buffer));
+            int bytes_read = read(ctx.sub->state, buffer, sizeof(buffer) - 1);
+            print("Bytes read: ", bytes_read);
+            if(bytes_read < 0) { //And just reading from the client buffer
+                print(red("server_id::x_handler read() failed"));
+                return;
+            }
+            std::string request(buffer);
+            ctx.sub->source = request;
+        };
+
+        x_handlers[response_id] = [this](Context& ctx){
+            std::string request = ctx.sub->source;
+            std::string first_line = request.substr(0, request.find("\r\n"));
+            std::string method = first_line.substr(0, first_line.find(" "));
+            std::string path = first_line.substr(first_line.find(" ") + 1);
+            path = path.substr(0, path.find(" ")); //strip the HTTP/1.1
+            print("Method: ",method);
+            print("Path: ",path);
+
+            size_t route_id = routes.getOrDefault(path, root_route);
+            ctx.sub->node = route_nodes[route_id]; 
+            ctx.sub->root = ctx.sub->node->in_scope;
+
+            if(method=="POST") {
+                size_t body_start = request.find("\r\n\r\n");
+                if(body_start != std::string::npos) {                        
+                    ctx.sub->source = request.substr(body_start + 4);
+                    p_handlers.getOrDefault(route_id,p_default_function)(*ctx.sub);
+                    std::string body = ctx.sub->source;
+                    std::string response = 
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Content-Length: " + std::to_string(body.length()) + "\r\n"
+                        "\r\n" + body;
+                    print("Response:\n",response);
+                    if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
+                        print(red("server_id::x_handler write() failed"));
+                    }
+                }
+            } else if(method=="GET") {
+                x_handlers.getOrDefault(route_id,x_default_function)(*ctx.sub);
+                std::string body = ctx.sub->source;
+                std::string response = 
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/html\r\n"
+                    "Content-Length: " + std::to_string(body.length()) + "\r\n"
+                    "\r\n" + body;
+                print("Response:\n",response);
+                if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
+                    print(red("server_id::x_handler write() failed"));
+                }
+            }
+        };
+
+        x_handlers[close_id] = [this](Context& ctx){
+            close(ctx.sub->state);
+        };
+
+        x_handlers[port_id] = [this](Context& ctx) {
             int port = 8080;
             if(ctx.node->left()) {
                 port = ctx.node->left()->value->get<int>();
             }
+            int server_fd = ctx.root->owner->value->get<int>();
+
+            int opt = 1;
+            setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
             struct sockaddr_in addr;
             memset(&addr, 0, sizeof(addr)); //C, setting evrything to 0 because no default constructer
             addr.sin_family = AF_INET;
-            addr.sin_port = htons(port); //Using port 8080
+            addr.sin_port = htons(port);
             addr.sin_addr.s_addr = INADDR_ANY;
     
-            if(bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { //Bind our socket to port 8080
+            if(bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { //Bind our socket to the port
                 print(red("server_id::x_handler bind() failed"));
                 return;
             }
@@ -67,71 +160,6 @@ struct Web_Unit : public virtual Unit {
             if(listen(server_fd, 10) < 0) { //Set the socket to be passive, 10 is the backlog number
                 print(red("server_id::x_handler listen() failed"));
                 return;
-            }
-
-            ctx.node->value->set<int>(server_fd);
-
-            while(true) {
-                struct sockaddr_in client_addr;
-                memset(&client_addr, 0, sizeof(client_addr));
-                ::socklen_t client_len = sizeof(client_addr);
-                int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
-                if(client_fd < 0) { //The socket to accept inputs into, accept sets the port and such per client
-                    print(red("server_id::x_handler accept() failed"));
-                    return;
-                }
-                print("Accepted: ",client_fd);
-    
-                char buffer[4096];
-                memset(buffer, 0, sizeof(buffer));
-                int bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
-                print("Bytes read: ", bytes_read);
-                if(bytes_read < 0) { //And just reading from the client buffer
-                    print(red("server_id::x_handler read() failed"));
-                    return;
-                }
-    
-                std::string request(buffer);
-                std::string first_line = request.substr(0, request.find("\r\n"));
-                std::string method = first_line.substr(0, first_line.find(" "));
-                std::string path = first_line.substr(first_line.find(" ") + 1);
-                path = path.substr(0, path.find(" ")); //strip the HTTP/1.1
-                print("Method: ",method);
-                print("Path: ",path);
-    
-                if(method=="POST") {
-                    size_t body_start = request.find("\r\n\r\n");
-                    if(body_start != std::string::npos) {                        
-                        Context sub_ctx;
-                        sub_ctx.source = request.substr(body_start + 4);
-                        p_handlers.getOrDefault(routes.getOrDefault(path,root_route),p_default_function)(sub_ctx);
-                        std::string body = sub_ctx.source;
-                        std::string response = 
-                            "HTTP/1.1 200 OK\r\n"
-                            "Content-Type: text/plain\r\n"
-                            "Content-Length: " + std::to_string(body.length()) + "\r\n"
-                            "\r\n" + body;
-                        print("Response:\n",response);
-                        if(::write(client_fd, response.c_str(), response.length()) < 0) {
-                            print(red("server_id::x_handler write() failed"));
-                        }
-                    }
-                } else {
-                    Context sub_ctx;
-                    standard_process(sub_ctx,routes.getOrDefault(path,root_route));
-                    std::string body = sub_ctx.source;
-                    std::string response = 
-                        "HTTP/1.1 200 OK\r\n"
-                        "Content-Type: text/html\r\n"
-                        "Content-Length: " + std::to_string(body.length()) + "\r\n"
-                        "\r\n" + body;
-                    print("Response:\n",response);
-                    if(::write(client_fd, response.c_str(), response.length()) < 0) {
-                        print(red("server_id::x_handler write() failed"));
-                    }
-                }
-    
-                close(client_fd);
             }
         };
 

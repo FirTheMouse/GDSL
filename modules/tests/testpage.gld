@@ -187,7 +187,7 @@ style container_style {
 }
 
 server {
-    port(8080);
+    port(80);
     listen {
         accept;
         request;

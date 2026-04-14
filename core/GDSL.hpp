@@ -537,6 +537,30 @@ struct Unit : public q_object {
     map<uint32_t, Handler> tokenizer_state_functions;
     Handler tokenizer_default_function = nullptr;
 
+
+    struct Stage : q_object {
+        Stage() {
+            default_function = [](Context& ctx){};
+        }
+
+        map<uint32_t,Handler> handlers;
+        Handler default_function;
+
+        Handler& operator[](uint32_t key) {
+            return handlers[key];
+        }
+    };
+
+    map<std::string,g_ptr<Stage>> stages;
+
+    Stage& reg_stage(std::string label) {
+        g_ptr<Stage> new_stage = make<Stage>();
+        stages.put(label,new_stage);
+        return *new_stage.getPtr();
+    }
+
+    Stage& a_handlers = reg_stage("assemble");
+
     //TAST
     map<uint32_t,Handler> a_handlers; Handler a_default_function;
     map<uint32_t,Handler> s_handlers; Handler s_default_function;
@@ -562,6 +586,10 @@ struct Unit : public q_object {
     }
 
     size_t undefined_id = reg_id("UNDEFINED"); //So that it's always 0
+
+
+
+
 
     void start_stage(map<uint32_t,Handler>* handlers, Handler default_function) {
         active_handlers = handlers;

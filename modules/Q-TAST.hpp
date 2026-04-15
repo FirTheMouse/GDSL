@@ -51,6 +51,12 @@ namespace GDSL {
                 return val->sub_type;
             }
 
+            size_t add_function(const std::string& f, uint32_t return_type = 0) {
+                g_ptr<Value> val = make_value(f,0,return_type);
+                keywords.put(f,val);
+                return val->sub_type;
+            }
+
             g_ptr<Value> make_qual_value(const std::string& f, size_t size = 0) {
                 size_t id = reg_id(f);
                 size_t prefix_id = reg_id(f);
@@ -85,13 +91,6 @@ namespace GDSL {
                 g_ptr<Value> val = make_qual_value(f,size);
                 keywords.put(f,val);
                 return val->type;
-            }
-                
-            size_t add_function(const std::string& f, uint32_t return_type = 0) {
-                g_ptr<Value> val = make_value(f,0,return_type);
-                keywords.put(f,val);
-                size_t call_id = val->sub_type;
-                return call_id;
             }
     };
 }

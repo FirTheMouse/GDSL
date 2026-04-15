@@ -36,7 +36,7 @@ struct Web_Unit : public virtual Unit {
 
     size_t root_route = make_route("/");
 
-    map<uint32_t,Handler> p_handlers; Handler p_default_function;
+    Stage& p_handlers = reg_stage("posting");
 
     void init() override {
         x_handlers[server_id] = [this](Context& ctx){
@@ -105,7 +105,7 @@ struct Web_Unit : public virtual Unit {
                 size_t body_start = request.find("\r\n\r\n");
                 if(body_start != std::string::npos) {                        
                     ctx.sub->source = request.substr(body_start + 4);
-                    p_handlers.getOrDefault(route_id,p_default_function)(*ctx.sub);
+                    p_handlers.run(route_id)(*ctx.sub);
                     std::string body = ctx.sub->source;
                     std::string response = 
                         "HTTP/1.1 200 OK\r\n"
@@ -118,7 +118,7 @@ struct Web_Unit : public virtual Unit {
                     }
                 }
             } else if(method=="GET") {
-                x_handlers.getOrDefault(route_id,x_default_function)(*ctx.sub);
+                x_handlers.run(route_id)(*ctx.sub);
                 std::string body = ctx.sub->source;
                 std::string response = 
                     "HTTP/1.1 200 OK\r\n"
@@ -162,18 +162,10 @@ struct Web_Unit : public virtual Unit {
                 return;
             }
         };
-
-        x_default_function = [this](Context& ctx){
-
-        };
-
-        p_default_function = [this](Context& ctx){
-
-        };
     }
 
     void run(g_ptr<Node> server) override {
-        start_stage(&x_handlers,x_default_function);
+        start_stage(x_handlers);
         process_node(server);
     }
 

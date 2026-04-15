@@ -20,7 +20,7 @@ namespace GDSL {
             discard_types.push_if_absent(lbrace_id);
             discard_types.push_if_absent(comma_id);
 
-            a_default_function = [this](Context& ctx) {
+            a_handlers.default_function = [this](Context& ctx) {
                 int left_bp = left_binding_power.getOrDefault(ctx.node->type, -1);
                 int right_bp = right_binding_power.getOrDefault(ctx.node->type, -1);
                 

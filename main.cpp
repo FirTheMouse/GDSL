@@ -29,13 +29,14 @@ int main(int argc, char* argv[]) {
     // test->init();
     // test->run(test->process(""));
 
-    g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
-    twig->init();
-    twig->run(twig->process(readFile("modules/tests/testpage.gld")));
+    // g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
+    // twig->init();
+    // twig->run(twig->process(readFile("modules/tests/testpage.gld")));
     
-    // g_ptr<Q_Script_Unit> q_script = make<Q_Script_Unit>();
-    // q_script->init();
-    // q_script->run(q_script->process(readFile("modules/tests/qtest.gld")));
+    g_ptr<Q_Script_Unit> q_script = make<Q_Script_Unit>();
+    q_script->init();
+    q_script->run(q_script->process(readFile("modules/tests/qtest.gld")));
+
 
     // std::string display = "";
     // display.append("GDSL-C: ");

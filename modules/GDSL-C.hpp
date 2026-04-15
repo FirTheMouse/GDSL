@@ -452,24 +452,17 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         left_binding_power.put(colon_id, 4);
         right_binding_power.put(colon_id, 9);
 
-        s_default_function = [](Context& ctx){};
-        t_default_function = [this](Context& ctx){
+        t_handlers.default_function = [this](Context& ctx){
             standard_sub_process(ctx);
         };
-        r_default_function = [this](Context& ctx){
+        r_handlers.default_function = [this](Context& ctx){
             standard_sub_process(ctx);
         };
-        d_default_function = [this](Context& ctx){
+        d_handlers.default_function = [this](Context& ctx){
             for(auto c : ctx.node->children) {
                 discover_symbol(c,ctx.root);
             }
         };
-
-        e_default_function=  [](Context& ctx){
-            //Doing nothing for now
-        };
-        
-        x_default_function = [](Context& ctx){};
 
         print_id = add_function("print");
         x_handlers[print_id] = [this](Context& ctx) {
@@ -580,7 +573,7 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         };
 
         reg_pool.init({15, 14, 13, 12, 11, 10, 9}); //Because I'm on a Mac
-        m_default_function = [this](Context& ctx){
+        m_handlers.default_function = [this](Context& ctx){
             backwards_sub_process(ctx);
             // if(ctx.node->value->reg == -1) {
             //     int r = reg_pool.alloc();
@@ -629,11 +622,6 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         m_handlers[func_decl_id] = [this](Context& ctx) {
             ctx.node->value->address = 0;
             reg_pool.init({15, 14, 13, 12, 11, 10, 9});
-        };
-
-
-        i_default_function = [](Context& ctx){
-            //Do nothing
         };
 
         i_handlers[literal_id] = [this](Context& ctx) {
@@ -874,7 +862,7 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         span2->end_line();
 
         span2->add_line("A STAGE");
-        start_stage(&a_handlers,a_default_function);
+        start_stage(a_handlers);
         standard_direct_pass(root);
         span2->end_line();
 
@@ -883,7 +871,7 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         span2->end_line();
      
         span2->add_line("S STAGE");
-        start_stage(&s_handlers,s_default_function);
+        start_stage(s_handlers);
         parse_scope(root);
         span2->end_line();
         
@@ -897,31 +885,31 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         // print("T STAGE");
         span2->end_line();
         span2->add_line("T STAGE");
-        start_stage(&t_handlers,t_default_function);
+        start_stage(t_handlers);
         standard_resolving_pass(root);
 
         //print("D STAGE");
         span2->end_line();
         span2->add_line("D STAGE");
-        start_stage(&d_handlers,d_default_function);
+        start_stage(d_handlers);
         discover_symbols(root);
 
         //print("R STAGE");
         span2->end_line();
         span2->add_line("R STAGE");
-        start_stage(&r_handlers,r_default_function);
+        start_stage(r_handlers);
         standard_resolving_pass(root);
 
 
         if(emit_mode) {
             span2->end_line();
             span2->add_line("E STAGE");
-            start_stage(&e_handlers,e_default_function);
+            start_stage(e_handlers);
             standard_backwards_pass(root);
 
             span2->end_line();
             span2->add_line("M STAGE");
-            start_stage(&m_handlers,m_default_function);
+            start_stage(m_handlers);
             memory_backwards_pass(root);
         }
 
@@ -936,7 +924,7 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         if(emit_mode) {
             span2->end_line();
             span2->add_line("I STAGE");
-            start_stage(&i_handlers,i_default_function);
+            start_stage(i_handlers);
             int jump_placeholder = emit_buffer.length();
             emit_buffer << B(0); 
             standard_travel_pass(root);
@@ -959,7 +947,7 @@ struct C_Compiler : virtual public Scope_Unit, virtual public Function_Unit, vir
         #endif
         span2->end_line();
         span2->add_line("X STAGE");
-        start_stage(&x_handlers,x_default_function);
+        start_stage(x_handlers);
 
         std::string exec_time = "";
 

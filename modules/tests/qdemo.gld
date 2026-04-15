@@ -1,0 +1,30 @@
+int x = 0;
+"test" {
+    int j = 0;
+    in executing {
+        print("Bit ",x," ",j);
+        x = x+1;
+        j = j+1;
+        node.type = find_in_labels("on");
+    }
+}
+
+"on" {
+    int y = 0;
+    in executing {
+        print("Bat ",x," ",y);
+        x = x+1;
+        y = y+1;
+        node.type = find_in_labels("test");
+    }
+}
+
+
+travel_pass executing {
+    int i = 0;
+    while(i<4) {
+        test;
+        i = i+1;
+    }
+}
+

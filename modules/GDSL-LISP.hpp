@@ -173,23 +173,17 @@ namespace GDSL {
                 ctx.index = i;
             };
 
-            a_default_function = [this](Context& ctx){
-
-            };
-
-            s_default_function = [](Context& ctx){};
-            t_default_function = [this](Context& ctx){
+            t_handlers.default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
             };
-            r_default_function = [this](Context& ctx){
+            r_handlers.default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
             };
-            d_default_function = [this](Context& ctx){
+            d_handlers.default_function = [this](Context& ctx){
                 for(auto c : ctx.node->children) {
                     discover_symbol(c,ctx.root);
                 }
             };
-            x_default_function = [](Context& ctx){};
 
             print_id = add_function("print");
             x_handlers[print_id] = [this](Context& ctx) {
@@ -214,13 +208,13 @@ namespace GDSL {
             root->is_scope = true;
             root->children << tokenize(code);
             print("A STAGE");
-            start_stage(&a_handlers,a_default_function);
+            start_stage(a_handlers);
             standard_direct_pass(root);
 
             a_pass_resolve_keywords(root->children);
 
             print("S STAGE");
-            start_stage(&s_handlers,s_default_function);
+            start_stage(s_handlers);
             for(auto n : root->children) {
                 n->place_in_scope(root.getPtr());
                 print(node_to_string(n));
@@ -241,16 +235,16 @@ namespace GDSL {
             };
 
             print("T STAGE");
-            start_stage(&t_handlers,t_default_function);
+            start_stage(t_handlers);
             standard_travel_pass(root);
 
             newline("Discovering symbols");
             print("D STAGE");
-            start_stage(&d_handlers,d_default_function);
+            start_stage(d_handlers);
             discover_symbols(root);
             endline();
             print("R STAGE");
-            start_stage(&r_handlers,r_default_function);
+            start_stage(r_handlers);
             standard_resolving_pass(root);
 
             std::string final_time = ftime(timer.end());
@@ -263,7 +257,7 @@ namespace GDSL {
             timer.start();
 
             print("X STAGE");
-            start_stage(&x_handlers,x_default_function);
+            start_stage(x_handlers);
             standard_travel_pass(root);
 
             print("==DONE==");

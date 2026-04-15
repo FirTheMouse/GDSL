@@ -6,6 +6,10 @@ namespace GDSL {
         map<std::string,uint32_t> tokenized_keywords;
         map<char,bool> char_is_split;
 
+        map<char, Handler> tokenizer_functions;
+        map<uint32_t, Handler> tokenizer_state_functions;
+        Handler tokenizer_default_function = nullptr;
+
         size_t make_tokenized_keyword(const std::string& f) {
             size_t id = reg_id(f);
             tokenized_keywords.put(f,id);
@@ -39,6 +43,46 @@ namespace GDSL {
         size_t in_alpha_id = reg_id("IN_ALPHA");
         size_t in_digit_id = reg_id("IN_DIGIT");
         size_t end_id = add_token(';',"END"); //Can commonly be changed to be a line return
+
+        list<g_ptr<Node>> tokenize(const std::string& code) {
+            list<g_ptr<Node>> result;
+            uint32_t state = 0;
+            int index = 0;
+            Context ctx(result,index);
+            ctx.source = code;
+
+            #if PRINT_ALL
+            newline("tokenize pass");
+            #endif
+
+            if(!tokenizer_default_function) {
+                print("GDSL::tokenize warning! No defined default function, please define one");
+            }
+
+            while (index<code.length()) {
+                char c = code.at(index);
+                if(ctx.state!=0&&tokenizer_state_functions.hasKey(ctx.state)) {
+                    auto state_func = tokenizer_state_functions.get(ctx.state);
+                    state_func(ctx);
+                } else {
+                    auto func = tokenizer_functions.getOrDefault(c,tokenizer_default_function);
+                    func(ctx);
+                }
+                ++index;
+            }  
+
+            #if PRINT_ALL
+            int i = 0;
+            for(auto t : result) {
+                if(t->getType()) {
+                    log(i++," ",labels[t->getType()],": ",t->name);
+                }
+            }
+            endline();
+            #endif
+
+            return result;
+        }
 
         void init() {
             Literals_Unit::init();

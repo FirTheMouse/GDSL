@@ -128,6 +128,29 @@ public:
         return find_qual(q_id)!=-1;
     }
 
+    inline void query_store(_note& item_data) {
+        _column& col = store->columns[item_data.index];
+        data = col.get(item_data.sub_index);
+        size = col.element_size;
+        type = item_data.tag;
+    }
+
+    inline void query_store(int index) {
+        query_store(store->get_note(index));
+    }
+
+    inline void query_store(const std::string& label) {
+        query_store(store->get_note(label));
+    }
+
+    inline void store_value(g_ptr<Type> to) {
+        to->push(data,size,-1,type);
+    }
+
+    inline void store_value(g_ptr<Type> to, const std::string& as) {
+        to->add(as, data, size,-1,type);
+    }
+
     template<typename T>
     T get() { return *(T*)data; }
     
@@ -421,7 +444,7 @@ struct Unit : public q_object {
 
     std::string value_info(g_ptr<Value> value) {
         std::string to_return = "";
-        to_return += "["+ptr_to_string((void*)this)+"]"
+        to_return += "["+ptr_to_string(value.getPtr())+"]"
         + "(type: " + labels[value->type]
         + (value->reg!=-1?", reg: "+std::to_string(value->reg):"")
         + (value->data?", value: "+value_as_string(value)+" @"+ptr_to_string(value->data):"")
@@ -433,7 +456,7 @@ struct Unit : public q_object {
         + (!value->sub_values.empty()?", sub: "+std::to_string(value->sub_values.length()):"");
         if(!value->quals.empty()) {
             to_return += ", Quals: ";
-            for(int i=0;i<value->quals.length();i++) { //+"[@" + std::to_string((size_t)(void*)quals[i].value.getPtr()) + "]"
+            for(int i=0;i<value->quals.length();i++) { //Drop in v +ptr_to_string(value->quals[i].getPtr())
                 to_return += labels[type_of_node(value->quals[i])]+(i!=value->quals.length()-1?", ":"");
             }
         }
@@ -533,49 +556,6 @@ struct Unit : public q_object {
         return to_return;
     }
 
-    map<char, Handler> tokenizer_functions;
-    map<uint32_t, Handler> tokenizer_state_functions;
-    Handler tokenizer_default_function = nullptr;
-
-
-    struct Stage : q_object {
-        Stage() {
-            default_function = [](Context& ctx){};
-        }
-
-        map<uint32_t,Handler> handlers;
-        Handler default_function;
-
-        Handler& operator[](uint32_t key) {
-            return handlers[key];
-        }
-    };
-
-    map<std::string,g_ptr<Stage>> stages;
-
-    Stage& reg_stage(std::string label) {
-        g_ptr<Stage> new_stage = make<Stage>();
-        stages.put(label,new_stage);
-        return *new_stage.getPtr();
-    }
-
-    Stage& a_handlers = reg_stage("assemble");
-
-    //TAST
-    map<uint32_t,Handler> a_handlers; Handler a_default_function;
-    map<uint32_t,Handler> s_handlers; Handler s_default_function;
-    map<uint32_t,Handler> t_handlers; Handler t_default_function;
-    //DRE
-    map<uint32_t,Handler> d_handlers; Handler d_default_function;
-    map<uint32_t,Handler> r_handlers; Handler r_default_function;
-    map<uint32_t,Handler> e_handlers; Handler e_default_function;
-    //MIX
-    map<uint32_t,Handler> m_handlers; Handler m_default_function;
-    map<uint32_t,Handler> i_handlers; Handler i_default_function;
-    map<uint32_t,Handler> x_handlers; Handler x_default_function;
-
-    map<uint32_t, std::function<void(Context&)>>* active_handlers = nullptr;
-    Handler active_default_function = nullptr;
 
     size_t next_id = 0;
     size_t reg_id(std::string label) {
@@ -587,32 +567,85 @@ struct Unit : public q_object {
 
     size_t undefined_id = reg_id("UNDEFINED"); //So that it's always 0
 
+    struct Stage : q_object {
+        Stage() {
+            default_function = [](Context& ctx){};
+        }
 
+        map<uint32_t,Handler> handlers;
+        Handler default_function;
 
+        std::string label;
 
+        bool has(uint32_t key){
+            return handlers.hasKey(key);
+        }
 
-    void start_stage(map<uint32_t,Handler>* handlers, Handler default_function) {
-        active_handlers = handlers;
-        active_default_function = default_function;
+        Handler& run(uint32_t key){
+            return handlers.getOrDefault(key,default_function);
+        }
+
+        Handler& getOrDefault(uint32_t key, Handler& fallback){
+            return handlers.getOrDefault(key,fallback);
+        }
+
+        Handler& operator[](uint32_t key) {
+            return handlers[key];
+        }
+    };
+
+    map<std::string,g_ptr<Stage>> stages;
+
+    Stage& reg_stage(std::string label) {
+        g_ptr<Stage> new_stage = make<Stage>();
+        new_stage->label = label;
+        stages.put(label,new_stage);
+        return *new_stage.getPtr();
+    }
+
+    Stage& a_handlers = reg_stage("assembling");
+    Stage& s_handlers = reg_stage("scoping");
+    Stage& t_handlers = reg_stage("typing");
+
+    Stage& d_handlers = reg_stage("discovering");
+    Stage& r_handlers = reg_stage("resolving");
+    Stage& e_handlers = reg_stage("evaluating");
+
+    Stage& m_handlers = reg_stage("modeling");
+    Stage& i_handlers = reg_stage("inspecting");
+    Stage& x_handlers = reg_stage("executing");
+
+    Stage* active_stage;
+
+    void start_stage(Stage& stage) {
+        active_stage = &stage;
+    }
+
+    void start_stage(g_ptr<Stage> stage_ptr) {
+        start_stage(*stage_ptr.getPtr());
     }
 
     void fire_quals(Context& ctx, g_ptr<Value> value) {
+        g_ptr<Value> saved_value = ctx.value;
         ctx.value = value;
         for(auto qual : value->quals) {
             if(qual->mute) continue;
             ctx.qual = qual;
-            if((*active_handlers).hasKey(qual->type+1))
-                (*active_handlers)[qual->type+1](ctx);
+            if(active_stage->has(qual->type+1))
+                (*active_stage)[qual->type+1](ctx);
         }
+        ctx.value = saved_value;
     }
     void fire_quals(Context& ctx, g_ptr<Node> node) {
+        g_ptr<Node> saved_node = ctx.node;
         ctx.node = node;
         for(auto qual : node->quals) {
             if(qual->mute) continue;
             ctx.qual = qual;
-            if((*active_handlers).hasKey(qual->type+2))
-                (*active_handlers)[qual->type+2](ctx);
+            if(active_stage->has(qual->type+2))
+                (*active_stage)[qual->type+2](ctx);
         }
+        ctx.node = saved_node;
     }
 
     struct IdPool {
@@ -648,46 +681,6 @@ struct Unit : public q_object {
         
     }
 
-    list<g_ptr<Node>> tokenize(const std::string& code) {
-        list<g_ptr<Node>> result;
-        uint32_t state = 0;
-        int index = 0;
-        Context ctx(result,index);
-        ctx.source = code;
-
-        #if PRINT_ALL
-        newline("tokenize pass");
-        #endif
-
-        if(!tokenizer_default_function) {
-            print("GDSL::tokenize warning! No defined default function, please define one");
-        }
-
-        while (index<code.length()) {
-            char c = code.at(index);
-            if(ctx.state!=0&&tokenizer_state_functions.hasKey(ctx.state)) {
-                auto state_func = tokenizer_state_functions.get(ctx.state);
-                state_func(ctx);
-            } else {
-                auto func = tokenizer_functions.getOrDefault(c,tokenizer_default_function);
-                func(ctx);
-            }
-            ++index;
-        }  
-
-        #if PRINT_ALL
-        int i = 0;
-        for(auto t : result) {
-            if(t->getType()) {
-                log(i++," ",labels[t->getType()],": ",t->name);
-            }
-        }
-        endline();
-        #endif
-
-        return result;
-    }
-
     g_ptr<Node> find_scope(g_ptr<Node> start, std::function<bool(g_ptr<Node>)> check) {
         g_ptr<Node> on_scope = start;
         while(true) {
@@ -720,7 +713,7 @@ struct Unit : public q_object {
         ctx.root = root;
         ctx.node = node;
         newline("Discovering: "+node_info(node));
-        (*active_handlers).getOrDefault(node->type,active_default_function)(ctx);
+        d_handlers.run(node->type)(ctx);
         endline();
     }
 
@@ -738,24 +731,26 @@ struct Unit : public q_object {
 
 
     inline g_ptr<Node> standard_process(Context& ctx) {
-        newline("Processing: "+node_info(ctx.node));
-        (*active_handlers).getOrDefault(ctx.node->type,active_default_function)(ctx);
+        newline(active_stage->label+": "+node_info(ctx.node));
+        active_stage->run(ctx.node->type)(ctx);
         endline();
         return ctx.node;
     }
 
     inline void standard_process(Context& ctx, size_t type) {
-        (*active_handlers).getOrDefault(type,active_default_function)(ctx);
+        active_stage->run(type)(ctx);
     }
 
     g_ptr<Node> process_node(Context& ctx, g_ptr<Node> node, g_ptr<Node> left = nullptr) {
         g_ptr<Node> saved_node = ctx.node;
         g_ptr<Node> saved_left = ctx.left;
+        Context* saved_sub = ctx.sub;
         ctx.node = node;
         ctx.left = left;
         g_ptr<Node> to_return = standard_process(ctx);
         ctx.node = saved_node;
         ctx.left = saved_left;
+        ctx.sub = saved_sub;
         return to_return;
     }
 
@@ -784,10 +779,18 @@ struct Unit : public q_object {
         ctx.flag = sub_ctx.flag;
     }
 
-    void backwards_sub_process(Context& ctx) {
-        for(int i = ctx.node->children.length()-1; i >= 0; i--) {
-            process_node(ctx, ctx.node->children[i]);
+    void backwards_sub_process(Context& ctx) { 
+        int i = ctx.node->children.length()-1;
+        Context sub_ctx(ctx.node->children,i);
+        sub_ctx.root = ctx.node;
+        sub_ctx.sub = ctx.sub;
+        g_ptr<Node> left = nullptr;
+        while(i >= 0) {
+            process_node(sub_ctx, ctx.node->children[i], left);
+            left = ctx.node->children[i];
+            i--;
         }
+        ctx.flag = sub_ctx.flag;
     }
 
     void standard_resolving_pass(g_ptr<Node> root) {
@@ -832,6 +835,12 @@ struct Unit : public q_object {
         ctx.root = root;
         while(i < ctx.result->size()) {
             ctx.node = ctx.result->get(i);
+
+            // log("\n");
+            // for(int c=0;c<ctx.result->length();c++) {
+            //     log((c==i?"-> ":"   "),c,":\n",node_to_string(ctx.result->get(c)));
+            // }
+
             standard_process(ctx);
             ctx.left = ctx.result->get(i);
             i++;

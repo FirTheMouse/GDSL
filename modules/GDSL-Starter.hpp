@@ -8,7 +8,7 @@ namespace GDSL {
     struct Starter_DSL_Frontend : public virtual Scope_Unit, public virtual Function_Unit, public virtual Precedence_Unit  {
         Starter_DSL_Frontend() { init(); }
 
-        map<uint32_t, Handler> n_handlers; Handler n_default_function;
+        Stage& n_handlers = reg_stage("naming");
 
         void n_take_right(Context& ctx, int amt) {
             for(int i = 0; i<amt; i++) {
@@ -44,23 +44,20 @@ namespace GDSL {
                 ctx.index--;
             };
 
-            n_default_function = [this](Context& ctx){
+            n_handlers.default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
             };
-            s_default_function = [](Context& ctx){};
-            t_default_function = [this](Context& ctx){
+            t_handlers.default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
             };
-            r_default_function = [this](Context& ctx){
+            r_handlers.default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
             };
-            d_default_function = [this](Context& ctx){
+            d_handlers.default_function = [this](Context& ctx){
                 for(auto c : ctx.node->children) {
                     discover_symbol(c,ctx.root);
                 }
             };
-            e_default_function = [](Context& ctx){};
-            x_default_function = [](Context& ctx){};
         }
 
         void print_root(g_ptr<Node> root){
@@ -74,40 +71,42 @@ namespace GDSL {
             g_ptr<Node> root = make<Node>();
             root->children = tokenize(code);
 
-            start_stage(&a_handlers,a_default_function);
-            standard_direct_pass(root);
-
-            start_stage(&n_handlers,n_default_function);
+            start_stage(a_handlers);
             standard_direct_pass(root);
 
             a_pass_resolve_keywords(root->children);
 
-            start_stage(&s_handlers,s_default_function);
+            start_stage(n_handlers);
+            standard_direct_pass(root);
+
+            start_stage(s_handlers);
             parse_scope(root);
 
-            // print_root(root);
+            print("==PROCCESSING FINISHED==");
+            print_root(root);
             
             return root;
         };
         
         void run(g_ptr<Node> root) override { 
-            start_stage(&t_handlers,t_default_function);
+            start_stage(t_handlers);
             standard_resolving_pass(root);
 
-            start_stage(&d_handlers,d_default_function);
+            start_stage(d_handlers);
             discover_symbols(root);
 
-            start_stage(&r_handlers,r_default_function);
+            start_stage(r_handlers);
             standard_resolving_pass(root);
     
-            start_stage(&e_handlers,e_default_function);
+            start_stage(e_handlers);
             standard_backwards_pass(root);
-            print("==FINAL==");
             #if PRINT_ALL
+                span->print_all();
+                print("==FINAL FORM==");
                 print_root(root);
             #endif
 
-            start_stage(&x_handlers,x_default_function);
+            start_stage(x_handlers);
             standard_travel_pass(root);
         };
     };

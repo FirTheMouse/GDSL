@@ -8,9 +8,6 @@ namespace GDSL {
     struct TwigSnap_DSL_Frontend : public virtual TwigSnap_Unit, public virtual Q_Script_Unit, public virtual Web_Unit {
         TwigSnap_DSL_Frontend() { init(); }
 
-
-        size_t post_stage = add_stage_lookup("post",&p_handlers,&p_default_function);
-
         void add_text_component(const std::string& f, uint32_t type) {
             tokenized_keywords.put(f,type);
             n_handlers[type] = [this](Context& ctx) {
@@ -172,7 +169,7 @@ namespace GDSL {
             };
 
             x_handlers[route_id] = x_handlers[node_block_id];
-            html_handlers[handler_block_id] = [this](Context& ctx) {
+            html_handlers[in_id] = [this](Context& ctx) {
                 //Don't emit this
             };
             html_handlers[on_id] = [this](Context& ctx) {
@@ -273,16 +270,16 @@ namespace GDSL {
         }
 
         void run(g_ptr<Node> root) override {
-            start_stage(&t_handlers,t_default_function);
+            start_stage(t_handlers);
             standard_resolving_pass(root);
 
-            start_stage(&d_handlers,d_default_function);
+            start_stage(d_handlers);
             discover_symbols(root);
 
-            start_stage(&r_handlers,r_default_function);
+            start_stage(r_handlers);
             standard_resolving_pass(root);
 
-            start_stage(&e_handlers,e_default_function);
+            start_stage(e_handlers);
             standard_backwards_pass(root);
 
             #if PRINT_ALL
@@ -300,7 +297,7 @@ namespace GDSL {
                 }
             }
 
-            start_stage(&x_handlers,x_default_function);
+            start_stage(x_handlers);
             // process_node(server);
             standard_travel_pass(root);
         }

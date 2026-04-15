@@ -144,12 +144,19 @@ namespace GDSL {
                 ctx.node->name = ctx.node->left()->name+"="+ctx.node->right()->name;
             };
             x_handlers[equals_id] = [this](Context& ctx) {
-                standard_sub_process(ctx);
+                backwards_sub_process(ctx);
                 if(!ctx.node->left()->value->data) {
                     ctx.node->left()->value->size = ctx.node->right()->value->size;
                     ctx.node->left()->value->type = ctx.node->right()->value->type;
+                    ctx.node->left()->value->quals = ctx.node->right()->value->quals;
                     ctx.node->left()->value->data = malloc(ctx.node->right()->value->size);
-                }
+                }  
+                
+                if(ctx.node->left()->value->type != ctx.node->right()->value->type) {
+                    ctx.node->left()->value->size = ctx.node->right()->value->size;
+                    ctx.node->left()->value->type = ctx.node->right()->value->type;
+                    ctx.node->left()->value->quals = ctx.node->right()->value->quals;
+                } 
                 memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
             };
 

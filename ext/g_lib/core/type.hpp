@@ -6,9 +6,11 @@ struct _note {
     _note() {}
     _note(int _index) : index(_index) {}
     _note(int _index, int _sub_index) : index(_index), sub_index(_sub_index) {}
+    _note(int _index, int _sub_index, uint32_t _tag) : index(_index), sub_index(_sub_index), tag(_tag) {}
     
     int index = -1;
     int sub_index = -1;
+    uint32_t tag = 0;
 };
 
 static _note note_fallback;
@@ -237,15 +239,15 @@ public:
     }
 
     //Creates a new column and note for an entry of the provided size, then returns the note
-    _note& note_value(const std::string& name, size_t size) {
-        _note note(columns.length(),0); add_column(size); notes.put(name,note);
+    _note& note_value(const std::string& name, size_t size, uint32_t tag = 0) {
+        _note note(columns.length(),0,tag); add_column(size); notes.put(name,note);
         return notes.get(name);
     }
 
     //Creates a new column and note for an entry of the provided size, then returns the note
     template<typename T>
-    _note& note_value(const std::string& name) {
-        return note_value(name,sizeof(T));
+    _note& note_value(const std::string& name, uint32_t tag = 0) {
+        return note_value(name,sizeof(T),tag);
     }
 
     //Returns the adress of the column at the index
@@ -288,7 +290,7 @@ public:
     }
       
     //Inserts into the provided index or creates a new column for it, and puts a note in the array
-    void push(void* value, size_t size, int column_index = -1) {
+    void push(void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
         if(column_index == -1) {
             column_index = columns.length();
             add_column(size);
@@ -296,13 +298,13 @@ public:
             print("push::365 provided column index ",column_index," is the wrong size, expected: ",size);
             return;
         }
-        _note note(column_index, columns[column_index].length());
+        _note note(column_index, columns[column_index].length(),tag);
         columns[column_index].push(value);
         array << note;
     }
 
     //Same as push, except it will try to insert into the first column matching the provided size instead of creating one
-    void push_and_bucket(void* value, size_t size, int column_index = -1) {
+    void push_and_bucket(void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
         if(column_index == -1) {
             for(int i=0;i<columns.length();i++) {
                 if(columns[i].element_size==size) {
@@ -311,31 +313,31 @@ public:
                 }
             }
         } 
-        push(value,size,column_index);
+        push(value,size,column_index,tag);
     }
 
     //Takes the result of the base push and inserts the note into the notes map with the provided name as well
-    void add(const std::string& name, void* value, size_t size, int column_index = -1) {
-        push(value,size,column_index);
+    void add(const std::string& name, void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
+        push(value,size,column_index, tag);
         notes.put(name, array.last());
     }
 
     //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array as well as the notes map
     template<typename T>
-    void add(const std::string& name,T value,int column_index = -1) {
-        add(name,&value,sizeof(T),column_index);
+    void add(const std::string& name,T value,int column_index = -1, uint32_t tag = 0) {
+        add(name,&value,sizeof(T),column_index,tag);
     }
 
     //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array
     template<typename T>
-    void push(T value, int column_index = -1) {
-        push(&value, sizeof(T), column_index);
+    void push(T value, int column_index = -1, uint32_t tag = 0) {
+        push(&value, sizeof(T), column_index, tag);
     }
 
     //Same as push, except it will try to insert into the first column matching the provided size instead of creating one
     template<typename T>
-    void push_and_bucket(T value, int column_index = -1) {
-        push_and_bucket(&value, sizeof(T), column_index);
+    void push_and_bucket(T value, int column_index = -1, uint32_t tag = 0) {
+        push_and_bucket(&value, sizeof(T), column_index, tag);
     }
 
     //Direct set 
@@ -445,6 +447,7 @@ public:
 static void write_note(_note& note, std::ostream& out) {
     write_raw<int>(out, note.index);
     write_raw<int>(out, note.sub_index);
+    write_raw<uint32_t>(out, note.tag);
 }
 
 static void write_type(g_ptr<Type> t, std::ostream& out) {
@@ -479,7 +482,8 @@ static void write_type(g_ptr<Type> t, std::ostream& out) {
 static _note read_note(std::istream& in) {
     int index     = read_raw<int>(in);
     int sub_index = read_raw<int>(in);
-    return _note(index, sub_index);
+    uint32_t tag  = read_raw<uint32_t>(in); 
+    return _note(index, sub_index, tag);
 }
 
 static void read_type(g_ptr<Type> t, std::istream& in) {

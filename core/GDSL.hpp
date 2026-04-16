@@ -152,7 +152,7 @@ public:
     }
 
     template<typename T>
-    T get() { return *(T*)data; }
+    T& get() { return *(T*)data; }
     
     template<typename T>
     void set(const T& value) { 

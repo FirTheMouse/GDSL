@@ -1,24 +1,48 @@
-int x = 0;
 "test" {
-    int j = 0;
+    Node the_while;
     in executing {
-        print("Bit ",x," ",j);
-        x = x+1;
-        j = j+1;
-        node.type = find_in_labels("on");
+        Node escape = int.in_scope.owner.in_scope;
+        int i = 0;
+        print("What's that sound? ");
+        print("What? ");
+
+        if(the_while.type==find_in_labels("int")) {
+            print("I have been wubed!");
+            the_while.type = find_in_labels("while");
+            print("There, all better...");
+        }
+
+        while(i<escape.children.length) {
+            Node child = escape.children(i);
+            if(child.type == find_in_labels("in")) {
+                int k = 0;
+                while(k<child.scope.children.length) {
+                    Node sub_child = child.scope.children(k);
+                    if(sub_child.type == find_in_labels("print")) {
+                        sub_child.children << "wub"; 
+                    } 
+                    if(sub_child.type == find_in_labels("while")) {
+                        sub_child.type = int.type;
+                        the_while = sub_child;
+                    }
+                    k = k+1;
+                }
+            }
+            i = i+1;
+        }
+
+        Node final = escape.owner.in_scope;
+        i = 0;
+        while(i<final.children.length) {
+            if(final.children(i).type == find_in_labels("travel_pass")) {
+                final.children(i).scope.children(1).children(0).type = find_in_labels("RANGLE");
+                print("Enough.");
+            }
+            i = i+1;
+        }
+
     }
 }
-
-"on" {
-    int y = 0;
-    in executing {
-        print("Bat ",x," ",y);
-        x = x+1;
-        y = y+1;
-        node.type = find_in_labels("test");
-    }
-}
-
 
 travel_pass executing {
     int i = 0;

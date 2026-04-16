@@ -12,8 +12,48 @@ namespace GDSL {
 
         void n_take_right(Context& ctx, int amt) {
             for(int i = 0; i<amt; i++) {
+                ctx.index+=(i+1);
+                if(ctx.index < ctx.result->length()) {
+                    process_node(ctx,ctx.result->get(ctx.index));
+                }
+                ctx.index = ctx.result->find(ctx.node); 
+            }
+
+            for(int i = 0; i<amt; i++) {
+                // log("Current before result from ",ctx.node->name," taking right");
+                // for(int c=0;c<ctx.result->length();c++) {
+                //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
+                // }
                 if(ctx.index + 1 < ctx.result->length()) {
                     ctx.node->children << ctx.result->take(ctx.index + 1);
+                }
+                // log("Current post result from ",ctx.node->name," taking right");
+                // for(int c=0;c<ctx.result->length();c++) {
+                //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
+                // }
+            }
+        }
+
+        void n_take_left(Context& ctx, int amt) {
+
+            //0:a - 1:b - 2:c - 3:d
+            //c takes i-1, as idx 2
+            //0:a - 1:c - 2:d
+            //idx++ lands on null
+            //idx-- lands on c
+
+            for(int i = 0; i<amt; i++) {
+                // log("Current before result from ",ctx.node->name," taking left");
+                // for(int c=0;c<ctx.result->length();c++) {
+                //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
+                // }
+                if(ctx.index - 1 >= 0) {
+                    ctx.node->children.insert(ctx.result->take(ctx.index - 1),0);
+                    ctx.index--;
+                }
+                log("Current post result from ",ctx.node->name," taking left");
+                for(int c=0;c<ctx.result->length();c++) {
+                    log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
                 }
             }
         }
@@ -84,6 +124,7 @@ namespace GDSL {
 
             print("==PROCCESSING FINISHED==");
             print_root(root);
+            //span->print_all();
             
             return root;
         };

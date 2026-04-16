@@ -5,7 +5,7 @@
 #include "modules/GDSL-LISP.hpp"
 #include "modules/GDSL-TwigSnap.hpp"
 #include "modules/GDSL-Script.hpp"
-
+#include "modules/GDSL-GQL.hpp"
 
 using namespace GDSL;
 
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     // twig->init();
     // twig->run(twig->process(readFile("modules/tests/testpage.gld")));
     
-    g_ptr<Q_Script_Unit> q_script = make<Q_Script_Unit>();
+    g_ptr<GQL_Unit> q_script = make<GQL_Unit>();
     q_script->init();
     q_script->run(q_script->process(readFile("modules/tests/qtest.gld")));
 
@@ -59,20 +59,20 @@ int main(int argc, char* argv[]) {
 
     // g_ptr<C_Compiler> c = make<C_Compiler>();
     // c->init();
-    // root = c->process(readFile("modules/tests/ctest.gld"));
-    // c->run(root);
+    // // root = c->process(readFile("modules/tests/ctest.gld"));
+    // // c->run(root);
 
     // c->emit_mode = true;
     // root = c->process(readFile("modules/tests/cemittest.gld"));
-    // c->run(root);
+    // //c->run(root);
     // c->serialize(root);
     // c->saveBinary("savetest.wub");
     // root = c->loadBinary("savetest.wub");
     // c->run(root);
-    // span = make<Log::Span>();
-    // c->emit_mode = false;
-    // c->span2 = make<Log::Span>();
-    // c->emit_buffer.clear();
+    // // span = make<Log::Span>();
+    // // c->emit_mode = false;
+    // // c->span2 = make<Log::Span>();
+    // // c->emit_buffer.clear();
 
     // root = c->process(readFile("modules/tests/ctest.gld"));
     // c->run(root);

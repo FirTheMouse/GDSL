@@ -10,9 +10,12 @@ namespace GDSL {
         map<uint32_t, Handler> tokenizer_state_functions;
         Handler tokenizer_default_function = nullptr;
 
-        size_t make_tokenized_keyword(const std::string& f) {
-            size_t id = reg_id(f);
-            tokenized_keywords.put(f,id);
+        size_t make_tokenized_keyword(const std::string& token_name, size_t default_id = 0) {
+            size_t id = default_id;
+            if(default_id==0) {
+                id = reg_id(token_name);
+            }
+            tokenized_keywords.put(token_name,id);
             return id;
         }
 

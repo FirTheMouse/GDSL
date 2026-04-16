@@ -22,28 +22,48 @@ namespace GDSL {
 
             map<std::string,g_ptr<Value>> keywords;
 
-            void a_pass_resolve_keywords(list<g_ptr<Node>>& nodes) {
+            void a_pass_resolve_keywords(list<g_ptr<Node>>& nodes, int context = -1) {
                 for(g_ptr<Node>& node : nodes) {
-                    a_pass_resolve_keywords(node->children);
+                    log("Keyword resolving ",node_info(node));
                     g_ptr<Value> value = keywords.getOrDefault(node->name,fallback_value);
                     if(value!=fallback_value) {
-                        if(!node->value)
-                            node->value = make<Value>(0);
-                        
-                        node->value->copy(value);
+                        for(auto v : keywords.getAll(node->name)) {
+                            if(v->reg==-1||v->reg==context) { //By default is -1
+                                node->value->copy(v);
+                                node->value->reg = -1; //Reset to -1 for cleanliness
+                            }
+                        }
                     }
+                    a_pass_resolve_keywords(node->children, node->value->sub_type);
                     for(auto scope : node->scopes) {
-                        a_pass_resolve_keywords(scope->children);
+                        a_pass_resolve_keywords(scope->children, node->value->sub_type);
                     }
                 }
             };
 
+
+
             list<size_t> discard_types;
+
+            g_ptr<Value> make_registered_value(const std::string& name, size_t size,uint32_t sub_type, int context) {
+                g_ptr<Value> value = make<Value>(sub_type,size,reg_id(name));
+                value->reg = context;
+                return value;
+            }
+
+            //A keyword which only resolves when it's the child of the type in context.
+            size_t make_contextual_keyword(const std::string& name, int context = -1, std::string type_name = "") {
+                g_ptr<Value> val = make_registered_value(type_name==""?name:type_name,0,0,context);
+                keywords.put(name,val);
+                return val->sub_type;
+            }
+
 
 
             g_ptr<Value> make_value(const std::string& name, size_t size = 0,uint32_t sub_type = 0) {
                 return make<Value>(sub_type,size,reg_id(name));
             }
+
 
             size_t make_keyword(const std::string& name, size_t size = 0, std::string type_name = "", uint32_t sub_type = 0) {
                 g_ptr<Value> val = make_value(type_name==""?name:type_name,size,sub_type);

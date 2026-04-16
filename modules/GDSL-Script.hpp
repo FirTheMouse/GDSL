@@ -26,11 +26,16 @@ namespace GDSL {
         size_t is_not_id = register_binary_operator(reg_id("is_not"));
         size_t scan_id = make_tokenized_keyword("scan");
         size_t on_id = make_tokenized_keyword("on");
-        size_t in_id = make_keyword("in");
+        size_t in_id = make_contextual_keyword("in",node_block_id);
 
         size_t node_id = add_type("Node",8);
         size_t value_id = add_type("Value",8);
         size_t store_id = add_type("Store",8);
+
+        size_t node_list_id = add_type("Node_list",8);
+        size_t value_list_id = add_type("Value_list",8);
+        size_t node_map_id = add_type("Node_map",8);
+        size_t value_map_id = add_type("Value_map",8);
 
         size_t test_id = make_keyword("test");
         size_t ctx_node_id = add_function("node",node_id);
@@ -46,6 +51,8 @@ namespace GDSL {
         size_t node_owner_id = make_keyword("owner",8,"",node_id);
         size_t node_children_id = make_keyword("children");
         size_t node_value_id = make_keyword("value",8,"",value_id);
+        size_t node_node_table_id = make_keyword("node_table");
+        size_t node_value_table_id = make_keyword("value_table");
 
         size_t value_store_id = make_keyword("store",8,"",store_id);
 
@@ -59,19 +66,26 @@ namespace GDSL {
         size_t else_id = add_scoped_keyword("else", 1);
 
 
-        size_t node_list_id = add_type("node_list",8);
-        size_t value_list_id = add_type("value_list",8);
-        size_t node_map_id = add_type("node_map",8);
-        size_t value_map_id = add_type("value_map",8);
 
         size_t test_test_id = make_tokenized_keyword("test_test");
 
+        size_t wub_id = make_keyword("wub");
+        size_t wab_id = make_contextual_keyword("wab",wub_id);
+        size_t wib_id = make_contextual_keyword("wib",wub_id);
+        size_t wob_id = make_contextual_keyword("wob",wab_id);
 
+        // size_t get_id = make_contextual_keyword("get");
+        // size_t from_id = make_contextual_keyword("from");
+        // size_t the_id = make_contextual_keyword("the");
+        // size_t st_id = make_contextual_keyword("st");
+        // size_t tag_id = make_contextual_keyword("tag");
+        // size_t with_id = make_contextual_keyword("with");
+        // size_t size_id = make_contextual_keyword("size");
 
         template<typename T>
-        void list_op_on_node(Context& ctx, list<T>& accessor) {
+        void list_op_on_node(Context& ctx, list<T>& accessor, uint32_t stores_type, uint32_t container_type) {
             if(ctx.node->left()) {
-                ctx.node->value->type = node_id;
+                ctx.node->value->type = stores_type;
                 int idx = ctx.node->left()->value->get<int>();
                 if(idx<accessor.length()) {
                     ctx.node->value->set<T>(accessor[idx]);
@@ -79,24 +93,21 @@ namespace GDSL {
                     print(red("ctx_list_op_on_node:x_handler index out of bounds for op in form of list"));
                 }
             } else {
-                bool is_last_opperand = (ctx.root->left()->right()==ctx.node);
-                if(is_last_opperand && ctx.root->type==push_id) {
-                    if(ctx.root->right()->value->type==node_id) {
-                        accessor << ctx.root->right()->value->get<T>();
-                    } else {
-                        accessor << ctx.root->right();
-                    }
-                } else if(is_last_opperand && ctx.root->type == equals_id) {
-                    if(ctx.root->right()->value->type == node_id) {
-                        accessor = ctx.root->right()->value->get<list<T>>();
-                    } else {
-                        print(red("This shouldn't happen"));
-                    }
-                } else {
-                    ctx.node->value->type = node_list_id;
-                    ctx.node->value->size = 8;
-                    ctx.node->value->data = &accessor;
-                }
+                ctx.node->value->type = container_type;
+                ctx.node->value->size = 8;
+                ctx.node->value->data = &accessor;
+            }
+        }
+
+        template<typename T>
+        void map_op_on_node(Context& ctx, map<std::string,T>& accessor, uint32_t stores_type, uint32_t container_type) {
+            if(ctx.node->left()) {
+                ctx.node->value->type = stores_type;
+                ctx.node->value->set<T>(accessor[ctx.node->left()->value->get<std::string>()]);
+            } else {
+                ctx.node->value->type = container_type;
+                ctx.node->value->size = 8;
+                ctx.node->value->data = &accessor;
             }
         }
 
@@ -111,8 +122,14 @@ namespace GDSL {
             }
         }
 
+
+
         void init() override {
             Starter_DSL_Frontend::init();
+            //span->log_everything = true;
+
+            // set_binding_powers(with_id,2,4);
+            // set_binding_powers(size_id,6,6);
 
             tokenizer_functions['<'] = [this](Context& ctx) {
                 char c = ctx.source.at(ctx.index+1);
@@ -225,14 +242,17 @@ namespace GDSL {
                 return ptr_to_string((*(g_ptr<Node>*)data)->value.getPtr());
             };
 
-            x_handlers[push_id] = [this](Context& ctx){
-                backwards_sub_process(ctx);
-            };
+
 
             r_handlers[identifier_id] = [this](Context& ctx){
                 fire_quals(ctx,ctx.node->value);
             };
+
+
             x_handlers[identifier_id] = [this](Context& ctx){
+                fire_quals(ctx,ctx.node->value);
+            };
+            x_handlers[var_decl_id] = [this](Context& ctx){
                 fire_quals(ctx,ctx.node->value);
             };
 
@@ -242,12 +262,96 @@ namespace GDSL {
                 }
             };
 
-            x_handlers[to_prefix_id(node_list_id)] = [this](Context& ctx){
 
-            };
-            x_handlers[to_prefix_id(node_map_id)] = [this](Context& ctx){
 
+            x_handlers[push_id] = [this](Context& ctx){
+                backwards_sub_process(ctx);
+                if(ctx.node->left()->value->type==store_id) {
+                    if(ctx.node->right()->children.length()==1) {
+                        ctx.node->right()->value->store_value(
+                            ctx.node->left()->value->store, 
+                            ctx.node->right()->left()->value->get<std::string>()
+                        );
+                    } else {
+                        ctx.node->right()->value->store_value(ctx.node->left()->value->store);
+                    }
+                } else if(ctx.node->left()->value->type==node_list_id) {
+                    if(ctx.node->right()->value->type==node_id) {
+                        ctx.node->left()->value->get<list<g_ptr<Node>>>() << ctx.node->right()->value->get<g_ptr<Node>>();
+                    } else {
+                        ctx.node->left()->value->get<list<g_ptr<Node>>>() << ctx.node->right();
+                    }
+                } else if(ctx.node->left()->value->type == value_list_id) {
+                    if(ctx.node->right()->value->type==value_id) {
+                        ctx.node->left()->value->get<list<g_ptr<Value>>>() << ctx.node->right()->value->get<g_ptr<Value>>();
+                    }
+                } else if(ctx.node->left()->value->type == node_map_id) {
+                    if(ctx.node->right()->value->type == node_id) {
+                        ctx.node->left()->value->get<map<std::string,g_ptr<Node>>>().put(
+                            ctx.node->right()->left()->value->get<std::string>(), 
+                            ctx.node->right()->value->get<g_ptr<Node>>()
+                        );
+                    } else {
+                        ctx.node->left()->value->get<map<std::string,g_ptr<Node>>>().put(
+                            ctx.node->right()->left()->value->get<std::string>(), 
+                            ctx.node->right()
+                        );
+                    }
+                } else if(ctx.node->left()->value->type == value_map_id) {
+                    ctx.node->left()->value->get<map<std::string,g_ptr<Value>>>().put(
+                        ctx.node->right()->left()->value->get<std::string>(), 
+                        ctx.node->right()->value
+                    );
+                }
             };
+
+            // x_handlers[to_unary_id(amp_id)] = [this](Context& ctx) {
+            //     process_node(ctx,ctx.node->left());
+            //     ctx.node->value = ctx.node->left()->value;
+            // };
+
+            x_handlers[equals_id] = [this](Context& ctx) {
+                backwards_sub_process(ctx);
+
+                if(!ctx.node->left()->value->data && !(ctx.node->left()->value->type==store_id)) {
+                    ctx.node->left()->value->size = ctx.node->right()->value->size;
+                    ctx.node->left()->value->type = ctx.node->right()->value->type;
+                    ctx.node->left()->value->quals = ctx.node->right()->value->quals;
+                    ctx.node->left()->value->data = malloc(ctx.node->right()->value->size);
+                }  
+
+                if(ctx.node->right()->value->type==store_id) {
+                    ctx.node->left()->value->store = ctx.node->right()->value->get<g_ptr<Type>>();
+                    ctx.node->left()->value->set<g_ptr<Type>>(ctx.node->left()->value->store);
+                } else if(ctx.node->left()->value->type==node_id) {
+                    if(ctx.node->right()->value->type==node_id) {
+                        if(ctx.node->right()->type==to_unary_id(amp_id)) {
+                            ctx.node->left()->value->get<g_ptr<Node>>()->copy(ctx.node->right()->left()->value->get<g_ptr<Node>>());
+                        } else {
+                            ctx.node->left()->value->set<g_ptr<Node>>(ctx.node->right()->value->get<g_ptr<Node>>());
+                        }
+                    } else {
+                        if(ctx.node->right()->type==to_unary_id(amp_id)) {
+                            ctx.node->left()->value->get<g_ptr<Node>>()->copy(ctx.node->right()->left());
+                        } else {
+                            ctx.node->left()->value->set<g_ptr<Node>>(ctx.node->right());
+                        }
+                    }
+                } else if(ctx.node->right()->value->type==value_id) {
+                    ctx.node->left()->value->set<g_ptr<Value>>(ctx.node->right()->value->get<g_ptr<Value>>());
+                } else if(ctx.node->right()->value->type==node_list_id) {
+                    ctx.node->left()->value->get<list<g_ptr<Node>>>() = ctx.node->right()->value->get<list<g_ptr<Node>>>();
+                } else if(ctx.node->right()->value->type==value_list_id) {
+                    ctx.node->left()->value->get<list<g_ptr<Value>>>() = ctx.node->right()->value->get<list<g_ptr<Value>>>();
+                } else if(ctx.node->right()->value->type==node_map_id) {
+                    ctx.node->left()->value->get<map<std::string,g_ptr<Node>>>() = ctx.node->right()->value->get<map<std::string,g_ptr<Node>>>();
+                } else if(ctx.node->right()->value->type==value_map_id) {
+                    ctx.node->left()->value->get<map<std::string,g_ptr<Value>>>() = ctx.node->right()->value->get<map<std::string,g_ptr<Value>>>();
+                } else {
+                    memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
+                }
+            };
+
 
             x_handlers[to_prefix_id(store_id)] = [this](Context& ctx){
                 if(ctx.node->left()) { //Like l(3)
@@ -263,19 +367,6 @@ namespace GDSL {
                     } else {
                         print(red("list_prefix:x_handler unrecognized value for query type: "+labels[idx->type]));
                     }
-                } else if(binary_op_catalog.has(ctx.root->type)) {
-                    bool is_last_opperand = true;
-                    if(ctx.root->left()->children.length()>1) {
-                        is_last_opperand = (ctx.root->left()->right()==ctx.node);
-                    }
-                    if(is_last_opperand && ctx.root->type==push_id) {
-                        //WARNING: If we push a node that already has children in this will break, find a better way to distinqiush
-                        if(ctx.root->right()->children.empty()) { //Like l<<1
-                            ctx.root->right()->value->store_value(ctx.value->store);
-                        } else { //Like l << 1("one")
-                            ctx.root->right()->value->store_value(ctx.value->store,ctx.root->right()->left()->name);
-                        }
-                    }
                 }
             };
 
@@ -288,6 +379,7 @@ namespace GDSL {
                 new_scope->name = owner_node->name;
             };
             t_handlers[node_block_id] = [this](Context& ctx){
+                a_pass_resolve_keywords(ctx.node->scope()->children,node_block_id);
                 for(auto e : labels.entrySet()) {
                     if(e.value==ctx.node->name) {
                         ctx.node->sub_type = e.key;
@@ -385,11 +477,29 @@ namespace GDSL {
                 );
             };
 
-            x_handlers[node_children_id] = [this](Context& ctx){ //node->children
+            x_handlers[node_children_id] = [this](Context& ctx){
                 list_op_on_node<g_ptr<Node>>(ctx,
-                    ctx.left->value->type==node_id? 
+                    ctx.left->value->type==node_id?
                     ctx.left->value->get<g_ptr<Node>>()->children :
-                    ctx.left->children
+                    ctx.left->children,
+                    node_id, node_list_id
+                );
+            };
+            
+            x_handlers[node_value_table_id] = [this](Context& ctx){
+                map_op_on_node<g_ptr<Value>>(ctx,
+                    ctx.left->value->type==node_id?
+                    ctx.left->value->get<g_ptr<Node>>()->value_table :
+                    ctx.left->value_table,
+                    value_id, value_map_id
+                );
+            };
+            x_handlers[node_node_table_id] = [this](Context& ctx){
+                map_op_on_node<g_ptr<Node>>(ctx,
+                    ctx.left->value->type==node_id?
+                    ctx.left->value->get<g_ptr<Node>>()->node_table :
+                    ctx.left->node_table,
+                    node_id, node_map_id
                 );
             };
 
@@ -481,18 +591,17 @@ namespace GDSL {
                 g_ptr<Node> node = ctx.node;
                 g_ptr<Value> decl_value = make<Value>();
                 
-                bool had_a_value = (bool)(node->value);
-                bool had_a_scope = (bool)(node->scope());
                 bool found_a_value = node->find_value_in_scope();
-                bool is_qualifier = node->value_is_valid();
+                bool is_qualifier = node->value->type!=0;
+
 
                 int root_idx = -1;
-                if(node->value_is_valid() && node->value->sub_type != 0) {
+                if(is_qualifier && node->value->sub_type != 0) {
                     decl_value->quals << value_to_qual(node->value);
                     for(int i = 0; i < node->children.length(); i++) {
                         g_ptr<Node> c = node->children[i];
                         c->find_value_in_scope();
-                        if(c->value_is_valid()) {
+                        if(c->value->type!=0) {
                             decl_value->quals << value_to_qual(c->value);
                         } else {
                             root_idx = i;
@@ -505,7 +614,7 @@ namespace GDSL {
                         for(int i = root_idx+1; i < node->children.length(); i++) {
                             g_ptr<Node> c = node->children[i];
                             c->find_value_in_scope();
-                            if(c->value_is_valid()) {
+                            if(c->value->type!=0) {
                                 node->quals << value_to_qual(c->value);
                             } 
                         }
@@ -518,8 +627,10 @@ namespace GDSL {
                 }
 
                 if(keywords.hasKey(node->name)) {
-                    node->type = node->value->sub_type;
-                    return;
+                    if(node->value->sub_type!=0) {
+                        node->type = node->value->sub_type;
+                        return;
+                    }
                 }
 
                 node->value = decl_value;

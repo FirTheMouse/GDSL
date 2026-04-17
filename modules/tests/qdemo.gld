@@ -31,15 +31,7 @@
             i = i+1;
         }
 
-        Node final = escape.owner.in_scope;
-        i = 0;
-        while(i<final.children.length) {
-            if(final.children(i).type == find_in_labels("travel_pass")) {
-                final.children(i).scope.children(1).children(0).type = find_in_labels("RANGLE");
-                print("Enough.");
-            }
-            i = i+1;
-        }
+
 
     }
 }

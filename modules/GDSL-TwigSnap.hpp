@@ -56,9 +56,6 @@ namespace GDSL {
         size_t serve_id = make_tokenized_keyword("serve");
 
         void init() override {
-            TwigSnap_Unit::init();
-            Q_Script_Unit::init();
-            Web_Unit::init();
 
             tokenized_keywords.put(labels[server_id],server_id);
             tokenized_keywords.put(labels[port_id],port_id);
@@ -218,15 +215,14 @@ namespace GDSL {
 
 
             tokenized_keywords.put("script",script_id);
-            a_handlers[script_id] = [this](Context& ctx) {
+            n_handlers[script_id] = [this](Context& ctx) {
                 if(ctx.index+1<ctx.result->length()) {
-                    g_ptr<Node> next = ctx.result->get(ctx.index+1);
-                    if(next->type==string_id) {
-                        ctx.node->opt_str = next->name;
-                        ctx.node->name = "";
-                        ctx.result->removeAt(ctx.index+1);
-                    }
+                    ctx.node->children << ctx.result->take(ctx.index+1);
+                    ctx.node->name = "";
                 }
+            };
+            html_handlers[read_file_id] = [this](Context& ctx) {
+                //Don't emit
             };
 
 

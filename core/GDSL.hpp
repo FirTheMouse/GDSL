@@ -128,19 +128,21 @@ public:
         return find_qual(q_id)!=-1;
     }
 
-    inline void query_store(_note& item_data) {
-        _column& col = store->columns[item_data.index];
+    inline void query_store(_note& item_data, g_ptr<Type> target) {
+        _column& col = target->columns[item_data.index];
         data = col.get(item_data.sub_index);
         size = col.element_size;
         type = item_data.tag;
     }
 
-    inline void query_store(int index) {
-        query_store(store->get_note(index));
+    inline void query_store(int index, g_ptr<Type> target = nullptr) {
+        if(!target) target = store;
+        query_store(target->get_note(index),target);
     }
 
-    inline void query_store(const std::string& label) {
-        query_store(store->get_note(label));
+    inline void query_store(const std::string& label, g_ptr<Type> target = nullptr) {
+        if(!target) target = store;
+        query_store(target->get_note(label),target);
     }
 
     inline void store_value(g_ptr<Type> to) {
@@ -679,6 +681,20 @@ struct Unit : public q_object {
 
     virtual void run(g_ptr<Node> root) {
         
+    }
+
+    g_ptr<Node> scan_for_node(const std::string& label, g_ptr<Node> from) {
+        if(from->node_table.hasKey(label)) {
+            return from->node_table.get(label);
+        } else {
+            for(auto scope : from->scopes) {
+                g_ptr<Node> found = scan_for_node(label,scope);
+                if(found) {
+                    return found;
+                }
+            }
+            return nullptr;
+        }
     }
 
     g_ptr<Node> find_scope(g_ptr<Node> start, std::function<bool(g_ptr<Node>)> check) {

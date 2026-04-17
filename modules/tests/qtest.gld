@@ -1,21 +1,16 @@
-"test" {
-    in executing {  
-        Node n;
-        Node v;
-        n.type = int.type;
-        v.node_table << n("one");
-        node.node_table = v.node_table;
-        Node j = n;
-        print(j);
-        store s;
-        s << v.node_table("one");
-        node.children << s(0);
-        j = v;
-        print(j);
-        print(node);
-    }
-}
+Node n;
+Node v;
+Node k;
+Node j;
+Node m;
+n.children << v;
+n.children << k;
+j = v;
+j.name = "Joe";
+n.children(1) = j;
+n.node_table << j("one");
+m.node_table = n.node_table;
+print(n);
+print(m);
 
-travel_pass executing {
-    test(1);
-}
+test;

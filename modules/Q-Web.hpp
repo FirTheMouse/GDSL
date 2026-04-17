@@ -16,7 +16,7 @@ typedef unsigned char uuid_t[16];
 namespace GDSL {
 
 struct Web_Unit : public virtual Unit {
-
+    Web_Unit() { init(); }
     map<std::string,size_t> routes;
     map<size_t,g_ptr<Node>> route_nodes;
 
@@ -37,6 +37,7 @@ struct Web_Unit : public virtual Unit {
     size_t root_route = make_route("/");
 
     Stage& p_handlers = reg_stage("posting");
+    Stage& fragment_handlers = reg_stage("fragmenting");
 
     void init() override {
         x_handlers[server_id] = [this](Context& ctx){
@@ -129,7 +130,35 @@ struct Web_Unit : public virtual Unit {
                 if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
                     print(red("server_id::x_handler write() failed"));
                 }
+            } else if(method=="FRAG") {
+                size_t body_start = request.find("\r\n\r\n");
+                if(body_start != std::string::npos) {    
+                    std::string instruction = request.substr(body_start + 4);
+                    std::string target = instruction.substr(0, instruction.find(" "));
+                    ctx.sub->node = scan_for_node(target,ctx.sub->node->scope());
+                    if(ctx.sub->node) {
+                        ctx.sub->source = instruction;
+                        fragment_handlers.run(route_id)(*ctx.sub);
+                        std::string body = ctx.sub->source;
+                        std::string response = 
+                            "HTTP/1.1 200 OK\r\n"
+                            "Content-Type: text/html\r\n"
+                            "Content-Length: " + std::to_string(body.length()) + "\r\n"
+                            "\r\n" + body;
+                        print("Response:\n",response);
+                        if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
+                            print(red("server_id::x_handler write() failed"));
+                        }
+                    } else {
+                        print(red("response:x_handler unable to find node "+target+" in route "+path));
+                    }
+                }
             }
+        };
+
+        fragment_handlers.default_function = [this](Context& ctx){
+            print("Default fragment, served instruction: ",ctx.source);
+            print("Node: ",node_info(ctx.node));
         };
 
         x_handlers[close_id] = [this](Context& ctx){

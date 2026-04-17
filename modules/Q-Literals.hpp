@@ -23,6 +23,7 @@ namespace GDSL {
                 *(float*)data = -(*(float*)data);
             };
             t_handlers[float_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
                 ctx.node->type = literal_id;
     
                 g_ptr<Value> value = make<Value>(float_id,4);
@@ -37,6 +38,7 @@ namespace GDSL {
                 *(int*)data = -(*(int*)data);
             };
             t_handlers[int_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
                 ctx.node->type = literal_id;
     
                 g_ptr<Value> value = make<Value>(int_id,4);
@@ -48,6 +50,7 @@ namespace GDSL {
                 return (*(bool*)data) ? "TRUE" : "FALSE";
             };
             t_handlers[bool_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
                 ctx.node->type = literal_id;
     
                 g_ptr<Value> value = make<Value>(bool_id,1);
@@ -60,6 +63,7 @@ namespace GDSL {
                 return *(std::string*)data;
             };
             t_handlers[string_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
                 ctx.node->type = literal_id;
     
                 g_ptr<Value> value = make<Value>(string_id,24);

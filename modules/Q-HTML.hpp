@@ -45,6 +45,13 @@ namespace GDSL {
         void init() override {
             html_default_function = [this](Context& ctx){
                 std::string s = "";
+
+
+                if(ctx.node->type==script_id && ctx.node->left()) {
+                    process_node(ctx, ctx.node->left());
+                    ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
+                }
+
                 s += "<"+labels[ctx.node->type]+(ctx.node->name.empty()?"":" "+ctx.node->name);
                 int zero_depth = -1;
                 for(auto q : ctx.node->quals) {

@@ -120,8 +120,14 @@ style default_button {
         }
         orbit_circle { 
             circle_style;
-            onclick : "frag('center_text_a')";
+            onclick : "handleClick()";
         }
+    }
+
+    button submit {
+        id : submit;
+        onclick : "frag('center_text_a')";
+        default_button;
     }
 
     script read_file("frag.js");

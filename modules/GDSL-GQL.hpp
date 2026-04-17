@@ -42,7 +42,6 @@ namespace GDSL {
         };
 
         void init() override {
-            Q_Script_Unit::init();
 
              //Aliases
              make_tokenized_keyword("find",query_id); 

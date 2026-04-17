@@ -70,6 +70,97 @@ namespace GDSL {
         size_t amp_id = add_binary_operator('&',"AMPERSAND");
         size_t dot_id = add_binary_operator('.', "PROP_ACCESS");
 
+        void assign_value(g_ptr<Value> to, g_ptr<Value> from) {
+            void* to_dst = nullptr;
+            void* from_src = nullptr;
+            uint32_t from_type = 0;
+            size_t from_size = 0;
+
+            g_ptr<Value> to_sub = nullptr;
+            g_ptr<Value> to_sub_sub = nullptr;
+            if(to->sub_values.empty()) {
+                to_dst = to->data;
+            } else {
+                to_sub = to->sub_values[0];
+                if(to_sub->sub_values.empty()) {
+                    to_dst = *(void**)to_sub->data;
+                } else {
+                    to_sub_sub = to_sub->sub_values[0];
+                    if(to_sub->store) {
+                        _note item_data;
+                        if(to_sub_sub->type == int_id) {
+                            if(to_sub_sub->address == -1) {
+                                item_data = to_sub->store->get_note(to_sub_sub->get<int>());
+                            } else {
+                                item_data.index = to_sub_sub->get<int>();
+                                item_data.sub_index = to_sub_sub->address;
+                            }
+                        } else if(to_sub_sub->type == string_id) {
+                            item_data = to_sub->store->get_note(to_sub_sub->get<std::string>());
+                        }
+                        _column& col = to_sub->store->columns[item_data.index];
+                        to_dst = col.get(item_data.sub_index);
+                    } else if(to_sub_sub->type == int_id) {
+                        int idx = to_sub_sub->get<int>();
+                        to_dst = &(*(list<g_ptr<q_object>>*)to_sub->data)[idx];
+                    } else if(to_sub_sub->type == string_id) {
+                        std::string& key = to_sub_sub->get<std::string>();
+                        to_dst = &(*(map<std::string,g_ptr<q_object>>*)to_sub->data)[key];
+                    }
+                }
+            }
+
+            g_ptr<Value> from_sub = nullptr;
+            g_ptr<Value> from_sub_sub = nullptr;
+            from_type = from->type;
+            from_size = from->size;
+            if(from->sub_values.empty()) {
+                from_src = from->data;
+            } else {
+                from_sub = from->sub_values[0];
+                if(from_sub->sub_values.empty()) {
+                    from_src = *(void**)from_sub->data;
+                } else {
+                    from_sub_sub = from_sub->sub_values[0];
+                    if(from_sub->store) {
+                        _note item_data;
+                        if(from_sub_sub->type==int_id) {
+                            if(from_sub_sub->address==-1) {
+                                item_data = from_sub->store->get_note(from_sub_sub->get<int>());
+                            } else {
+                                item_data.index = from_sub_sub->get<int>();
+                                item_data.sub_index = from_sub_sub->address;
+                                item_data.tag = 0; //Undefined, we can't know
+                            }
+                        } else if(from_sub_sub->type==string_id) {
+                            item_data = from_sub->store->get_note(from_sub_sub->get<std::string>());
+                        }
+                        _column& col = from_sub->store->columns[item_data.index];
+                        from_src = col.get(item_data.sub_index);
+                        from_size = col.element_size;
+                        from_type = item_data.tag;
+                    }
+                    else if(from_sub_sub->type==int_id) {
+                        int idx = from_sub_sub->get<int>();
+                        from_src = &(*(list<g_ptr<q_object>>*)from_sub->data)[idx];
+                    } else if(from_sub_sub->type==string_id) {
+                        std::string& key = from_sub_sub->get<std::string>();
+                        from_src = &(*(map<std::string,g_ptr<q_object>>*)from_sub->data)[key];
+                    }
+                }
+            }
+
+
+            if(from_type == string_id) {
+                *(std::string*)to_dst = *(std::string*)from_src;
+            } else if(from_type == object_id) {
+                *(g_ptr<q_object>*)to_dst = *(g_ptr<q_object>*)from_src;
+            } else {
+                print("MEMCPYING ",from_size);
+                memcpy(to_dst, from_src, from_size);
+            }
+        }
+
         void init() override {
             Tokenizer_Unit::init();
 
@@ -124,8 +215,8 @@ namespace GDSL {
                     >
                     *(int*)ctx.node->right()->value->data
                 );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
+                ctx.node->value->type = bool_id;
+                ctx.node->value->size = 1;
             };
     
             x_handlers[langle_id] = [this](Context& ctx){
@@ -135,8 +226,8 @@ namespace GDSL {
                     <
                     *(int*)ctx.node->right()->value->data
                 );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
+                ctx.node->value->type = bool_id;
+                ctx.node->value->size = 1;
             };
 
             t_handlers[equals_id] = [this](Context& ctx){ //So we don't turn things into declerations

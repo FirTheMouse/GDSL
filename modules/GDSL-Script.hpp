@@ -6,16 +6,6 @@ namespace GDSL {
     struct Q_Script_Unit : public virtual Starter_DSL_Frontend {
         Q_Script_Unit() { init(); }
 
-        struct stage_and_handler {
-            stage_and_handler() {}
-            stage_and_handler(map<uint32_t,Handler>* _map, Handler* _def) : 
-                                default_handler(_def), handlers(_map)  {}
-            stage_and_handler(map<uint32_t,Handler>& _map, Handler& _def) : 
-                                default_handler(&_def), handlers(&_map)  {}
-            map<uint32_t,Handler>* handlers;
-            Handler* default_handler;
-        };
-
         size_t node_block_id = reg_id("NODE_BLOCK");
 
         size_t travel_pass_id = make_keyword("travel_pass");
@@ -65,34 +55,43 @@ namespace GDSL {
         size_t if_id = add_scoped_keyword("if", 2);
         size_t else_id = add_scoped_keyword("else", 1);
 
-
-
         size_t test_test_id = make_tokenized_keyword("test_test");
 
-        size_t wub_id = make_keyword("wub");
-        size_t wab_id = make_contextual_keyword("wab",wub_id);
-        size_t wib_id = make_contextual_keyword("wib",wub_id);
-        size_t wob_id = make_contextual_keyword("wob",wab_id);
-
-        // size_t get_id = make_contextual_keyword("get");
-        // size_t from_id = make_contextual_keyword("from");
-        // size_t the_id = make_contextual_keyword("the");
-        // size_t st_id = make_contextual_keyword("st");
-        // size_t tag_id = make_contextual_keyword("tag");
-        // size_t with_id = make_contextual_keyword("with");
-        // size_t size_id = make_contextual_keyword("size");
 
         template<typename T>
         void list_op_on_node(Context& ctx, list<T>& accessor, uint32_t stores_type, uint32_t container_type) {
             if(ctx.node->left()) {
-                ctx.node->value->type = stores_type;
                 int idx = ctx.node->left()->value->get<int>();
-                if(idx<accessor.length()) {
+
+                if(ctx.node->value->sub_values.empty()) {
+                    g_ptr<Value> sub = make<Value>();
+                    sub->data = &accessor;
+    
+                    sub->sub_values << ctx.node->left()->value;
+                    ctx.node->value->sub_values << sub;
+                } 
+        
+                ctx.node->value->type = stores_type;
+                ctx.node->value->size = 8;
+                if(idx < accessor.length()) {
                     ctx.node->value->set<T>(accessor[idx]);
                 } else {
-                    print(red("ctx_list_op_on_node:x_handler index out of bounds for op in form of list"));
+                    print(red("list_op_on_node: index out of bounds"));
                 }
             } else {
+                if(!ctx.node->value->sub_values.empty()) {
+                    if(!ctx.node->value->sub_values[0]->sub_values.empty()) {
+                        ctx.node->value->sub_values[0]->sub_values.clear();
+                    }
+                } else {
+                    if(ctx.node->value->sub_values.empty()) {
+                        g_ptr<Value> sub = make<Value>();
+                        sub->type = container_type;
+                        sub->size = 8;
+                        sub->data = &accessor;
+                        ctx.node->value->sub_values << sub;
+                    }
+                }
                 ctx.node->value->type = container_type;
                 ctx.node->value->size = 8;
                 ctx.node->value->data = &accessor;
@@ -103,8 +102,30 @@ namespace GDSL {
         void map_op_on_node(Context& ctx, map<std::string,T>& accessor, uint32_t stores_type, uint32_t container_type) {
             if(ctx.node->left()) {
                 ctx.node->value->type = stores_type;
+
+                if(ctx.node->value->sub_values.empty()) {
+                    g_ptr<Value> sub = make<Value>();
+                    sub->data = &accessor;
+    
+                    sub->sub_values << ctx.node->left()->value;
+                    ctx.node->value->sub_values << sub;
+                } 
+
                 ctx.node->value->set<T>(accessor[ctx.node->left()->value->get<std::string>()]);
             } else {
+                if(!ctx.node->value->sub_values.empty()) {
+                    if(!ctx.node->value->sub_values[0]->sub_values.empty()) {
+                        ctx.node->value->sub_values[0]->sub_values.clear();
+                    }
+                } else {
+                    if(ctx.node->value->sub_values.empty()) {
+                        g_ptr<Value> sub = make<Value>();
+                        sub->type = container_type;
+                        sub->size = 8;
+                        sub->data = &accessor;
+                        ctx.node->value->sub_values << sub;
+                    }
+                }
                 ctx.node->value->type = container_type;
                 ctx.node->value->size = 8;
                 ctx.node->value->data = &accessor;
@@ -114,12 +135,59 @@ namespace GDSL {
         template<typename T>
         void standard_accessor(Context& ctx, T& accessor) {
             ctx.node->value->set<T>(accessor);
-            if(binary_op_catalog.has(ctx.root->type)) {
-                bool is_last_opperand = (ctx.root->left()->right()==ctx.node);
-                if(is_last_opperand && ctx.root->type == equals_id) {
-                    accessor = ctx.root->right()->value->get<T>();
-                }
+            ctx.node->value->size = sizeof(T);
+            if(ctx.node->value->sub_values.empty()) {
+                g_ptr<Value> sub = make<Value>();
+                sub->data = &accessor;
+                sub->type = object_id;
+                sub->size = 8;
+                ctx.node->value->sub_values << sub;
             }
+        }
+
+
+        g_ptr<Value> resolve_value(g_ptr<Value> val, void*& dst, uint32_t& type, uint32_t& size) {            
+            if(val->sub_values.empty() || !val->sub_values[0]->isActive()) {
+                dst = val->data;
+                return nullptr;
+            }
+            
+            g_ptr<Value> sub = val->sub_values[0];
+            
+            if(sub->sub_values.empty() || !sub->sub_values[0]->isActive()) {
+                dst = sub->data;
+                return sub;
+            }
+            
+            g_ptr<Value> sub_sub = sub->sub_values[0];
+            
+            if(sub->store) {
+                _note item_data;
+                if(sub_sub->type == int_id) {
+                    if(sub_sub->address == -1) {
+                        item_data = sub->store->get_note(sub_sub->get<int>());
+                    } else {
+                        item_data.index = sub_sub->get<int>();
+                        item_data.sub_index = sub_sub->address;
+                    }
+                } else if(sub_sub->type == string_id) {
+                    item_data = sub->store->get_note(sub_sub->get<std::string>());
+                }
+                _column& col = sub->store->columns[item_data.index];
+                dst = col.get(item_data.sub_index);
+                size = col.element_size;
+                type = item_data.tag;
+            } else if(sub_sub->type == int_id) {
+                dst = &(*(list<g_ptr<q_object>>*)sub->data)[sub_sub->get<int>()];
+                type = object_id;
+                size = 8;
+            } else if(sub_sub->type == string_id) {
+                std::string& key = sub_sub->get<std::string>();
+                dst = &(*(map<std::string,g_ptr<q_object>>*)sub->data)[key];
+                type = object_id;
+                size = 8;
+            }
+            return sub;
         }
 
 
@@ -256,11 +324,6 @@ namespace GDSL {
                 fire_quals(ctx,ctx.node->value);
             };
 
-            r_handlers[to_prefix_id(store_id)] = [this](Context& ctx){
-                if(!ctx.value->store) {
-                    ctx.value->store = make<Type>();
-                }
-            };
 
 
 
@@ -268,6 +331,7 @@ namespace GDSL {
                 backwards_sub_process(ctx);
                 if(ctx.node->left()->value->type==store_id) {
                     if(ctx.node->right()->children.length()==1) {
+                        print(node_to_string(ctx.node->right()));
                         ctx.node->right()->value->store_value(
                             ctx.node->left()->value->store, 
                             ctx.node->right()->left()->value->get<std::string>()
@@ -305,63 +369,79 @@ namespace GDSL {
                 }
             };
 
-            // x_handlers[to_unary_id(amp_id)] = [this](Context& ctx) {
-            //     process_node(ctx,ctx.node->left());
-            //     ctx.node->value = ctx.node->left()->value;
-            // };
-
             x_handlers[equals_id] = [this](Context& ctx) {
-                backwards_sub_process(ctx);
+                standard_sub_process(ctx);
 
-                if(!ctx.node->left()->value->data && !(ctx.node->left()->value->type==store_id)) {
-                    ctx.node->left()->value->size = ctx.node->right()->value->size;
-                    ctx.node->left()->value->type = ctx.node->right()->value->type;
-                    ctx.node->left()->value->quals = ctx.node->right()->value->quals;
-                    ctx.node->left()->value->data = malloc(ctx.node->right()->value->size);
+
+                g_ptr<Value> from = ctx.node->right()->value;
+                g_ptr<Value> to = ctx.node->left()->value;
+
+                if(!to->data) {
+                    to->size = from->size;
+                    to->type = from->type;
+                    to->quals = from->quals;
+                    to->data = malloc(from->size);
                 }  
+                if(to->type != from->type) {
+                    to->size = from->size;
+                    to->type = from->type;
+                    to->quals = from->quals;
+                } 
 
-                if(ctx.node->right()->value->type==store_id) {
-                    ctx.node->left()->value->store = ctx.node->right()->value->get<g_ptr<Type>>();
-                    ctx.node->left()->value->set<g_ptr<Type>>(ctx.node->left()->value->store);
-                } else if(ctx.node->left()->value->type==node_id) {
-                    if(ctx.node->right()->value->type==node_id) {
-                        if(ctx.node->right()->type==to_unary_id(amp_id)) {
-                            ctx.node->left()->value->get<g_ptr<Node>>()->copy(ctx.node->right()->left()->value->get<g_ptr<Node>>());
-                        } else {
-                            ctx.node->left()->value->set<g_ptr<Node>>(ctx.node->right()->value->get<g_ptr<Node>>());
-                        }
-                    } else {
-                        if(ctx.node->right()->type==to_unary_id(amp_id)) {
-                            ctx.node->left()->value->get<g_ptr<Node>>()->copy(ctx.node->right()->left());
-                        } else {
-                            ctx.node->left()->value->set<g_ptr<Node>>(ctx.node->right());
-                        }
+                void* from_src = nullptr;
+                void* to_dst = nullptr;
+                uint32_t from_type = from->type;
+                uint32_t from_size = from->size;
+                uint32_t to_type = to->type;
+                uint32_t to_size = to->size;
+                
+                g_ptr<Value> from_sub = resolve_value(from, from_src, from_type, from_size);
+                g_ptr<Value> to_sub = resolve_value(to, to_dst, to_type, to_size);
+
+                if(to_sub&&from_sub) {
+                    if(to_sub->type == node_list_id || to_sub->type == value_list_id) {
+                        *(list<g_ptr<q_object>>*)to_sub->data = *(list<g_ptr<q_object>>*)from_sub->data;
+                        return;
+                    } else if(to_sub->type == node_map_id || to_sub->type == value_map_id) {
+                        *(map<std::string,g_ptr<q_object>>*)to_sub->data = *(map<std::string,g_ptr<q_object>>*)from_sub->data;
+                        return;
                     }
-                } else if(ctx.node->right()->value->type==value_id) {
-                    ctx.node->left()->value->set<g_ptr<Value>>(ctx.node->right()->value->get<g_ptr<Value>>());
-                } else if(ctx.node->right()->value->type==node_list_id) {
-                    ctx.node->left()->value->get<list<g_ptr<Node>>>() = ctx.node->right()->value->get<list<g_ptr<Node>>>();
-                } else if(ctx.node->right()->value->type==value_list_id) {
-                    ctx.node->left()->value->get<list<g_ptr<Value>>>() = ctx.node->right()->value->get<list<g_ptr<Value>>>();
-                } else if(ctx.node->right()->value->type==node_map_id) {
-                    ctx.node->left()->value->get<map<std::string,g_ptr<Node>>>() = ctx.node->right()->value->get<map<std::string,g_ptr<Node>>>();
-                } else if(ctx.node->right()->value->type==value_map_id) {
-                    ctx.node->left()->value->get<map<std::string,g_ptr<Value>>>() = ctx.node->right()->value->get<map<std::string,g_ptr<Value>>>();
+                }
+
+                if(from_type == string_id) {
+                    *(std::string*)to_dst = *(std::string*)from_src;
+                } else if(from_type == object_id || from_type == node_id || from_type == value_id) {
+                    *(g_ptr<q_object>*)to_dst = *(g_ptr<q_object>*)from_src;
                 } else {
-                    memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
+                    memcpy(to_dst, from_src, from_size);
                 }
             };
 
+
+            r_handlers[to_prefix_id(store_id)] = [this](Context& ctx){
+                if(!ctx.value->store) {
+                    ctx.value->store = make<Type>();
+                    ctx.value->type = store_id;
+                    ctx.value->set<g_ptr<Type>>(ctx.value->store);
+                }
+            };
 
             x_handlers[to_prefix_id(store_id)] = [this](Context& ctx){
                 if(ctx.node->left()) { //Like l(3)
                     process_node(ctx,ctx.node->left());
                     g_ptr<Value> idx = ctx.node->left()->value;
 
+                    if(ctx.node->value->sub_values.empty()) { //Temporary: at the momment of creation, r value already set main value to be the refrence so we just demote it for the index access case
+                        g_ptr<Value> new_sub = make<Value>();
+                        new_sub->copy(ctx.value);
+                        new_sub->sub_values << idx;
+                        ctx.value->sub_values << new_sub;
+                    }
+
                     if(idx->type==int_id) {
-                        ctx.value->query_store(idx->get<int>());
+                        ctx.value->query_store(idx->get<int>(),ctx.value->sub_values[0]->store);
                     } else if(idx->type==string_id) {
-                        ctx.value->query_store(idx->get<std::string>());
+                        ctx.value->query_store(idx->get<std::string>(),ctx.value->sub_values[0]->store);
                     } else if(idx->type==store_id) {
                         //Do nothing
                     } else {
@@ -521,6 +601,20 @@ namespace GDSL {
 
             x_handlers[test_id] = [this](Context& ctx){
                 print("This should do nothing");
+
+                g_ptr<Node> n = make<Node>(); n->name = "n";
+                g_ptr<Node> v = make<Node>(); v->name = "v";
+                g_ptr<Node> k = make<Node>(); k->name = "k";
+                g_ptr<Node> j = make<Node>(); j->name = "j";
+                g_ptr<Node> m = make<Node>(); m->name = "m";
+                n->children << v;
+                n->children << k;
+                j = v;
+                j->name = "Joe";
+                n->children[1] = j;
+                print(node_to_string(n));
+                m->children = n->children;
+                print(node_to_string(m));
             };
 
             x_handlers[dot_id] = [this](Context& ctx){

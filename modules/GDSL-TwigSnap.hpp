@@ -78,6 +78,11 @@ namespace GDSL {
             discard_types.push_if_absent(rbrace_id);
             discard_types.push_if_absent(lbrace_id);
 
+            fragment_handlers.default_function = [this](Context& ctx){
+                int depth = 0;
+                ctx.source = html_encode_node(ctx.node, depth);
+            };
+
             add_text_component("paragraph",paragraph_subtype);
             t_handlers[text_id] = [this](Context& ctx) {
                 if(ctx.node->scope()) {
@@ -87,6 +92,10 @@ namespace GDSL {
                     for(auto c : ctx.node->scope()->children) {
                         if(c->children.length()==2) {
                             properties->children << make_property(c->left()->name, c->right()->name);
+                            if(c->left()->name == "id") {
+                                ctx.node->name = c->right()->name;
+                                ctx.node->in_scope->node_table.put(ctx.node->name,ctx.node);
+                            }
                         } else if(ctx.root->node_table.hasKey(c->name)) {
                             ctx.node->quals << ctx.root->node_table.get(c->name);
                         }
@@ -212,7 +221,7 @@ namespace GDSL {
                 }
             };
 
-
+        
 
             tokenized_keywords.put("script",script_id);
             n_handlers[script_id] = [this](Context& ctx) {

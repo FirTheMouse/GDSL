@@ -5,6 +5,13 @@ function frag(target, instruction = "") {
     })
     .then(r => r.text())
     .then(html => {
-        document.getElementById(target).innerHTML = html;
+        document.getElementById(target).outerHTML = html;
     });
+}
+
+function cell_post(input, label, col, row, target) {
+    fetch(window.location.pathname, {
+        method: "POST",
+        body: label + " " + col + " " + row + " " + input.value + " " + target
+    }).then(() => frag(target));
 }

@@ -16,7 +16,7 @@ namespace GDSL {
         size_t is_not_id = register_binary_operator(reg_id("is_not"));
         size_t scan_id = make_tokenized_keyword("scan");
         size_t on_id = make_tokenized_keyword("on");
-        size_t in_id = make_contextual_keyword("in",node_block_id);
+        size_t in_id = make_contextual_keyword("in");
 
         size_t node_id = add_type("Node",8);
         size_t value_id = add_type("Value",8);

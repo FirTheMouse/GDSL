@@ -45,6 +45,19 @@ struct _column {
     }
 };
 
+struct _column_image {
+    std::string label;
+    size_t size;
+    uint32_t tag;
+    int index;
+    list<_note*> cells;
+};
+
+struct _type_image {
+    list<_column_image> columns;
+    int row_count = 0;
+};
+
 class Type : public q_object {
 public:
     Type() {}
@@ -57,6 +70,27 @@ public:
 
     int save_idx = -1;
     std::string type_name = "bullets";
+
+    _type_image get_image() {
+        _type_image img;
+        for(auto& [label,note] : notes.entrySet()) {
+            int idx = note.index;
+            int sidx = note.sub_index;
+
+            while(img.columns.length()<=idx) {img.columns << _column_image{};}
+            _column_image& col = img.columns[idx];
+            if(sidx==0) {
+                col.label = label;
+                col.size = columns[idx].element_size;
+                col.tag = note.tag;
+                col.index = idx;
+            }
+            while(col.cells.length()<=sidx) {col.cells << nullptr;} //Not sure if this is safe
+            col.cells[sidx] = &note;
+            if(row_count(idx)>img.row_count) img.row_count = row_count(idx);
+        }
+        return img;
+    };
 
     std::string make_table_string(int mode) {
         std::string table = "";
@@ -339,7 +373,7 @@ public:
     void push_and_bucket(T value, int column_index = -1, uint32_t tag = 0) {
         push_and_bucket(&value, sizeof(T), column_index, tag);
     }
-
+    
     //Direct set 
     static void set(void* ptr,void* value, int sub_index) {
         return (*(_column*)ptr).set(sub_index,value);
@@ -356,8 +390,10 @@ public:
             }
             return;
         }
-        return set(ptr,value,sub_index);
+        set(ptr,value,sub_index);
     }
+
+
 
     template<typename T>
     void set(const std::string& label,T value,size_t index) {

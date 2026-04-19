@@ -11,6 +11,7 @@ namespace GDSL {
         size_t div_id = reg_id("div");
         size_t button_id = reg_id("button");
         size_t script_id = reg_id("script");
+        size_t style_id = reg_id("style");
 
         size_t text_id = reg_id("text");
         size_t input_id = reg_id("input");
@@ -31,7 +32,10 @@ namespace GDSL {
             "onclick", "onchange", "onsubmit", "oninput",
             "onfocus", "onblur", "onkeydown", "onkeyup",
             "onmouseenter", "onmouseleave", "onload",
-            "role","lang","colspan", "rowspan", "scope"
+            "role","lang","colspan", "rowspan", "scope",
+            "rows", "cols", "autocorrect", "autocapitalize", "spellcheck", "wrap",
+            "autocomplete", "autofocus", "enctype", "novalidate", "pattern", "size",
+            "download", "controls", "autoplay", "loop", "muted", "poster"
         }, false};
         bool is_prop_structural(const std::string& name) {
             return is_structural[name] || name.substr(0,5) == "data-";
@@ -116,6 +120,13 @@ namespace GDSL {
 
             s += "</"+labels[ctx.node->type]+">\n";
             ctx.source = s;
+        }
+
+        void standard_emit_as_html(Context& ctx, g_ptr<Node> node) {
+            g_ptr<Node> old_node = ctx.node;
+            ctx.node = node;
+            standard_emit_as_html(ctx);
+            ctx.node = old_node;
         }
 
         std::string indent_html_text(const std::string& text) {

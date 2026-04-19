@@ -122,6 +122,11 @@ namespace GDSL {
                 char c = ctx.source.at(ctx.index);
                 if(c=='"') {
                     ctx.state=0;
+                } else if(c=='\\') {
+                    if(ctx.index+1<ctx.source.length()) {
+                        ctx.node->name += ctx.source.at(ctx.index+1);
+                        ctx.index++;
+                    }
                 }
                 else {
                     ctx.node->name += c;
@@ -134,6 +139,16 @@ namespace GDSL {
                 ctx.node->name = "";
                 ctx.result->push(ctx.node);
             });
+
+            tokenizer_functions[' '] = [this](Context& ctx) {
+                //Just skip
+            };
+            tokenizer_functions['\t'] = [this](Context& ctx) {
+                //Just skip
+            };
+            tokenizer_functions['\n'] = [this](Context& ctx) {
+                //Just skip
+            };
     
             tokenizer_default_function = [this](Context& ctx) {
                 char c = ctx.source.at(ctx.index);
@@ -146,10 +161,7 @@ namespace GDSL {
                     ctx.state = in_digit_id;
                     ctx.node = make<Node>(int_id,c);
                     ctx.result->push(ctx.node);
-                } else if(c==' '||c=='\t'||c=='\n') {
-                    //just skip
-                }
-                else {
+                }  else {
                     print("tokenize::default_function missing handling for char: ",c);
                 }
             };

@@ -1,12 +1,40 @@
-"/" {
-    form(test_form,"test_sheet");
-    sheet(test_sheet);
+"/" {  
+    "background-color" : "rgb(47, 46, 46)";
+    style "
+        .int { color: #edd200; }
+        .string { color: #ce9178; }
+        .IDENTIFIER { color:rgb(55, 55, 205); }
+        .COLON { color: #ffffff; }
+    ";
+
+    div editor {
+        div code {
+            "id" : "code";
+            "contenteditable" : "true";
+            "font-family" : "monospace";
+            "white-space" : "pre";
+        }
+
+        div highlight {
+            "id":"highlight";
+            "background-color" : "rgb(188, 81, 81)";
+        }
+
+        button btn {
+            "onclick" : "compile_preview()";
+            "background-color" : "rgb(188, 81, 81)";
+        }
+
+        div preview {
+            "id":"preview";
+        }
+    }
+
+    in fragmenting {
+        fragment_highlight;
+    }
 
     script read_file("frag.js");
-
-    in posting {
-        recive_sheet_edit;
-    }
 }
 
 

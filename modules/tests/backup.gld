@@ -209,10 +209,43 @@ server {
 
 
 
-
 "/" {
-    form(test_form,"test_sheet");
-    sheet(test_sheet);
+    "background-color" : "rgb(141, 93, 168)";
+
+    style "
+        td:hover {
+            background-color:rgb(255, 27, 240);
+        }
+        input:focus {
+            background-color:rgb(255, 0, 0);
+            outline: 2px solid #1a73e8;
+            outline-offset: -2px;
+        }
+    ";
+
+    div panel {
+        form(test_form,"test_sheet") {
+            invisible select_style {
+                "background-color" : "rgb(37, 255, 74)";
+            }
+        }
+
+        sheet(test_sheet) {
+            "background-color" : " #1a1a2e";
+            invisible header_style {
+                "background-color" : "rgb(255, 23, 240)";
+            }
+            invisible column_style {
+
+            }
+            invisible row_style {
+                "background-color" : "rgb(47, 46, 46)";
+            }
+            invisible input_style {
+                "background-color" : "rgb(0, 0, 243)";
+            }
+        }
+    }
 
     script read_file("frag.js");
 
@@ -230,5 +263,16 @@ server {
         response;
         close;
     }
+}
+
+
+textarea code {
+    "id" : "code";
+    "rows" : "20";
+    "cols" : "80";
+    "autocorrect" : "off";
+    "autocapitalize" : "off";
+    "spellcheck" : "false";
+    "font-family" : "monospace";
 }
 

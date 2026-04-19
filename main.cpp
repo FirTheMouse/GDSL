@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     twig->run(twig->process(readFile("modules/tests/testpage.gld")));
     
     // g_ptr<GQL_Unit> q_script = make<GQL_Unit>();
-    // q_script->run(q_script->process(readFile("modules/tests/qtest.gld")));
+    // q_script->run(q_script->process(readFile("modules/tests/qdemo.gld")));
 
 
     // std::string display = "";

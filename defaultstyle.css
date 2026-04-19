@@ -18,6 +18,11 @@ th {
 tr:hover {
     background-color: #f8f9fa;
 }
+input:focus {
+    background-color: #e8f0fe;
+    outline: 2px solid #1a73e8;
+    outline-offset: -2px;
+}
 td {
     border: 1px solid #e0e0e0;
     padding: 0;
@@ -31,9 +36,4 @@ input {
     font-family: Arial, sans-serif;
     background: transparent;
     box-sizing: border-box;
-}
-input:focus {
-    background-color: #e8f0fe;
-    outline: 2px solid #1a73e8;
-    outline-offset: -2px;
 }

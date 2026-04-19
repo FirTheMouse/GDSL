@@ -37,7 +37,6 @@ namespace GDSL {
             tf->push<std::string>("22-int-Secondy",2);
             tf->push<std::string>("33-int-Thirdy",2);
             
-            
             x_handlers[test_form_id] = [this,tf](Context& ctx) {
                 ctx.node->value->store = tf;
             };
@@ -45,6 +44,9 @@ namespace GDSL {
                 ctx.node->value->store = ts;
             };
             
+            r_handlers[form_id] = [this](Context& ctx){
+                standard_gather_from_scope(ctx);
+            };
             html_handlers[form_id] = [this](Context& ctx) {
                 if(ctx.node->left()) {
                     process_node(ctx.node->left());
@@ -60,11 +62,24 @@ namespace GDSL {
                     }
                 }
 
-
                 g_ptr<Type> t = ctx.node->value->store;
                 _type_image img = t->get_image();
             
-                std::string out = "<div class='form'>\n";
+
+                g_ptr<Node> input_props = nullptr;
+                g_ptr<Node> select_props = nullptr;
+
+                std::string out = "<div class='form'";
+                if(ctx.node->scope()) {
+                    out += emit_inline_html(ctx, ctx.node->scope());
+                    for(auto c : ctx.node->scope()->children) {
+                        if(c->scope()) {
+                            if(c->name=="input_style") input_props = c->scope();
+                            if(c->name=="select_style") select_props = c->scope();
+                        }
+                    }    
+                }
+                out += ">\n";
             
             
                 for(auto& col_img : img.columns) {
@@ -77,12 +92,20 @@ namespace GDSL {
                     std::string current = t->columns[col_img.index].length() > 1 ? t->get<std::string>(col_img.index, 1) : "";
                     
                     if(t->columns[col_img.index].length() <= 2) {
-                        out += "<input value='"+current+"'onchange=\""
+                        out += "<input ";
+                        if(input_props) {
+                            out+=emit_inline_html(ctx, input_props); 
+                        }
+                        out += " value='"+current+"' onchange=\""
                         +"cell_post(this,''," + col_str + "," + row_str + ",'" + target_sheet + "');" 
                         +"cell_post(this,''," + std::to_string(col_img.index) + ",1,'" + ctx.node->name + "')\""
                         +">\n";
                     } else {
-                        out += "<select value='"+current+"' onchange=\""
+                        out += "<select "; 
+                        if(select_props) {
+                            out+=emit_inline_html(ctx, select_props); 
+                        }
+                        out += "value='"+current+"' onchange=\""
                         +"cell_post(this,''," + col_str + "," + row_str + ",'" + target_sheet + "');"
                         +"cell_post(this,''," + std::to_string(col_img.index) + ",1,'" + ctx.node->name + "')\""
                         +">\n";
@@ -165,6 +188,10 @@ namespace GDSL {
                 }
             };
             
+
+            r_handlers[sheet_id] = [this](Context& ctx){
+                standard_gather_from_scope(ctx);
+            };
             html_handlers[sheet_id] = [this](Context& ctx) {
                 if(ctx.node->left()) {
                     process_node(ctx.node->left());
@@ -172,19 +199,51 @@ namespace GDSL {
                     ctx.node->name =  ctx.node->left()->name;
                     ctx.node->in_scope->node_table[ctx.node->name] = ctx.node;
                 } 
+
+                g_ptr<Node> tr_props = nullptr;
+                g_ptr<Node> th_props = nullptr;
+                g_ptr<Node> td_props = nullptr;
+                g_ptr<Node> input_props = nullptr;
+
                 g_ptr<Type> t = ctx.node->value->store;
                 _type_image img = t->get_image();
                 std::string out = "";
-                out += "<style>"+readFile("defaultstyle.css")+"</style>";
-                out +=  "<table id='" + ctx.node->name + "'>\n<tr>";
-            
+                out += "<table id='" + ctx.node->name + "' ";
+                if(ctx.node->scope()) {
+                    out += emit_inline_html(ctx, ctx.node->scope());
+                    for(auto c : ctx.node->scope()->children) {
+                        if(c->scope()) {
+                            if(c->name=="row_style") tr_props = c->scope();
+                            if(c->name=="header_style") th_props = c->scope();
+                            if(c->name=="column_style") td_props = c->scope();
+                            if(c->name=="input_style") input_props = c->scope();
+                        }
+                    }    
+                }
+                out += ">\n";
+                
+                out+= "<tr "; 
+                if(tr_props) {
+                    out+=emit_inline_html(ctx, tr_props); 
+                }
+                out+=">";
+
                 for(auto& col_img : img.columns) {
-                    out += "<th>" + col_img.label + "</th>";
+                    out += "<th";
+                    if(th_props) {
+                        out+=emit_inline_html(ctx, th_props); 
+                    }
+                    out+= ">"+col_img.label;
+                    out += "</th>";
                 }
                 out += "</tr>\n";
                 
                 for(int r = 0; r < img.row_count; r++) {
-                    out += "<tr>";
+                    out+= "<tr "; 
+                    if(tr_props) {
+                        out+=emit_inline_html(ctx, tr_props); 
+                    }
+                    out+=">";
                     for(auto& col_img : img.columns) {
                         std::string note_label = col_img.label;
                         int access_index = col_img.index;
@@ -198,8 +257,16 @@ namespace GDSL {
                         std::string column =  std::to_string(access_index);
                         std::string row = std::to_string(access_sub_index);
             
-                        out += "<td><input value=\""+value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index))+"\""
-                        + "onchange=\"cell_post(this,'" + note_label + "'," + column + "," + row + ",'" + ctx.node->name + "')\""
+                        out += "<td ";
+                        if(td_props) {
+                            out+=emit_inline_html(ctx, td_props); 
+                        }
+                        out+="><input "; 
+                        if(input_props) {
+                            out+=emit_inline_html(ctx, input_props); 
+                        }
+                        out+=" value=\""+value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index))+"\""
+                        + " onchange=\"cell_post(this,'" + note_label + "'," + column + "," + row + ",'" + ctx.node->name + "')\""
                         +"/></td>";
                     }
                     out += "</tr>\n";

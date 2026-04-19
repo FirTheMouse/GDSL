@@ -6,10 +6,13 @@
         print("What's that sound? ");
         print("What? ");
 
+        int been_wubbed = 0;
+
         if(the_while.type==find_in_labels("int")) {
             print("I have been wubed!");
             the_while.type = find_in_labels("while");
             print("There, all better...");
+            been_wubbed = 1;
         }
 
         while(i<escape.children.length) {
@@ -31,7 +34,17 @@
             i = i+1;
         }
 
-
+        if(been_wubbed==1) {
+            Node final = escape.owner.in_scope;
+            i = 0;
+            while(i<final.children.length) {
+                if(final.children(i).type == find_in_labels("travel_pass")) {
+                    final.children(i).scope.children(1).children(0).type = find_in_labels("RANGLE");
+                    print("Enough.");
+                }
+                i = i+1;
+            }
+        }
 
     }
 }

@@ -10,11 +10,13 @@ namespace GDSL {
 
         size_t route_id = reg_id("route");
         size_t inlined_id = add_type("inlined");
+        size_t invisible_id = add_type("invisible");
         size_t component_id = add_type("component");
         size_t div_id = make_keyword("div",0,"",component_id);
         size_t find_id = make_tokenized_keyword("find");
         size_t serve_id = make_tokenized_keyword("serve");
 
+        size_t fragment_highlight_id = make_tokenized_keyword("fragment_highlight");
 
         g_ptr<Node> make_property(const std::string& type, const std::string& value) {
             g_ptr<Node> prop_node = make<Node>(property_id);
@@ -49,9 +51,7 @@ namespace GDSL {
                             node->scope()->quals << c->scope()->quals;
                             node->scope()->children.removeAt(i);
                             i--;
-                        } else if(c->value->type==component_id) {
-                            //Do nothing
-                        }
+                        } 
                     } else if(c->children.length()==2&&c->type==colon_id||c->type==equals_id) {
                         properties->children << make_property(c->left()->name,c->right()->name);
                         node->scope()->children.removeAt(i);
@@ -92,11 +92,21 @@ namespace GDSL {
                     }
                 }
             };
-            t_handlers[type] = [this](Context& ctx) {
+            r_handlers[type] = [this,type](Context& ctx) {
                 standard_gather_from_scope(ctx);
+                if(ctx.node->scope()) {
+                    ctx.node->scope()->type = type;
+                }
+            };
+            html_handlers[type] = [this](Context& ctx) {
+                if(ctx.node->scope()) {
+                    standard_emit_as_html(ctx,ctx.node->scope());
+                } else {
+                    standard_emit_as_html(ctx);
+                }
             };
         }
-
+        size_t whitespace_id = 0;
         void init() override {
             tokenized_keywords.put(labels[server_id],server_id);
             tokenized_keywords.put(labels[port_id],port_id);
@@ -124,6 +134,51 @@ namespace GDSL {
             };
             html_handlers.default_function = [this](Context& ctx){
                 //Emit nothing
+            };
+
+
+            x_handlers[fragment_highlight_id] = [this](Context& ctx) {
+                std::string instruction = ctx.sub->source.substr(0, ctx.sub->source.find(" "));
+                std::string code = ctx.sub->source.substr(ctx.sub->source.find(" ") + 1);
+                std::string out = "";
+                if(instruction=="code") {
+                    list<g_ptr<Node>> tokens = tokenize(code);
+                    int code_idx = 0;
+                    
+                    for(auto t : tokens) {
+                        size_t pos = code.find(t->name, code_idx);
+                        if(pos != std::string::npos) {
+                            out += code.substr(code_idx, pos - code_idx);
+                            out += "<span class='" + labels[t->type] + "'>" + t->name + "</span>";
+                            code_idx = pos + t->name.length();
+                        }
+                    }
+                    out += code.substr(code_idx);
+                } else if(instruction=="preview") {
+
+                    g_ptr<Node> root = process(code);
+                    run(root);
+
+                    std::string body = "";
+                    if(ctx.sub) {
+                        g_ptr<Node> retrived = root;
+                        // for(auto c : retrived->children) {
+                        //     if(c->name=="/") {
+                        //         retrived = c;
+                        //         break;
+                        //     }
+                        // }
+                        root->type = div_id;
+                        body += html_encode_node(root);
+                        if(retrived) {
+                            //body += html_encode_node(retrived->scope());
+                        }
+                    } else {
+                        body = "serve:x_handler context has no sub";
+                    }
+                    out += body;
+                }
+                ctx.sub->source = out;
             };
 
             t_handlers[route_id] = [this](Context& ctx) {          
@@ -154,7 +209,11 @@ namespace GDSL {
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_gather_from_scope(ctx);
-                ctx.node->scope()->type = div_id;
+                if(ctx.node->value->type!=invisible_id) {
+                    ctx.node->scope()->type = div_id;
+                } else {
+                    ctx.node->scope()->type = invisible_id;
+                }
             };
             html_handlers[body_id] = [this](Context& ctx){
                 standard_emit_as_html(ctx);
@@ -188,6 +247,24 @@ namespace GDSL {
                     s+="\n";
                 }
                 s+="</script>\n";
+                ctx.source = s;
+            };
+
+            tokenized_keywords.put("style",style_id);
+            n_handlers[style_id] = [this](Context& ctx) {
+                if(ctx.index+1<ctx.result->length()) {
+                    ctx.node->children << ctx.result->take(ctx.index+1);
+                    ctx.node->name = "";
+                }
+            };
+            html_handlers[style_id] =[this](Context& ctx){
+                std::string s = "<style>\n";
+                if(ctx.node->left()) {
+                    process_node(ctx,ctx.node->left());
+                    s+=ctx.node->left()->value->get<std::string>();
+                    s+="\n";
+                }
+                s+="</style>\n";
                 ctx.source = s;
             };
             set_binding_powers(colon_id,4,6);

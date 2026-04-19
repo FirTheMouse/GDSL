@@ -1,40 +1,153 @@
-"/" {  
-    "background-color" : "rgb(47, 46, 46)";
+inlined background_theme {
+    "background-color" : "rgb(225, 225, 225)";
+}
+inlined card_theme {
+    "background-color" : "rgb(247, 244, 244)";
+}
+inlined component_theme {
+    "background-color" : "rgb(255, 249, 249)";
+}
+inlined secondary_theme {
+    "background-color" : "rgb(68, 137, 50)";
+}
+inlined text_theme {
+    "font-size" : "13px";
+    "font-weight" : "600";
+    "color" : "rgb(80,80,80)";
+    "font-family" : "system-ui, sans-serif";
+}
+
+inlined input_theme {
+    component_theme;
+    "border" : "1px solid rgb(200,200,200)";
+    "border-radius" : "8px";
+    "padding" : "10px 14px";
+    "width" : "100%";
+    "font-size" : "15px";
+    "font-family" : "system-ui, sans-serif";
+}
+
+
+"/" {
     style "
-        .int { color: #edd200; }
-        .string { color: #ce9178; }
-        .IDENTIFIER { color:rgb(55, 55, 205); }
-        .COLON { color: #ffffff; }
+        td:hover {
+            background-color:rgb(234, 234, 234);
+        }
+        input:focus {
+            outline: none;
+            border-bottom: 2px solid rgb(68, 137, 50);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        td:first-child {
+            border-right: none;
+        }
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+        }
     ";
 
-    div editor {
-        div code {
-            "id" : "code";
-            "contenteditable" : "true";
-            "font-family" : "monospace";
-            "white-space" : "pre";
-        }
+    background_theme;
 
-        div highlight {
-            "id":"highlight";
-            "background-color" : "rgb(188, 81, 81)";
-        }
+    div container {
+        "display" : "flex";
+        "min-height" : "100vh";
+            div form_panel {
+                "flex" : "1";
+                "display" : "flex";
+                "flex-direction" : "column";
+                "justify-content" : "center";
+                "align-items" : "center";
+                    form(test_form,"test_sheet") {
+                        "max-width" : "480px";
+                        "width" : "100%";
+                        "padding" : "40px";
+                        card_theme;
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
 
-        button btn {
-            "onclick" : "compile_preview()";
-            "background-color" : "rgb(188, 81, 81)";
-        }
+                            paragraph "Numbers Form" {
+                                "font-size" : "18px";
+                                "color" : "rgb(57, 57, 57)";
+                                text_theme;
+                            }
 
-        div preview {
-            "id":"preview";
-        }
-    }
+                            invisible select_style {
+                                input_theme;
+                            }
+                            invisible input_style {
+                                "border" : "none";
+                                "border-bottom" : "2px solid rgb(200,200,200)";
+                                "border-radius" : "0px";
+                                "background-color" : "transparent";
+                                "padding" : "8px 0px";
+                                input_theme;
+                            }
+                            invisible field_style {
+                                "display" : "flex";
+                                "flex-direction" : "column";
+                                "gap" : "6px";
+                                "margin-bottom" : "20px";
+                            }
+                            invisible label_style {
+                                text_theme;
+                            }
+                            invisible header_label_style {
+                                "font-size" : "16px";
+                                text_theme;
+                            }
+                    }
 
-    in fragmenting {
-        fragment_highlight;
+                    foldable spreadsheet {
+                        "width" : "480px";
+                        text_theme;
+                        div sheet_panel {
+                            "max-width" : "480px";
+                            "width" : "100%";
+                            "padding" : "10px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                                sheet(test_sheet) {
+                                    "border-collapse" : "collapse";
+                                    card_theme;
+                                        invisible header_style {
+                                            "background-color" : "rgb(240, 240, 240)";
+                                            "padding" : "10px 12px";
+                                            "font-size" : "14px";
+                                            "color" : "rgb(26, 26, 26)";
+                                            text_theme;
+                                        }
+                                        invisible column_style {
+                                            "border-right" : "1px solid rgb(200,200,200)";
+                                        }
+                                        invisible row_style {
+                                            "border-bottom" : "1px solid rgb(220,220,220)";
+                                        }
+                                        invisible input_style {
+                                            "border" : "none";
+                                            "background-color" : "transparent";
+                                            "width" : "100%";
+                                            "padding" : "8px 4px";
+                                            "font-size" : "13px";
+                                            "font-family" : "system-ui, sans-serif";
+                                        }
+                                }
+                        }
+                    }
+            }
     }
 
     script read_file("frag.js");
+
+    in posting {
+        recive_sheet_edit;
+    }
 }
 
 

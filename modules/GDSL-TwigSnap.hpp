@@ -12,6 +12,7 @@ namespace GDSL {
         size_t inlined_id = add_type("inlined");
         size_t invisible_id = add_type("invisible");
         size_t component_id = add_type("component");
+        size_t foldable_id = add_type("foldable");
         size_t div_id = make_keyword("div",0,"",component_id);
         size_t find_id = make_tokenized_keyword("find");
         size_t serve_id = make_tokenized_keyword("serve");
@@ -56,7 +57,7 @@ namespace GDSL {
                         properties->children << make_property(c->left()->name,c->right()->name);
                         node->scope()->children.removeAt(i);
                         i--;
-                    } else if(c->children.length()==1&&c->value->type==component_id) {
+                    } else if(c->children.length()==1&&(c->value->type==component_id||c->value->type==text_id||c->value->type==foldable_id)) {
                         properties->children << c;
                         node->scope()->children.removeAt(i);
                         i--;
@@ -156,27 +157,32 @@ namespace GDSL {
                     out += code.substr(code_idx);
                 } else if(instruction=="preview") {
 
-                    g_ptr<Node> root = process(code);
-                    run(root);
+                    g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
+                    try {
+                        g_ptr<Node> root = twig->process(code);
+                        twig->run(root);
 
-                    std::string body = "";
-                    if(ctx.sub) {
-                        g_ptr<Node> retrived = root;
-                        // for(auto c : retrived->children) {
-                        //     if(c->name=="/") {
-                        //         retrived = c;
-                        //         break;
-                        //     }
-                        // }
-                        root->type = div_id;
-                        body += html_encode_node(root);
-                        if(retrived) {
-                            //body += html_encode_node(retrived->scope());
+                        std::string body = "";
+                        if(ctx.sub) {
+                            g_ptr<Node> retrived = root;
+                            // for(auto c : retrived->children) {
+                            //     if(c->name=="/") {
+                            //         retrived = c;
+                            //         break;
+                            //     }
+                            // }
+                            root->type = div_id;
+                            body += html_encode_node(root);
+                            if(retrived) {
+                                //body += html_encode_node(retrived->scope());
+                            }
+                        } else {
+                            body = "serve:x_handler context has no sub";
                         }
-                    } else {
-                        body = "serve:x_handler context has no sub";
+                        out += body;
+                    } catch(std::exception e) {
+                        print(red("A CRASH"));
                     }
-                    out += body;
                 }
                 ctx.sub->source = out;
             };
@@ -197,7 +203,7 @@ namespace GDSL {
 
                     page += body;
                     page += "</html>";
-                    ctx.source = page;
+                    ctx.source = indent_html_text(page);
                 };
             };
             r_handlers[route_id] = [this](Context& ctx){
@@ -209,10 +215,12 @@ namespace GDSL {
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_gather_from_scope(ctx);
-                if(ctx.node->value->type!=invisible_id) {
-                    ctx.node->scope()->type = div_id;
-                } else {
+                if(ctx.node->value->type==invisible_id) {
                     ctx.node->scope()->type = invisible_id;
+                } else if(ctx.node->value->type==foldable_id) {
+                    ctx.node->scope()->type = foldable_id;
+                } else {
+                    ctx.node->scope()->type = div_id;
                 }
             };
             html_handlers[body_id] = [this](Context& ctx){
@@ -230,6 +238,19 @@ namespace GDSL {
                 if(ctx.node->scope()) {
                     ctx.source = html_encode_node(ctx.node->scope());
                 }   
+            };
+
+            html_handlers[foldable_id] = [this](Context& ctx){
+                std::string out = "";
+                out+="<details>\n";
+                out+="<summary ";
+                out+=emit_inline_html(ctx); 
+                out+=">\n"+ctx.node->name+"\n</summary>\n";
+                for(auto c : ctx.node->children) {
+                    out+=html_encode_node(c);
+                }
+                out+="</details>\n";
+                ctx.source = out;
             };
 
             tokenized_keywords.put("script",script_id);
@@ -273,6 +294,7 @@ namespace GDSL {
             add_input_component("input",input_id);
             add_input_component("textarea");
             add_text_component("paragraph",paragraph_subtype);
+            add_text_component("text",paragraph_subtype);
             r_handlers[text_id] = [this](Context& ctx) {
                 standard_gather_from_scope(ctx);
             };

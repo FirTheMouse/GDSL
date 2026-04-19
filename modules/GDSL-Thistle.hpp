@@ -12,6 +12,39 @@ namespace GDSL {
         size_t test_form_id = make_tokenized_keyword("test_form");
         size_t recive_sheet_edit_id = make_tokenized_keyword("recive_sheet_edit");
 
+        struct style_manager : public q_object {
+            style_manager(HTML_Unit* _unit) : unit(_unit) {}
+            style_manager(HTML_Unit* _unit, list<std::string> init) : unit(_unit) {
+                for(auto s : init) add_prop(s);
+            }
+            HTML_Unit* unit;
+            list<g_ptr<Node>> props;
+            list<std::string> prop_names;
+
+            void add_prop(const std::string& name, g_ptr<Node> prop = nullptr) {
+                props << prop;
+                prop_names << name;
+            }
+
+            void match_prop(const std::string& name, g_ptr<Node> prop) {
+                for(int i=0;i<prop_names.length();i++) {
+                    if(prop_names[i]==name) {
+                        props[i] = prop;
+                        return;
+                    }
+                }
+            }
+
+            std::string resolve_prop(Context& ctx, const std::string& name) {
+                for(int i=0;i<prop_names.length();i++) {
+                    if(prop_names[i]==name&&props[i]) {
+                        return unit->emit_inline_html(ctx,props[i]);
+                    }
+                }
+                return "";
+            }
+        };
+
         void init() override {
             g_ptr<Type> ts = make<Type>();
             ts->add<int>("one",1,-1,int_id);
@@ -22,7 +55,7 @@ namespace GDSL {
             ts->push<int>(12,2);
             
             g_ptr<Type> tf = make<Type>();
-            tf->add<std::string>("Numbers","0-0",-1,string_id);
+            tf->add<std::string>("Direct input","0-0",-1,string_id);
             tf->push<std::string>("",0);
             
             tf->add<std::string>("Wumbers","1-0",-1,string_id);
@@ -66,46 +99,56 @@ namespace GDSL {
                 _type_image img = t->get_image();
             
 
-                g_ptr<Node> input_props = nullptr;
-                g_ptr<Node> select_props = nullptr;
+                g_ptr<style_manager> styles = make<style_manager>(this);
 
                 std::string out = "<div class='form'";
                 if(ctx.node->scope()) {
                     out += emit_inline_html(ctx, ctx.node->scope());
                     for(auto c : ctx.node->scope()->children) {
                         if(c->scope()) {
-                            if(c->name=="input_style") input_props = c->scope();
-                            if(c->name=="select_style") select_props = c->scope();
+                            styles->add_prop(c->name,c->scope());
                         }
                     }    
                 }
                 out += ">\n";
-            
-            
+
+                if(ctx.node->scope()) {
+                    for(auto c : ctx.node->scope()->children) {
+                        if(!c->has_qual(invisible_id))
+                            out += html_encode_node(c);
+                    }
+                }
+
                 for(auto& col_img : img.columns) {
                     std::string addr = t->get<std::string>(col_img.index, 0);
                     std::string col_str = split_str(addr,'-')[0];
                     std::string row_str = split_str(addr,'-')[1];
                     
-                    out += "<div class='field'><label>" + col_img.label + "</label>\n";
+                    std::string label_sub_style = "";
+                    list<std::string> split_col = split_str(col_img.label,':');
+                    if(split_col.length()>1) {
+                        label_sub_style = split_col[1]+"_";
+                    }
+
+                    out += "<div "; 
+                    out += styles->resolve_prop(ctx,"field_style");
+                    out+=" class='field'>\n<label "; 
+                    out += styles->resolve_prop(ctx,label_sub_style+"label_style");
+                    out+=">\n" + split_col[0] + "\n</label>\n";
             
                     std::string current = t->columns[col_img.index].length() > 1 ? t->get<std::string>(col_img.index, 1) : "";
                     
                     if(t->columns[col_img.index].length() <= 2) {
                         out += "<input ";
-                        if(input_props) {
-                            out+=emit_inline_html(ctx, input_props); 
-                        }
+                        out += styles->resolve_prop(ctx,"input_style");
                         out += " value='"+current+"' onchange=\""
                         +"cell_post(this,''," + col_str + "," + row_str + ",'" + target_sheet + "');" 
                         +"cell_post(this,''," + std::to_string(col_img.index) + ",1,'" + ctx.node->name + "')\""
                         +">\n";
                     } else {
                         out += "<select "; 
-                        if(select_props) {
-                            out+=emit_inline_html(ctx, select_props); 
-                        }
-                        out += "value='"+current+"' onchange=\""
+                        out += styles->resolve_prop(ctx,"select_style");
+                        out += " value='"+current+"' onchange=\""
                         +"cell_post(this,''," + col_str + "," + row_str + ",'" + target_sheet + "');"
                         +"cell_post(this,''," + std::to_string(col_img.index) + ",1,'" + ctx.node->name + "')\""
                         +">\n";
@@ -116,7 +159,7 @@ namespace GDSL {
                             std::string tag = opt[1];
                             std::string label = opt[2];
                             std::string selected = (val == current) ? " selected" : "";
-                            out += "<option value='" + val + "'" + selected + ">" + label + "</option>\n";
+                            out += "<option value='" + val + "'" + selected + ">\n" + label + "\n</option>\n";
                         }
                         out += "</select>\n";
                     }
@@ -200,10 +243,7 @@ namespace GDSL {
                     ctx.node->in_scope->node_table[ctx.node->name] = ctx.node;
                 } 
 
-                g_ptr<Node> tr_props = nullptr;
-                g_ptr<Node> th_props = nullptr;
-                g_ptr<Node> td_props = nullptr;
-                g_ptr<Node> input_props = nullptr;
+                g_ptr<style_manager> styles = make<style_manager>(this);
 
                 g_ptr<Type> t = ctx.node->value->store;
                 _type_image img = t->get_image();
@@ -213,37 +253,35 @@ namespace GDSL {
                     out += emit_inline_html(ctx, ctx.node->scope());
                     for(auto c : ctx.node->scope()->children) {
                         if(c->scope()) {
-                            if(c->name=="row_style") tr_props = c->scope();
-                            if(c->name=="header_style") th_props = c->scope();
-                            if(c->name=="column_style") td_props = c->scope();
-                            if(c->name=="input_style") input_props = c->scope();
+                            styles->add_prop(c->name,c->scope());
                         }
                     }    
                 }
                 out += ">\n";
+
+                if(ctx.node->scope()) {
+                    for(auto c : ctx.node->scope()->children) {
+                        if(!c->has_qual(invisible_id))
+                            out += html_encode_node(c);
+                    }
+                }
                 
                 out+= "<tr "; 
-                if(tr_props) {
-                    out+=emit_inline_html(ctx, tr_props); 
-                }
-                out+=">";
+                out+=styles->resolve_prop(ctx, "row_style"); 
+                out+=">\n";
 
                 for(auto& col_img : img.columns) {
                     out += "<th";
-                    if(th_props) {
-                        out+=emit_inline_html(ctx, th_props); 
-                    }
-                    out+= ">"+col_img.label;
-                    out += "</th>";
+                    out+=styles->resolve_prop(ctx, "header_style"); 
+                    out+= ">\n"+col_img.label;
+                    out += "\n</th>\n";
                 }
                 out += "</tr>\n";
                 
                 for(int r = 0; r < img.row_count; r++) {
                     out+= "<tr "; 
-                    if(tr_props) {
-                        out+=emit_inline_html(ctx, tr_props); 
-                    }
-                    out+=">";
+                    out+=styles->resolve_prop(ctx, "row_style"); 
+                    out+=">\n";
                     for(auto& col_img : img.columns) {
                         std::string note_label = col_img.label;
                         int access_index = col_img.index;
@@ -258,21 +296,17 @@ namespace GDSL {
                         std::string row = std::to_string(access_sub_index);
             
                         out += "<td ";
-                        if(td_props) {
-                            out+=emit_inline_html(ctx, td_props); 
-                        }
-                        out+="><input "; 
-                        if(input_props) {
-                            out+=emit_inline_html(ctx, input_props); 
-                        }
+                        out+=styles->resolve_prop(ctx, "column_style"); 
+                        out+=">\n<input "; 
+                        out+=styles->resolve_prop(ctx, "input_style"); 
                         out+=" value=\""+value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index))+"\""
                         + " onchange=\"cell_post(this,'" + note_label + "'," + column + "," + row + ",'" + ctx.node->name + "')\""
-                        +"/></td>";
+                        +"/>\n</td>\n";
                     }
-                    out += "</tr>\n";
+                    out += "\n</tr>\n";
                 }
                 
-                out += "</table>";
+                out += "</table>\n";
                 ctx.source = out;
             };
         }

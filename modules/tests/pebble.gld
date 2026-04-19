@@ -1,0 +1,101 @@
+"/" {  
+    "background-color" : "rgb(47, 46, 46)";
+    style "
+        .int { color:rgb(180, 159, 3); }
+        .string { color:rgb(143, 62, 33); }
+        .IDENTIFIER { color:rgb(0, 0, 177); }
+        .COLON { color: #ffffff; }
+
+        input:focus {
+            outline: none;
+        }
+
+        div {
+            outline: none;
+        }
+    ";
+
+
+    div container {
+        "display" : "flex";
+        "flex-direction" : "column";
+        "gap" : "12px";
+        "min-height" : "80vh";
+            div top_bar {
+                "display" : "flex";
+                "justify-content" : "space-between";
+                "align-items" : "center";
+                "padding" : "16px 14px";
+                "background-color" : "rgb(105, 81, 66)";
+                
+                div menu_items {
+                    "display" : "flex";
+                    "gap" : "16px";
+                    "color" : "rgb(200,200,200)";
+                    "font-family" : "monospace";
+                    "font-size" : "13px";
+                }
+                
+                button btn {
+                    "onclick" : "compile_preview()";
+                    "padding" : "8px 16px";
+                    "background-color" : "rgb(68, 137, 50)";
+                    "color" : "rgb(255,255,255)";
+                    "border" : "none";
+                    "border-radius" : "4px";
+                    "font-family" : "monospace";
+                    "cursor" : "pointer";
+                }
+            }
+
+            div editor {
+                "display" : "flex";
+                "min-height" : "100vh";
+                "gap" : "12px";
+                "flex" : "1";
+                    div code {
+                        "flex" : "1";
+                        "width" : "100%";
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                        "id" : "code";
+                        "contenteditable" : "true";
+                        "font-family" : "monospace";
+                        "white-space" : "pre";
+                        "padding" : "10px 14px";
+                        "background-color" : "rgb(83, 83, 83)";
+                    }
+
+                    div display_panel {
+                        "flex" : "1";
+                        "width" : "100%";
+                        "padding" : "10px";
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                        "background-color" : "rgb(67, 67, 67)";
+                        div preview {
+                            "id":"preview";
+                        }
+                    }
+            }
+    }
+
+    in fragmenting {
+        fragment_highlight;
+    }
+
+    script read_file("frag.js");
+    script read_file("cursor.js");
+}
+
+
+server {
+    port(8080);
+    listen {
+        accept;
+        request;
+        response;
+        close;
+    }
+}

@@ -105,7 +105,7 @@ namespace GDSL {
             return s;
         }
 
-        void standard_emit_as_html(Context& ctx) {
+        std::string standard_emit_as_html(Context& ctx) {
             std::string s = "";
             s += "<"+labels[ctx.node->type];
             s += emit_inline_html(ctx);
@@ -120,13 +120,15 @@ namespace GDSL {
 
             s += "</"+labels[ctx.node->type]+">\n";
             ctx.source = s;
+            return ctx.source;
         }
 
-        void standard_emit_as_html(Context& ctx, g_ptr<Node> node) {
+        std::string standard_emit_as_html(Context& ctx, g_ptr<Node> node) {
             g_ptr<Node> old_node = ctx.node;
             ctx.node = node;
             standard_emit_as_html(ctx);
             ctx.node = old_node;
+            return ctx.source;
         }
 
         std::string indent_html_text(const std::string& text) {

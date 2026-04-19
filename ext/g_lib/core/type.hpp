@@ -45,6 +45,22 @@ struct _column {
     }
 };
 
+struct _lookup {
+    _lookup(list<std::string> init, bool _default_state) 
+    : default_state(_default_state)  {
+        for(auto s : init) {
+            lookup[s] = !default_state;
+        }
+    }
+
+    map<std::string,bool> lookup;
+    bool default_state;
+
+    bool operator[](const std::string& key) {
+        return lookup.getOrDefault(key,default_state);
+    }
+};
+
 struct _column_image {
     std::string label;
     size_t size;

@@ -203,3 +203,32 @@ server {
         close;
     }
 }
+
+
+
+
+
+
+
+"/" {
+    form(test_form,"test_sheet");
+    sheet(test_sheet);
+
+    script read_file("frag.js");
+
+    in posting {
+        recive_sheet_edit;
+    }
+}
+
+
+server {
+    port(8080);
+    listen {
+        accept;
+        request;
+        response;
+        close;
+    }
+}
+

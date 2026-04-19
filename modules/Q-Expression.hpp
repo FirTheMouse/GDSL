@@ -156,7 +156,6 @@ namespace GDSL {
             } else if(from_type == object_id) {
                 *(g_ptr<q_object>*)to_dst = *(g_ptr<q_object>*)from_src;
             } else {
-                print("MEMCPYING ",from_size);
                 memcpy(to_dst, from_src, from_size);
             }
         }

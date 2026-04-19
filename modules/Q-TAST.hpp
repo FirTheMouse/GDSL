@@ -71,6 +71,10 @@ namespace GDSL {
                 return val->sub_type;
             }
 
+            void add_alias(const std::string& name, uint32_t type) {
+                keywords.put(name,keywords.get(labels[type]));
+            }
+
             size_t add_function(const std::string& f, uint32_t return_type = 0) {
                 g_ptr<Value> val = make_value(f,0,return_type);
                 keywords.put(f,val);

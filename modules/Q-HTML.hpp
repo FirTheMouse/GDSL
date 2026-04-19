@@ -18,21 +18,31 @@ namespace GDSL {
         size_t paragraph_subtype = reg_id("p");
         size_t span_subtype = reg_id("span");
 
-        size_t style_id = reg_id("style");
-        size_t prefix_style_id = reg_id("style");
-        size_t suffix_style_id = reg_id("style");
         size_t property_id = reg_id("property");
-
         size_t properties_id = reg_id("properties");
 
-        map<uint32_t,Handler> html_handlers; Handler html_default_function;
-        std::string html_encode_node(g_ptr<Node> node, int& depth) {
-            Context ctx(depth);
+        _lookup is_structural{{
+            "id", "class", "name", "type",
+            "value", "placeholder", "checked", "disabled",
+            "readonly", "required", "selected", "multiple",
+            "action", "method", "for", "maxlength", "min", "max", 
+            "step", "href", "src", "alt", "target", "rel",
+            "tabindex", "contenteditable", "draggable", "hidden",
+            "onclick", "onchange", "onsubmit", "oninput",
+            "onfocus", "onblur", "onkeydown", "onkeyup",
+            "onmouseenter", "onmouseleave", "onload",
+            "role","lang","colspan", "rowspan", "scope"
+        }, false};
+        bool is_prop_structural(const std::string& name) {
+            return is_structural[name] || name.substr(0,5) == "data-";
+        }
+
+        Stage& html_handlers = reg_stage("emitting_html");
+
+        std::string html_encode_node(g_ptr<Node> node) {
+            Context ctx;
             ctx.node = node;
-            depth++;
-            std::string indent(depth * 3, ' ');
-            html_handlers.getOrDefault(node->type, html_default_function)(ctx);
-            ctx.source.insert(0,indent);
+            html_handlers.run(node->type)(ctx);
             return ctx.source;
         }
 
@@ -42,85 +52,118 @@ namespace GDSL {
             return s;
         }
 
+        std::string emit_inline_html(Context& ctx) {
+            std::string s = "";
+            list<std::string> structural_prop_labels; list<std::string> structural_prop_values;
+            list<std::string> style_prop_labels; list<std::string> style_prop_values;
+
+            for(int q=0;q<ctx.node->quals.length();q++) {
+                g_ptr<Node> qual = ctx.node->quals[q];
+                for(auto c : qual->children) {
+                    if(!c->children.empty()) {
+                        //For dynamic properties when we add them
+                    } else {
+                        list<std::string>* prop_labels; list<std::string>* prop_values;
+                        if(is_prop_structural(c->name)) {
+                            prop_labels = &structural_prop_labels; 
+                            prop_values = &structural_prop_values;
+                        } else {
+                            prop_labels = &style_prop_labels; 
+                            prop_values = &style_prop_values;
+                        }
+                        if(q==0||!prop_labels->has(c->name)) {
+                            prop_labels->push(c->name);
+                            prop_values->push(c->opt_str);
+                        }
+                    }
+                }
+            }
+
+
+            for(int i=0;i<structural_prop_labels.length();i++) {
+                s += " "+structural_prop_labels[i]+"=\""+structural_prop_values[i]+"\"";
+            }   
+            if(!style_prop_labels.empty()) {
+                s += " style=\"";
+                for(int i=0;i<style_prop_labels.length();i++) {
+                    s += style_prop_labels[i]+":"+style_prop_values[i]+";";
+                }  
+                s += "\""; 
+            }
+            return s;
+        }
+
+        std::string emit_inline_html(Context& ctx, g_ptr<Node> node) {
+            g_ptr<Node> old_node = ctx.node;
+            ctx.node = node;
+            std::string s = emit_inline_html(ctx);
+            ctx.node = old_node;
+            return s;
+        }
+
+        void standard_emit_as_html(Context& ctx) {
+            std::string s = "";
+            s += "<"+labels[ctx.node->type];
+            s += emit_inline_html(ctx);
+            s += ">\n";
+            for(auto c : ctx.node->children) {
+                s += html_encode_node(c);
+            }
+
+            if(!ctx.node->opt_str.empty()) {
+                s += ctx.node->opt_str+"\n";
+            } 
+
+            s += "</"+labels[ctx.node->type]+">\n";
+            ctx.source = s;
+        }
+
+        std::string indent_html_text(const std::string& text) {
+            list<std::string> s = split_str(text,'<');
+            std::string indent = "";
+            for(int i=0;i<s.length();i++) {
+                if(s[i].empty()) continue;
+                bool deindent = s[i].at(0)=='/';
+                s[i].insert(0,"<");
+                if(deindent) {
+                    indent = indent.substr(0,indent.length()-2);
+                    s[i].insert(0,indent);
+                } else {
+                    s[i].insert(0,indent);
+                    indent += "  ";
+                    size_t pos = 0;
+                    while((pos = s[i].find('\n', pos)) != std::string::npos && pos!=s[i].length()-1) {
+                        s[i].replace(pos, 1, "\n" + indent);
+                        pos += indent.length() + 1;
+                    }
+                }
+            }
+            std::string to_return = "";
+            for(auto si : s) to_return+=si;
+            return to_return;
+        };
+
         void init() override {
-            html_default_function = [this](Context& ctx){
-                std::string s = "";
-
-
-                if(ctx.node->type==script_id && ctx.node->left()) {
-                    process_node(ctx, ctx.node->left());
-                    ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
-                }
-
-                s += "<"+labels[ctx.node->type]+(ctx.node->name.empty()?"":" "+ctx.node->name);
-                int zero_depth = -1;
-                for(auto q : ctx.node->quals) {
-                    s += " "+html_encode_node(q,zero_depth);
-                    zero_depth = -1;
-                }
-                s+=">\n";
-
-                for(auto c : ctx.node->children) {
-                    if(c->type == style_id) continue;
-                    s += html_encode_node(c,ctx.index);
-                }
-
-                std::string indent(ctx.index * 3, ' ');
-                if(!ctx.node->opt_str.empty()) {
-                    std::string old_str = ctx.node->opt_str;
-                    indent_multiline(ctx.node->opt_str,indent);
-                    s += ctx.node->opt_str+"\n";
-                    ctx.node->opt_str = old_str;
-                } 
-
-                if(ctx.index>0) ctx.index--;
-                indent = std::string(ctx.index * 3, ' ');
-                s += indent;
-                s += "</"+labels[ctx.node->type]+">\n";
-                ctx.source = s;
+            html_handlers.default_function = [this](Context& ctx){
+                standard_emit_as_html(ctx);
             };
-
             html_handlers[text_id] = [this](Context& ctx){
                 std::string s = "";
                 s+= "<"+labels[ctx.node->sub_type];
-                int zero_depth = -1;
-                for(auto q : ctx.node->quals) {
-                    s += " "+html_encode_node(q,zero_depth);
-                    zero_depth = -1;
+                if(ctx.node->scope()) {
+                    s+= emit_inline_html(ctx,ctx.node->scope());
                 }
-
+                
                 if(ctx.node->left()) {
                     process_node(ctx, ctx.node->left());
                     ctx.node->name = ctx.node->left()->value->get<std::string>();
                 }
                 
-                s+=">"+ctx.node->name+"</"+labels[ctx.node->sub_type]+">\n";
+                s+=">\n"+ctx.node->name+"\n</"+labels[ctx.node->sub_type]+">\n";
                 ctx.source = s;
-                // ctx.index--;
             };
-
             html_handlers[input_id] = [this](Context& ctx) { 
                 ctx.source = "<input "+ctx.node->name+">\n"; 
-                // ctx.index--;
-            };
-
-            html_handlers[style_id] = [this](Context& ctx) {
-                std::string s = "style=\"";
-                for(auto c : ctx.node->children) {
-                    s += c->name + ":" + c->opt_str + ";";
-                }
-                s+="\"";
-                ctx.source = s;
-            };
-            html_handlers[prefix_style_id] = [this](Context& ctx) {};
-            html_handlers[suffix_style_id] = [this](Context& ctx) {};
-
-            html_handlers[properties_id] = [this](Context& ctx) {
-                std::string s = "";
-                for(auto c : ctx.node->children) {
-                    s += c->name + "=\"" + c->opt_str + "\" ";
-                }
-                ctx.source = s;
             };
         }
     };

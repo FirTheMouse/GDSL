@@ -1,12 +1,69 @@
 #pragma once
 
-#include "../modules/Q-TwigSnap.hpp"
 #include "../modules/GDSL-Script.hpp"
 #include "../modules/Q-Web.hpp"
+#include "../modules/Q-HTML.hpp"
 
 namespace GDSL {
-    struct TwigSnap_DSL_Frontend : public virtual TwigSnap_Unit, public virtual Q_Script_Unit, public virtual Web_Unit {
+    struct TwigSnap_DSL_Frontend : public virtual HTML_Unit,  public virtual Q_Script_Unit, public virtual Web_Unit {
         TwigSnap_DSL_Frontend() { init(); }
+
+        size_t route_id = reg_id("route");
+        size_t inlined_id = add_type("inlined");
+        size_t component_id = add_type("component");
+        size_t div_id = make_keyword("div",0,"",component_id);
+        size_t find_id = make_tokenized_keyword("find");
+        size_t serve_id = make_tokenized_keyword("serve");
+
+
+        g_ptr<Node> make_property(const std::string& type, const std::string& value) {
+            g_ptr<Node> prop_node = make<Node>(property_id);
+            prop_node->name = type;
+            prop_node->opt_str = value;
+            return prop_node;
+        }
+
+        void standard_gather_from_scope(Context& ctx) {
+            g_ptr<Node> node = ctx.node;
+            if(node->scope()) {
+                g_ptr<Node> properties = make<Node>(properties_id);
+                properties->mute = true;
+                node->scope()->quals << properties;
+                for(int i = 0;i<node->scope()->children.length();i++) {
+                    g_ptr<Node> c = node->scope()->children[i];
+                    if(c->type==func_call_id) {
+                        g_ptr<Node> ref = c->value->type_scope;
+                        g_ptr<Value> ref_v = ref->owner->value;
+                        if(ref_v->type==inlined_id) {
+                            node->scope()->quals << ref->quals;
+                            node->scope()->children.removeAt(i);
+                            i--;
+                        } else if(ref_v->type==component_id) {
+                            node->scope()->children.removeAt(i);
+                            node->scope()->children.insert(ref->owner,i);
+                        } else {
+                            //Is an actual func call, handle as such
+                        }
+                    } else if(c->children.empty()) {
+                        if(c->value->type==inlined_id) {
+                            node->scope()->quals << c->scope()->quals;
+                            node->scope()->children.removeAt(i);
+                            i--;
+                        } else if(c->value->type==component_id) {
+                            //Do nothing
+                        }
+                    } else if(c->children.length()==2&&c->type==colon_id||c->type==equals_id) {
+                        properties->children << make_property(c->left()->name,c->right()->name);
+                        node->scope()->children.removeAt(i);
+                        i--;
+                    } else if(c->children.length()==1&&c->value->type==component_id) {
+                        properties->children << c;
+                        node->scope()->children.removeAt(i);
+                        i--;
+                    } 
+                }
+            }
+        }
 
         void add_text_component(const std::string& f, uint32_t type) {
             tokenized_keywords.put(f,type);
@@ -36,27 +93,11 @@ namespace GDSL {
                 }
             };
             t_handlers[type] = [this](Context& ctx) {
-                if(ctx.node->scope()) {
-                    g_ptr<Node> properties = make<Node>(properties_id);
-                    ctx.node->quals << properties;
-                    properties->mute = true; //So nobody fires it as a qual on accident
-                    for(auto c : ctx.node->scope()->children) {
-                        if(c->children.length()==2) {
-                            properties->children << make_property(c->left()->name, c->right()->name);
-                        } else if(ctx.root->node_table.hasKey(c->name)) {
-                            ctx.node->quals << ctx.root->node_table.get(c->name);
-                        }
-                    }
-                }
+                standard_gather_from_scope(ctx);
             };
         }
 
-        size_t route_id = reg_id("route");
-        size_t find_id = make_tokenized_keyword("find");
-        size_t serve_id = make_tokenized_keyword("serve");
-
         void init() override {
-
             tokenized_keywords.put(labels[server_id],server_id);
             tokenized_keywords.put(labels[port_id],port_id);
             tokenized_keywords.put(labels[listen_id],listen_id);
@@ -79,28 +120,10 @@ namespace GDSL {
             discard_types.push_if_absent(lbrace_id);
 
             fragment_handlers.default_function = [this](Context& ctx){
-                int depth = 0;
-                ctx.source = html_encode_node(ctx.node, depth);
+                ctx.source = html_encode_node(ctx.node);
             };
-
-            add_text_component("paragraph",paragraph_subtype);
-            t_handlers[text_id] = [this](Context& ctx) {
-                if(ctx.node->scope()) {
-                    g_ptr<Node> properties = make<Node>(properties_id);
-                    ctx.node->quals << properties;
-                    properties->mute = true; //So nobody fires it as a qual on accident
-                    for(auto c : ctx.node->scope()->children) {
-                        if(c->children.length()==2) {
-                            properties->children << make_property(c->left()->name, c->right()->name);
-                            if(c->left()->name == "id") {
-                                ctx.node->name = c->right()->name;
-                                ctx.node->in_scope->node_table.put(ctx.node->name,ctx.node);
-                            }
-                        } else if(ctx.root->node_table.hasKey(c->name)) {
-                            ctx.node->quals << ctx.root->node_table.get(c->name);
-                        }
-                    }
-                }
+            html_handlers.default_function = [this](Context& ctx){
+                //Emit nothing
             };
 
             t_handlers[route_id] = [this](Context& ctx) {          
@@ -115,38 +138,66 @@ namespace GDSL {
                     page += "<html>\n";
                     std::string body = "";
 
-                    int depth = 0;
-                    body += html_encode_node(body_node, depth);
+                    body += html_encode_node(body_node);
 
                     page += body;
                     page += "</html>";
                     ctx.source = page;
                 };
             };
-
             r_handlers[route_id] = [this](Context& ctx){
+                standard_gather_from_scope(ctx);
+            };
+            html_handlers[route_id] = [this](Context& ctx){
+                standard_emit_as_html(ctx);
+            };
+
+            r_handlers[func_decl_id] = [this](Context& ctx) {
+                standard_gather_from_scope(ctx);
+                ctx.node->scope()->type = div_id;
+            };
+            html_handlers[body_id] = [this](Context& ctx){
+                standard_emit_as_html(ctx);
+            };
+            html_handlers[func_decl_id] = [this](Context& ctx){
                 if(ctx.node->scope()) {
-                    g_ptr<Node> properties = make<Node>(properties_id);
-                    ctx.node->scope()->quals << properties;
-                    properties->mute = true; //So nobody fires it as a qual on accident
-                    for(auto c : ctx.node->scope()->children) {
-                        if(c->type==func_call_id) {
-                            ctx.node->scope()->quals << ctx.root->node_table[c->name];
-                        } else if(c->type==var_decl_id) {
-                            if(c->children.empty()) {
-                                c->type = div_id;
-                                c->children = c->value->type_scope->children;
-                                for(auto idk : c->value->type_scope->children) {
-                                    if(idk->type==func_call_id) {
-                                        c->quals << ctx.root->node_table[idk->name];
-                                    }
-                                }
-                            }
-                        } else if(c->children.length()==2) {
-                            properties->children << make_property(c->left()->name, c->right()->name);
-                        }
-                    }
+                    ctx.source = html_encode_node(ctx.node->scope());
+                }   
+            };
+            html_handlers[div_id] = [this](Context& ctx){
+                standard_emit_as_html(ctx);
+            };
+            html_handlers[var_decl_id] = [this](Context& ctx){
+                if(ctx.node->scope()) {
+                    ctx.source = html_encode_node(ctx.node->scope());
+                }   
+            };
+
+            tokenized_keywords.put("script",script_id);
+            n_handlers[script_id] = [this](Context& ctx) {
+                if(ctx.index+1<ctx.result->length()) {
+                    ctx.node->children << ctx.result->take(ctx.index+1);
+                    ctx.node->name = "";
                 }
+            };
+            html_handlers[script_id] =[this](Context& ctx){
+                std::string s = "<script>\n";
+                if(ctx.node->left()) {
+                    process_node(ctx,ctx.node->left());
+                    s+=ctx.node->left()->value->get<std::string>();
+                    s+="\n";
+                }
+                s+="</script>\n";
+                ctx.source = s;
+            };
+            set_binding_powers(colon_id,4,6);
+
+            add_input_component("button",button_id);
+            add_input_component("input",input_id);
+            add_input_component("textarea");
+            add_text_component("paragraph",paragraph_subtype);
+            r_handlers[text_id] = [this](Context& ctx) {
+                standard_gather_from_scope(ctx);
             };
 
             x_handlers[serve_id] = [this](Context& ctx){
@@ -160,7 +211,7 @@ namespace GDSL {
                         if(retrived->type!=body_id) body+= "<body>\n";
 
                         int depth = 0;
-                        body += html_encode_node(retrived, depth);
+                        body += html_encode_node(retrived);
 
                         if(retrived->type!=body_id) body+= "</body>\n";
                     } else {
@@ -173,105 +224,7 @@ namespace GDSL {
                 page += "</html>";
                 ctx.node->value->set<std::string>(page);
             };
-
             x_handlers[route_id] = x_handlers[node_block_id];
-            html_handlers[in_id] = [this](Context& ctx) {
-                //Don't emit this
-            };
-            html_handlers[on_id] = [this](Context& ctx) {
-                //Don't emit this
-            };
-
-
-            r_handlers[type_decl_id] = [this](Context& ctx) {
-                if(ctx.node->scope()) {
-                    g_ptr<Node> properties = make<Node>(properties_id);
-                    ctx.node->quals << properties;
-                    properties->mute = true; //So nobody fires it as a qual on accident
-                    for(auto c : ctx.node->scope()->children) {
-                        if(c->type==func_call_id) {
-                            ctx.node->quals << ctx.root->node_table[c->name];
-                        } else if(c->children.length()==2) {
-                            properties->children << make_property(c->left()->name, c->right()->name);
-                        }
-                    }
-                }
-            };
-            html_handlers[func_call_id] = [this](Context& ctx) {
-                //Don't emit
-            };
-            html_handlers[identifier_id] = [this](Context& ctx) {
-                //Don't emit
-            };
-            html_handlers[colon_id] = [this](Context& ctx) {
-                //Don't emit
-            };
-            html_handlers[literal_id] = [this](Context& ctx) {
-                //Don't emit
-            };
-
-            html_handlers[type_decl_id] = [this](Context& ctx) {
-                if(ctx.node->scope()) {
-                    if(ctx.node->scope()->type!=div_id) {
-                        ctx.node->scope()->type = div_id;
-                        ctx.node->scope()->name = "id=\"" + ctx.node->name + "\"";
-                    }
-                    ctx.node->scope()->quals = ctx.node->quals;
-                    ctx.source = html_encode_node(ctx.node->scope(), ctx.index);
-                }
-            };
-
-        
-
-            tokenized_keywords.put("script",script_id);
-            n_handlers[script_id] = [this](Context& ctx) {
-                if(ctx.index+1<ctx.result->length()) {
-                    ctx.node->children << ctx.result->take(ctx.index+1);
-                    ctx.node->name = "";
-                }
-            };
-            html_handlers[read_file_id] = [this](Context& ctx) {
-                //Don't emit
-            };
-
-
-            set_binding_powers(colon_id,4,6);
-
-            tokenized_keywords.put("style",style_id);
-            a_handlers[style_id] = [this](Context& ctx) {
-                if(ctx.index+1<ctx.result->length()) {
-                    g_ptr<Node> next = ctx.result->get(ctx.index+1);
-                    if(next->type==identifier_id||next->type==string_id) {
-                        ctx.node->name = next->name;
-                        ctx.result->removeAt(ctx.index+1);
-                    }
-                }
-            };
-            t_handlers[style_id] = [this](Context& ctx) {
-                if(ctx.node->scope()) {
-                    ctx.node->mute = true; //So nobody fires it as a qual on accident
-                    ctx.root->distribute_node(ctx.node->name,ctx.node);
-                    for(auto c : ctx.node->scope()->children) {
-                        if(c->children.length()==2) {
-                            ctx.node->children << make_property(c->left()->name, c->right()->name);
-                        }
-                    }
-                }
-            };
-
-            add_input_component("button",button_id);
-            add_input_component("input",input_id);
-            add_input_component("textarea");
-            
-
-            t_handlers[find_id] = [this](Context& ctx) {
-                if(ctx.index+1<ctx.result->length()) {
-                    ctx.node->children << ctx.result->take(ctx.index+1);
-                }
-            };
-            x_handlers[find_id] = [this](Context& ctx) {
-
-            };
         }
 
         void run(g_ptr<Node> root) override {
@@ -288,6 +241,7 @@ namespace GDSL {
             standard_backwards_pass(root);
 
             #if PRINT_ALL
+                print("==FINAL FORM==");
                 print_root(root);
             #endif
 
@@ -303,8 +257,15 @@ namespace GDSL {
             }
 
             start_stage(x_handlers);
-            // process_node(server);
+            //process_node(server);
             standard_travel_pass(root);
+            // for(auto c : root->children) {
+            //     if(c->name=="/") {
+            //         std::string res = indent_html_text(html_encode_node(c->scope()));
+            //         print(res);
+            //         print("DONE EMITTING");
+            //     }
+            // }
         }
 
     };

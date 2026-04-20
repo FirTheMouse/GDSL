@@ -72,27 +72,46 @@ el.addEventListener('keydown', function(e) {
     }
 });
 
+function offsetToXY(text, offset) {
+    let x = 0, y = 0;
+    for(let i = 0; i < offset; i++) {
+        if(text[i] === '\n') { y++; x = 0; }
+        else x++;
+    }
+    return {x, y};
+}
+
+function xyToOffset(text, tx, ty) {
+    let x = 0, y = 0;
+    for(let i = 0; i < text.length; i++) {
+        if(y === ty && x === tx) return i;
+        if(text[i] === '\n') { y++; x = 0; }
+        else x++;
+    }
+    return text.length;
+}
+
 el.addEventListener('input', function() {
-    const saved_cursor = getCursorOffset(el);
-    const saved_length = el.textContent.length;
+    const text = el.innerText;
+    const offset = getCursorOffset(el);
+    const pos = offsetToXY(text, offset);
+    
     clearTimeout(debounce_timer);
     debounce_timer = setTimeout(function() {
 
         if(abort_controller) abort_controller.abort();
         abort_controller = new AbortController();
 
-        const text = el.innerText;
-        const saved_cursor = getCursorOffset(el);
-        sent_length = text.length;
         fetch(window.location.pathname, {
             method: "FRAG",
-            body: "code " + text
+            body: "code " + text,
+            signal: abort_controller.signal
         })
         .then(r => r.text())
         .then(html => {
-            const diff = el.textContent.length - saved_length;
             el.innerHTML = html;
-            setCursorOffset(el, saved_cursor + diff);
+            const new_offset = xyToOffset(el.innerText, pos.x, pos.y);
+            setCursorOffset(el, new_offset);
         });
     }, 150);
 });

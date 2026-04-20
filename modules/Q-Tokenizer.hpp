@@ -10,6 +10,9 @@ namespace GDSL {
         map<uint32_t, Handler> tokenizer_state_functions;
         Handler tokenizer_default_function = nullptr;
 
+        float at_x = 0.0f;
+        float at_y = 0.0f;
+
         size_t make_tokenized_keyword(const std::string& token_name, size_t default_id = 0) {
             size_t id = default_id;
             if(default_id==0) {
@@ -21,8 +24,10 @@ namespace GDSL {
 
         size_t add_token(char c, const std::string& f) {
             size_t id = reg_id(f);
-            tokenizer_functions[c] =  [id,c](Context& ctx) {
+            tokenizer_functions[c] = [this,id,c](Context& ctx) {
                 ctx.node = make<Node>(id,c);
+                ctx.node->x = at_x; 
+                ctx.node->y = at_y;
                 ctx.result->push(ctx.node);
             };
             char_is_split.put(c, true);
@@ -46,11 +51,14 @@ namespace GDSL {
         size_t in_alpha_id = reg_id("IN_ALPHA");
         size_t in_digit_id = reg_id("IN_DIGIT");
         size_t end_id = add_token(';',"END"); //Can commonly be changed to be a line return
+        size_t quote_id = reg_id("QUOTE");
 
         list<g_ptr<Node>> tokenize(const std::string& code) {
             list<g_ptr<Node>> result;
             uint32_t state = 0;
             int index = 0;
+            at_x = 0.0f;
+            at_y = 0.0f;
             Context ctx(result,index);
             ctx.source = code;
 
@@ -71,6 +79,7 @@ namespace GDSL {
                     auto func = tokenizer_functions.getOrDefault(c,tokenizer_default_function);
                     func(ctx);
                 }
+                at_x += 1.0f;
                 ++index;
             }  
 
@@ -94,6 +103,7 @@ namespace GDSL {
                 char c = ctx.source.at(ctx.index);
                 if(char_is_split.getOrDefault(c,false)) {
                     ctx.state = 0; 
+                    at_x-=1.0f;
                     --ctx.index;
                     ctx.node->type = tokenized_keywords.getOrDefault(ctx.node->name,ctx.node->type);
                     return;
@@ -109,6 +119,7 @@ namespace GDSL {
                         ctx.node->type = float_id;
                     } else {
                         ctx.state = 0; 
+                        at_x-=1.0f;
                         --ctx.index;
                         return;
                     }
@@ -118,13 +129,18 @@ namespace GDSL {
                 ctx.node->name += c;
             });
 
-            tokenizer_state_functions.put(in_string_id,[](Context& ctx) {
+            tokenizer_state_functions.put(in_string_id,[this](Context& ctx) {
                 char c = ctx.source.at(ctx.index);
                 if(c=='"') {
                     ctx.state=0;
+                    g_ptr<Node> quote = make<Node>(quote_id,c);
+                    quote->x = at_x; quote->y = at_y;
+                    quote->mute = true;
+                    ctx.result->last()->quals << quote;
                 } else if(c=='\\') {
                     if(ctx.index+1<ctx.source.length()) {
                         ctx.node->name += ctx.source.at(ctx.index+1);
+                        at_x+=1.0f;
                         ctx.index++;
                     }
                 }
@@ -135,9 +151,16 @@ namespace GDSL {
             tokenizer_functions.put('"',[this](Context& ctx) {
                 ctx.state = in_string_id;
                 ctx.node = make<Node>();
+                ctx.node->x = at_x+1;
+                ctx.node->y = at_y;
                 ctx.node->type = string_id;
                 ctx.node->name = "";
                 ctx.result->push(ctx.node);
+
+                g_ptr<Node> quote = make<Node>(quote_id,'"');
+                quote->x = at_x; quote->y = at_y;
+                quote->mute = true;
+                ctx.result->last()->quals << quote;
             });
 
             tokenizer_functions[' '] = [this](Context& ctx) {
@@ -147,7 +170,8 @@ namespace GDSL {
                 //Just skip
             };
             tokenizer_functions['\n'] = [this](Context& ctx) {
-                //Just skip
+                at_y += 1.0f;
+                at_x = -1.0f;
             };
     
             tokenizer_default_function = [this](Context& ctx) {
@@ -155,11 +179,15 @@ namespace GDSL {
                 if(std::isalpha(c)) {
                     ctx.state = in_alpha_id;
                     ctx.node = make<Node>(identifier_id,c);
+                    ctx.node->x = at_x;
+                    ctx.node->y = at_y;
                     ctx.result->push(ctx.node);
                 }
                 else if(std::isdigit(c)) {
                     ctx.state = in_digit_id;
                     ctx.node = make<Node>(int_id,c);
+                    ctx.node->x = at_x;
+                    ctx.node->y = at_y;
                     ctx.result->push(ctx.node);
                 }  else {
                     print("tokenize::default_function missing handling for char: ",c);

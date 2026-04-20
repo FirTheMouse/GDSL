@@ -190,6 +190,31 @@ namespace GDSL {
             return sub;
         }
 
+        void stamp_onto_page(g_ptr<Node> node, list<std::string>& lines) {
+            if(node->x!=-1.0f&&node->y!=-1.0f) {
+                int x = (int)node->x;
+                int y = (int)node->y;
+                while(y>=lines.length()) {lines << "";}
+                while((x+node->name.length())>=lines[y].length()) lines[y]+=" ";
+                for(char c : node->name) lines[y][x++] = c;
+            }
+            for(auto c : node->children) stamp_onto_page(c,lines);
+            for(auto q : node->quals) stamp_onto_page(q,lines);
+            for(auto s : node->scopes) stamp_onto_page(s,lines);
+            if(node->value) {
+                for(auto q : node->value->quals) stamp_onto_page(q,lines);
+            }
+        }
+
+        std::string nodenet_to_string(g_ptr<Node> root) {
+            list<std::string> lines;
+            stamp_onto_page(root,lines);
+            std::string out = "";
+            for(auto l : lines) {
+                out+=l+"\n";
+            }
+            return out;
+        }
 
 
         void init() override {
@@ -203,11 +228,16 @@ namespace GDSL {
                 char c = ctx.source.at(ctx.index+1);
                 if(c=='<') {
                     ctx.node = make<Node>(push_id);
+                    ctx.node->x = at_x;
+                    ctx.node->y = at_y;
                     ctx.node->name = "<<";
                     ctx.result->push(ctx.node);
+                    at_x+=1.0f;
                     ctx.index++;
                 } else {
                     ctx.node = make<Node>(langle_id,c);
+                    ctx.node->x = at_x;
+                    ctx.node->y = at_y;
                     ctx.result->push(ctx.node);
                 }
             };
@@ -218,10 +248,15 @@ namespace GDSL {
                 if(c=='=') {
                     ctx.node = make<Node>(is_id);
                     ctx.node->name = "==";
+                    ctx.node->x = at_x;
+                    ctx.node->y = at_y;
                     ctx.result->push(ctx.node);
+                    at_x+=1.0f;
                     ctx.index++;
                 } else {
                     ctx.node = make<Node>(equals_id,c);
+                    ctx.node->x = at_x;
+                    ctx.node->y = at_y;
                     ctx.result->push(ctx.node);
                 }
             };
@@ -692,11 +727,17 @@ namespace GDSL {
                 int root_idx = -1;
                 if(is_qualifier && node->value->sub_type != 0) {
                     decl_value->quals << value_to_qual(node->value);
+                    decl_value->quals.last()->name = node->name;
+                    decl_value->quals.last()->x = node->x;
+                    decl_value->quals.last()->y = node->y;
                     for(int i = 0; i < node->children.length(); i++) {
                         g_ptr<Node> c = node->children[i];
                         c->find_value_in_scope();
                         if(c->value->type!=0) {
                             decl_value->quals << value_to_qual(c->value);
+                            decl_value->quals.last()->name = c->name;
+                            decl_value->quals.last()->x = c->x;
+                            decl_value->quals.last()->y = c->y;
                         } else {
                             root_idx = i;
                             break;
@@ -705,11 +746,16 @@ namespace GDSL {
                     if(root_idx!=-1) {
                         g_ptr<Node> root = node->children[root_idx];
                         node->name = root->name;
+                        node->x = root->x;
+                        node->y = root->y;
                         for(int i = root_idx+1; i < node->children.length(); i++) {
                             g_ptr<Node> c = node->children[i];
                             c->find_value_in_scope();
                             if(c->value->type!=0) {
                                 node->quals << value_to_qual(c->value);
+                                node->quals.last()->name = c->name;
+                                node->quals.last()->x = c->x;
+                                node->quals.last()->y = c->y;
                             } 
                         }
                         node->children = node->children.take(root_idx)->children;

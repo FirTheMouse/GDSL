@@ -206,3 +206,28 @@ server {
 
 
 
+
+// el.addEventListener('input', function() {
+//     const saved_cursor = getCursorOffset(el);
+//     const saved_length = el.textContent.length;
+//     clearTimeout(debounce_timer);
+//     debounce_timer = setTimeout(function() {
+
+//         if(abort_controller) abort_controller.abort();
+//         abort_controller = new AbortController();
+
+//         const text = el.innerText;
+//         const saved_cursor = getCursorOffset(el);
+//         sent_length = text.length;
+//         fetch(window.location.pathname, {
+//             method: "FRAG",
+//             body: "code " + text
+//         })
+//         .then(r => r.text())
+//         .then(html => {
+//             const diff = el.textContent.length - saved_length;
+//             el.innerHTML = html;
+//             setCursorOffset(el, saved_cursor + diff);
+//         });
+//     }, 150);
+// });

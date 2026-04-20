@@ -19,10 +19,14 @@ namespace GDSL {
 
         size_t fragment_highlight_id = make_tokenized_keyword("fragment_highlight");
 
-        g_ptr<Node> make_property(const std::string& type, const std::string& value) {
+        g_ptr<Node> make_property(g_ptr<Node> type, g_ptr<Node> value, g_ptr<Node> parent = nullptr) {
             g_ptr<Node> prop_node = make<Node>(property_id);
-            prop_node->name = type;
-            prop_node->opt_str = value;
+            prop_node->name = type->name;
+            prop_node->opt_str = value->name;
+            prop_node->quals << copy_as_token(type);
+            prop_node->quals << copy_as_token(value);
+            if(parent)
+                prop_node->quals << copy_as_token(parent);
             return prop_node;
         }
 
@@ -39,9 +43,11 @@ namespace GDSL {
                         g_ptr<Value> ref_v = ref->owner->value;
                         if(ref_v->type==inlined_id) {
                             node->scope()->quals << ref->quals;
+                            node->scope()->quals << copy_as_token(c);
                             node->scope()->children.removeAt(i);
                             i--;
                         } else if(ref_v->type==component_id) {
+                            node->scope()->quals << copy_as_token(c);
                             node->scope()->children.removeAt(i);
                             node->scope()->children.insert(ref->owner,i);
                         } else {
@@ -49,16 +55,20 @@ namespace GDSL {
                         }
                     } else if(c->children.empty()) {
                         if(c->value->type==inlined_id) {
+                            node->scope()->quals << copy_as_token(c);
                             node->scope()->quals << c->scope()->quals;
                             node->scope()->children.removeAt(i);
                             i--;
                         } 
                     } else if(c->children.length()==2&&c->type==colon_id||c->type==equals_id) {
-                        properties->children << make_property(c->left()->name,c->right()->name);
+                        properties->children << make_property(c->left(),c->right(),c);
+                        node->scope()->quals << properties->children.pop(); //Stealing the tokens for ourselves
                         node->scope()->children.removeAt(i);
                         i--;
                     } else if(c->children.length()==1&&(c->value->type==component_id||c->value->type==text_id||c->value->type==foldable_id)) {
                         properties->children << c;
+                        node->scope()->quals << copy_as_token(c);
+                        node->scope()->quals << copy_as_token(c->left());
                         node->scope()->children.removeAt(i);
                         i--;
                     } 
@@ -71,7 +81,7 @@ namespace GDSL {
             n_handlers[type] = [this](Context& ctx) {
                 if(ctx.index+1<ctx.result->length()) {
                     ctx.node->children << ctx.result->take(ctx.index+1);
-                    ctx.node->name = ctx.node->left()->name;
+                    ctx.node->opt_str = ctx.node->left()->name;
                 }
                 ctx.node->sub_type = ctx.node->type;
                 ctx.node->type = text_id;
@@ -88,7 +98,8 @@ namespace GDSL {
                 if(ctx.index+1<ctx.result->length()) {
                     g_ptr<Node> next = ctx.result->get(ctx.index+1);
                     if(next->type==identifier_id||next->type==string_id) {
-                        ctx.node->name = next->name;
+                        ctx.node->opt_str = next->name;
+                        ctx.node->quals << copy_as_token(ctx.result->get(ctx.index+1));
                         ctx.result->removeAt(ctx.index+1);
                     }
                 }
@@ -245,7 +256,7 @@ namespace GDSL {
                 out+="<details>\n";
                 out+="<summary ";
                 out+=emit_inline_html(ctx); 
-                out+=">\n"+ctx.node->name+"\n</summary>\n";
+                out+=">\n"+ctx.node->opt_str+"\n</summary>\n";
                 for(auto c : ctx.node->children) {
                     out+=html_encode_node(c);
                 }
@@ -257,7 +268,6 @@ namespace GDSL {
             n_handlers[script_id] = [this](Context& ctx) {
                 if(ctx.index+1<ctx.result->length()) {
                     ctx.node->children << ctx.result->take(ctx.index+1);
-                    ctx.node->name = "";
                 }
             };
             html_handlers[script_id] =[this](Context& ctx){
@@ -275,7 +285,6 @@ namespace GDSL {
             n_handlers[style_id] = [this](Context& ctx) {
                 if(ctx.index+1<ctx.result->length()) {
                     ctx.node->children << ctx.result->take(ctx.index+1);
-                    ctx.node->name = "";
                 }
             };
             html_handlers[style_id] =[this](Context& ctx){
@@ -354,6 +363,9 @@ namespace GDSL {
                     }
                 }
             }
+
+            print("AS STRING");
+            print(nodenet_to_string(root));
 
             start_stage(x_handlers);
             //process_node(server);

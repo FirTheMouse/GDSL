@@ -57,6 +57,7 @@ namespace GDSL {
         }
 
         std::string emit_inline_html(Context& ctx) {
+            if(ctx.node->mute) return "";
             std::string s = "";
             list<std::string> structural_prop_labels; list<std::string> structural_prop_values;
             list<std::string> style_prop_labels; list<std::string> style_prop_values;
@@ -169,14 +170,14 @@ namespace GDSL {
                 
                 if(ctx.node->left()) {
                     process_node(ctx, ctx.node->left());
-                    ctx.node->name = ctx.node->left()->value->get<std::string>();
+                    ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
                 }
                 
-                s+=">\n"+ctx.node->name+"\n</"+labels[ctx.node->sub_type]+">\n";
+                s+=">\n"+ctx.node->opt_str+"\n</"+labels[ctx.node->sub_type]+">\n";
                 ctx.source = s;
             };
             html_handlers[input_id] = [this](Context& ctx) { 
-                ctx.source = "<input "+ctx.node->name+">\n"; 
+                ctx.source = "<input "+ctx.node->opt_str+">\n"; 
             };
         }
     };

@@ -86,7 +86,10 @@ namespace GDSL {
                             on->children << gathered;
                             was_given_children = true;
                         }
+                        g_ptr<Node> token_on = copy_as_token(on);
                         on->copy(on->children.take(0));
+                        on->quals << token_on;
+                        on->quals << copy_as_token(ctx.node);
                         if(!was_given_children) {
                             if(on->children.empty()) {
                                 on->children << gathered;

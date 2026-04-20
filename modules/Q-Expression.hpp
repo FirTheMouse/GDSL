@@ -25,6 +25,9 @@ namespace GDSL {
                     g_ptr<Node> type_term = children[0];
                     g_ptr<Node> id_term = children[1];
     
+                    ctx.node->quals << copy_as_token(ctx.node);
+                    ctx.node->x = -1.0f; ctx.node->y = -1.0f;
+                    
                     ctx.node->name = type_term->name+c+id_term->name;
                     
                     if(type_term->type==var_decl_id) {

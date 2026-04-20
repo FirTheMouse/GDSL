@@ -76,6 +76,9 @@ namespace GDSL {
                 bool on_stack = stack.last().owner ? true : false;
                 if(p<=0) {
                     if(p<0) {
+                        if (current_scope->owner) {
+                            current_scope->owner->quals << copy_as_token(node);
+                        }
                         if (current_scope->parent) {
                             current_scope = current_scope->parent;
                         }
@@ -120,6 +123,7 @@ namespace GDSL {
                     current_scope = current_scope->spawn_sub_scope();
                     current_scope->type = scope_id;
                     if (owner_node) {
+                        owner_node->quals << copy_as_token(node);
                         auto func = scope_link_handlers.getOrDefault(owner_node->type,default_scope_function);
                         func(current_scope,parent_scope,owner_node);
                     } else {

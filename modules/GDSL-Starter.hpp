@@ -75,14 +75,15 @@ namespace GDSL {
             set_binding_powers(dot_id, 8,9);
 
             t_handlers[end_id] = [this](Context& ctx){
-                ctx.result->removeAt(ctx.index);
-                ctx.index--;
+                if(ctx.index>0) {
+                    ctx.index--;
+                    ctx.result->get(ctx.index)->quals << copy_as_token(ctx.result->take(ctx.index+1));
+                } else if(ctx.index<ctx.result->length()) {
+                    ctx.index++;
+                    ctx.result->get(ctx.index)->quals << copy_as_token(ctx.result->take(ctx.index-1));
+                }
             };
-
-            t_handlers[comma_id] = [this](Context& ctx){
-                ctx.result->removeAt(ctx.index);
-                ctx.index--;
-            };
+            t_handlers[comma_id] = t_handlers[end_id];
 
             n_handlers.default_function = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -149,6 +150,10 @@ namespace GDSL {
 
             start_stage(x_handlers);
             standard_travel_pass(root);
+
+            for(auto q : root->children[1]->value->quals) {
+                print(node_to_string(q));
+            }
         };
     };
 }

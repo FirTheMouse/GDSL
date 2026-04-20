@@ -30,10 +30,14 @@ int main(int argc, char* argv[]) {
     // test->run(test->process(""));
 
     g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
-    twig->run(twig->process(readFile("modules/tests/pebble.gld")));
+    root = twig->process(readFile("modules/tests/pebble.gld"));
+    twig->run(root);
     
     // g_ptr<GQL_Unit> q_script = make<GQL_Unit>();
-    // q_script->run(q_script->process(readFile("modules/tests/qdemo.gld")));
+    // root = q_script->process(readFile("modules/tests/qtest.gld"));
+    // q_script->run(root);
+    // print("AS STRING");
+    // print(q_script->nodenet_to_string(root));
 
 
     // std::string display = "";

@@ -1,16 +1,9 @@
-Node n;
-Node v;
+int func(int a) {
+    print(a);
+}
+
+Node n; 
 Node k;
 Node j;
-Node m;
-n.children << v;
-n.children << k;
-j = v;
-j.name = "Joe";
-n.children(1) = j;
-n.node_table << j("one");
-m.node_table = n.node_table;
-print(n);
-print(m);
-
-test;
+n.children << j; 
+print("hey",n);

@@ -204,6 +204,9 @@ public:
     uint32_t type = 0;
     uint32_t sub_type = 0;
     std::string name = "";
+    float x = -1.0f;
+    float y = -1.0f;
+    float z = -1.0f;
     g_ptr<Value> value = nullptr;
     list<g_ptr<Node>> children;
 
@@ -255,7 +258,11 @@ public:
 
     void copy(g_ptr<Node> o) {
         type = o->type;
+        sub_type = o->sub_type;
         name = o->name;
+        x = o->x;
+        y = o->y;
+        z = o->z;
         value = o->value;
         children = o->children;
         quals = o->quals;
@@ -484,7 +491,8 @@ struct Unit : public q_object {
         to_return += labels[node->type]
         + (node->sub_type==0?"":":"+labels[node->sub_type])
         + (node->name.empty()?"":" "+green(node->name)+" ")  
-        + (node->value?value_info(node->value):"") 
+        + (node->value?value_info(node->value):"")
+        + (node->x!=-1.0f?"("+std::to_string((int)node->x)+","+std::to_string((int)node->y)+")":"")
         + (!node->children.empty()?"[C:"+std::to_string(node->children.length())+"]":"")  
         + (node->in_scope?"{"+node->in_scope->name+"}":"");
         return to_return;
@@ -548,14 +556,29 @@ struct Unit : public q_object {
         if(!node->children.empty()) {
             //to_return += " ["+std::to_string(children.length())+"]";
             for(int i=0;i<node->children.length();i++) {
-                if(node->children[i])
+                if(node->children[i]) {
                     to_return += "\n " + node_to_string(node->children[i], depth + 1, i, print_sub_scopes);
-                else 
+                }
+                else {
                     to_return += "\n" + indent + "[NULL]";
+                }
             }
         }
     
         return to_return;
+    }
+
+    g_ptr<Node> copy_as_token(g_ptr<Node> node) {
+        g_ptr<Node> copy = make<Node>(node->type);
+        copy->name = node->name;
+        copy->x = node->x;
+        copy->y = node->y;
+        copy->z = node->z;
+        copy->mute = true;
+        for(auto q : node->quals) {
+            if(q->mute)  copy->quals << q;
+        }
+        return copy;
     }
 
 
@@ -1015,6 +1038,9 @@ struct Unit : public q_object {
     void write_node(g_ptr<Node> node, std::ostream& out) {
         write_raw(out, node->type);
         write_string(out, node->name);
+        write_raw<float>(out, node->x);
+        write_raw<float>(out, node->y);
+        write_raw<float>(out, node->z);
         write_string(out, node->opt_str);
         write_raw(out, node->is_scope);
 
@@ -1089,6 +1115,9 @@ struct Unit : public q_object {
     void read_node(g_ptr<Node> node, std::istream& in, map<uint32_t,uint32_t>& id_remap) {
         node->type = id_remap.getOrDefault(read_raw<uint32_t>(in), (unsigned int)0);
         node->name = read_string(in);
+        node->x = read_raw<float>(in);
+        node->y = read_raw<float>(in);
+        node->z = read_raw<float>(in);
         node->opt_str = read_string(in);
         node->is_scope = read_raw<bool>(in);
 

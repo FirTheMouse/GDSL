@@ -188,7 +188,7 @@ div side_bar {
                             }
                             button to_sent {
                                 "id" : "to_sent";
-                                "onclick" : "goTo('/')";
+                                "onclick" : "frag('to_sent')";
                                 basic_button;
                             }
                     }
@@ -202,6 +202,13 @@ div side_bar {
             window.location.href = route;
         }
     ";
+
+    in fragmenting {
+        print(node);
+        string src = emit_as_html(node);
+        source = src;
+        print(src);
+    }
 }
 
 "/new" {

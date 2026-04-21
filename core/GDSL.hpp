@@ -7,7 +7,7 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 0
+#define PRINT_ALL 1
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language
@@ -498,6 +498,9 @@ struct Unit : public q_object {
         return to_return;
     }
 
+    #define MUTE_TABLES 1
+    #define MUTE_MUTED_QUALS 1
+
     std::string node_to_string(g_ptr<Node> node, int depth = 0, int index = 0, bool print_sub_scopes = false) {
         std::string indent(depth * 2, ' ');
         std::string to_return = "";
@@ -507,11 +510,17 @@ struct Unit : public q_object {
         if(!node->quals.empty()) {
             to_return += " [";
             for(int i=0;i<node->quals.length();i++) {
-                to_return += labels[node->quals[i]->type]+(i!=node->quals.length()-1?", ":"");
+                #if MUTE_MUTED_QUALS
+                if(!node->quals[i]->mute)
+                    to_return += labels[node->quals[i]->type]+(i!=node->quals.length()-1?", ":"");
+                #else
+                    to_return += labels[node->quals[i]->type]+(i!=node->quals.length()-1?", ":"");
+                #endif
             }
             to_return += "]";
         }
 
+        #if !MUTE_TABLES 
         if(node->value_table.size()>0) {
             to_return += "\n" + indent + "   Value table:";
             for(auto [key,val] : node->value_table.entrySet()) {
@@ -525,6 +534,7 @@ struct Unit : public q_object {
                 to_return += "\n" + indent + "     Key: "+key+" | "+node_info(val);
             }
         }
+        #endif
     
 
 
@@ -706,10 +716,26 @@ struct Unit : public q_object {
         
     }
 
-    g_ptr<Node> scan_for_node(const std::string& label, g_ptr<Node> from) {
+    g_ptr<Node> scan_for_node_via_node_table(const std::string& label, g_ptr<Node> from) {
         if(from->node_table.hasKey(label)) {
             return from->node_table.get(label);
         } else {
+            for(auto scope : from->scopes) {
+                g_ptr<Node> found = scan_for_node_via_node_table(label,scope);
+                if(found) {
+                    return found;
+                }
+            }
+            return nullptr;
+        }
+    }
+
+    g_ptr<Node> scan_for_node(const std::string& label, g_ptr<Node> from) {
+            for(auto c : from->children) {
+                if(c->name==label) {
+                    return c;
+                }
+            }
             for(auto scope : from->scopes) {
                 g_ptr<Node> found = scan_for_node(label,scope);
                 if(found) {
@@ -717,7 +743,6 @@ struct Unit : public q_object {
                 }
             }
             return nullptr;
-        }
     }
 
     g_ptr<Node> find_scope(g_ptr<Node> start, std::function<bool(g_ptr<Node>)> check) {

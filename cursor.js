@@ -174,5 +174,5 @@ el.addEventListener('input', function() {
             const new_offset = xyToOffset(el.innerText, pos.x, pos.y);
             setCursorOffset(el, new_offset);
         });
-    }, 150);
+    }, 300);
 });

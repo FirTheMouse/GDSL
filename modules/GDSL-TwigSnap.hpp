@@ -20,6 +20,7 @@ namespace GDSL {
 
         size_t fragment_highlight_id = make_tokenized_keyword("fragment_highlight");
         size_t pebble_post_id = make_tokenized_keyword("pebble_post");
+        size_t emit_as_html_id = make_tokenized_keyword("emit_as_html");
 
         g_ptr<Node> make_property(g_ptr<Node> type, g_ptr<Node> value, g_ptr<Node> parent = nullptr) {
             g_ptr<Node> prop_node = make<Node>(property_id);
@@ -65,7 +66,7 @@ namespace GDSL {
                             node->scope()->quals << c->scope()->quals;
                             node->scope()->children.removeAt(i);
                             i--;
-                        } 
+                        }
                     } else if(c->children.length()==2&&c->type==colon_id||c->type==equals_id) {
                         properties->children << make_property(c->left(),c->right(),c);
                         node->scope()->quals <= properties->children.last()->quals; //Stealing the tokens for ourselves
@@ -104,9 +105,13 @@ namespace GDSL {
                 if(ctx.index+1<ctx.result->length()) {
                     g_ptr<Node> next = ctx.result->get(ctx.index+1);
                     if(next->type==identifier_id||next->type==string_id) {
-                        ctx.node->opt_str = next->name;
-                        ctx.node->quals << copy_as_token(ctx.result->get(ctx.index+1));
-                        ctx.result->removeAt(ctx.index+1);
+
+                        ctx.node->quals << copy_as_token(ctx.node);
+                        ctx.node->x = -1.0f; ctx.node->y = -1.0f;
+
+                        ctx.node->name = next->name;
+                        //ctx.result->removeAt(ctx.index+1);
+                        ctx.node->children  << ctx.result->take(ctx.index+1);
                     }
                 }
             };
@@ -117,6 +122,15 @@ namespace GDSL {
                 }
             };
             html_handlers[type] = [this](Context& ctx) {
+                // if(ctx.node->left()) {
+                //     process_node(ctx.node->left());
+                //     if(ctx.node->left()->value->type==string_id) {
+                //         ctx.node->name = 
+                //     } else {
+
+                //     }
+                // }
+
                 if(ctx.node->scope()) {
                     standard_emit_as_html(ctx,ctx.node->scope());
                 } else {
@@ -202,6 +216,13 @@ namespace GDSL {
                 //Emit nothing
             };
 
+
+            x_handlers[emit_as_html_id] = [this](Context& ctx) {
+                process_node(ctx, ctx.node->left());
+                ctx.node->value->set<std::string>(standard_emit_as_html(ctx, ctx.node->left()->value->get<g_ptr<Node>>()));
+                ctx.node->value->type = string_id;
+                ctx.node->value->size = 24;
+            };
 
             x_handlers[fragment_highlight_id] = [this](Context& ctx) {
                 std::string source = ctx.sub->source;

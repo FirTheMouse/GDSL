@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     // thistle->run(thistle_root);
     
     // g_ptr<GQL_Unit> q_script = make<GQL_Unit>();
-    // root = q_script->process(readFile("modules/tests/qtest.gld"));
+    // root = q_script->process(readFile("modules/tests/qdemo.gld"));
     // q_script->run(root);
 
 

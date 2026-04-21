@@ -340,6 +340,8 @@ namespace GDSL {
 
             x_handlers[push_id] = [this](Context& ctx){
                 backwards_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
+                
                 if(ctx.node->left()->value->type==store_id) {
                     if(ctx.node->right()->children.length()==1) {
                         print(node_to_string(ctx.node->right()));
@@ -383,6 +385,7 @@ namespace GDSL {
             x_handlers[equals_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
 
+                if(!ctx.node->left()||!ctx.node->right()) return;
 
                 g_ptr<Value> from = ctx.node->right()->value;
                 g_ptr<Value> to = ctx.node->left()->value;

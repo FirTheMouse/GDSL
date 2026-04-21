@@ -168,6 +168,7 @@ namespace GDSL {
 
             x_handlers[plus_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->value->set<int>(
                     *(int*)ctx.node->left()->value->data
                     +
@@ -179,6 +180,7 @@ namespace GDSL {
     
             x_handlers[dash_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->value->set<int>(
                     *(int*)ctx.node->left()->value->data
                     -
@@ -190,6 +192,7 @@ namespace GDSL {
 
             x_handlers[slash_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 int divisor = *(int*)ctx.node->right()->value->data;
                 if(divisor == 0) {
                     attach_error(ctx.node, major_error, "slash:x_handler division by zero");
@@ -202,6 +205,7 @@ namespace GDSL {
 
             x_handlers[star_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->value->set<int>(
                     *(int*)ctx.node->left()->value->data
                     *
@@ -213,6 +217,7 @@ namespace GDSL {
     
             x_handlers[rangle_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->value->set<bool>(
                     *(int*)ctx.node->left()->value->data
                     >
@@ -224,6 +229,7 @@ namespace GDSL {
     
             x_handlers[langle_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->value->set<bool>(
                     *(int*)ctx.node->left()->value->data
                     <
@@ -235,10 +241,14 @@ namespace GDSL {
 
             t_handlers[equals_id] = [this](Context& ctx){ //So we don't turn things into declerations
                 standard_sub_process(ctx);
+                if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->name = ctx.node->left()->name+"="+ctx.node->right()->name;
             };
             x_handlers[equals_id] = [this](Context& ctx) {
                 backwards_sub_process(ctx);
+
+                if(!ctx.node->left()||!ctx.node->right()) return;
+
                 if(!ctx.node->left()->value->data) {
                     ctx.node->left()->value->size = ctx.node->right()->value->size;
                     ctx.node->left()->value->type = ctx.node->right()->value->type;
@@ -251,7 +261,8 @@ namespace GDSL {
                     ctx.node->left()->value->type = ctx.node->right()->value->type;
                     ctx.node->left()->value->quals = ctx.node->right()->value->quals;
                 } 
-                memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
+                if(ctx.node->right()->value->data&&ctx.node->left()->value->data)
+                    memcpy(ctx.node->left()->value->data, ctx.node->right()->value->data, ctx.node->right()->value->size);
             };
 
 

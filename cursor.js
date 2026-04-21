@@ -1,12 +1,42 @@
-
-function compile_preview() {
+function load_file(target) {
     fetch(window.location.pathname, {
         method: "FRAG",
-        body: "preview " + document.getElementById('code').innerText
+        body: "code read "+target
+    })    
+    .then(r => r.text())
+    .then(result => {
+        document.getElementById('code').innerText = result;
+        document.getElementById('code').dispatchEvent(new Event('input'));
+    });
+}
+
+function save_file(target) {
+    fetch(window.location.pathname, {
+        method: "POST",
+        body: "write "+target+" "+document.getElementById('code').innerText
+    })
+}
+
+
+function end_preview(target) {
+    fetch(window.location.pathname, {
+        method: "FRAG",
+        body: target+" end nothing"
     })
     .then(r => r.text())
-    .then(html => {
-        document.getElementById('preview').innerHTML = html;
+    .then(() => {
+        document.getElementById(target).src = 'about:blank';
+    });
+}
+
+function compile_preview(target) {
+    fetch(window.location.pathname, {
+        method: "FRAG",
+        body: target + " preview " + document.getElementById('code').innerText
+    })
+    .then(r => r.text())
+    .then(result => {
+        document.getElementById(target).src = 'http://localhost:'+result+'/';
     });
 }
 
@@ -57,6 +87,8 @@ let abort_controller = null;
 
 const el = document.getElementById('code');
 
+
+
 el.addEventListener('keydown', function(e) {
     if(e.key === 'Tab') {
         e.preventDefault();
@@ -68,6 +100,35 @@ el.addEventListener('keydown', function(e) {
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
+        el.dispatchEvent(new Event('input'));
+    }
+
+    if(e.key === 'Enter') {
+        e.preventDefault();
+        
+        const sel = window.getSelection();
+        const range = sel.getRangeAt(0);
+        
+        const offset = getCursorOffset(el);
+        const text = el.innerText;
+        
+        let lineStart = offset - 1;
+        while(lineStart > 0 && text[lineStart - 1] !== '\n') lineStart--;
+        
+        let indent = '';
+        let i = lineStart;
+        while(i < text.length && (text[i] === ' ' || text[i] === '\t')) {
+            indent += text[i];
+            i++;
+        }
+        
+        const newline = document.createTextNode('\n' + indent);
+        range.insertNode(newline);
+        range.setStartAfter(newline);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        
         el.dispatchEvent(new Event('input'));
     }
 });
@@ -104,7 +165,7 @@ el.addEventListener('input', function() {
 
         fetch(window.location.pathname, {
             method: "FRAG",
-            body: "code " + text,
+            body: "code compile "+text,
             signal: abort_controller.signal
         })
         .then(r => r.text())

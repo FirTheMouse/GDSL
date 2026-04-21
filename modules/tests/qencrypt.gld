@@ -1,0 +1,19 @@
+"xor_encrypt" {
+    Node target;
+    Node mask;
+    in executing {
+        int i = 0;
+        while(i < target.children.length) {
+            Node child = target.children(i);
+            Node mask_bit = mask.children(i);
+            if(child.value.type == find_in_labels("int")) {
+                if(child.mute == mask_bit.mute) {
+                    child.mute = 0;
+                } else {
+                    child.mute = 1;
+                }
+            }
+            i = i+1;
+        }
+    }
+}

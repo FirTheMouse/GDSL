@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../core/GDSL.hpp"
+#include "../modules/Q-Error.hpp"
 
 namespace GDSL {
-    struct TAST_Unit : public virtual Unit {
+    struct TAST_Unit : public virtual Error_unit {
             //Qual handlers which act on the value
             size_t to_prefix_id(size_t id) {return id+1;}
             //Qual handlers which act on the node

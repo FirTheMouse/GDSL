@@ -69,16 +69,22 @@ namespace GDSL {
             x_handlers[return_id] = [this](Context& ctx) {
                 process_node(ctx, ctx.node->left());
                 g_ptr<Node> on_scope = ctx.node->in_scope;
-                while(on_scope->owner->type!=func_decl_id) {
-                    if(on_scope->owner) {
-                        on_scope = on_scope->owner->in_scope;
-                    } else {
-                        on_scope = ctx.node->in_scope;
-                        break;
+                if(on_scope) {
+                    while(on_scope->owner && on_scope->owner->type!=func_decl_id) {
+                        if(on_scope->owner) {
+                            on_scope = on_scope->owner->in_scope;
+                        } else {
+                            on_scope = ctx.node->in_scope;
+                            break;
+                        }
                     }
+                    if(ctx.node->left()) {
+                        on_scope->owner->value->copy(ctx.node->left()->value);
+                    }
+                    ctx.flag = true;
+                } else {
+                    attach_error(ctx.node,trivial_error,"return:x_handler return is not in any scope");
                 }
-                on_scope->owner->value->copy(ctx.node->left()->value);
-                ctx.flag = true;
             };
 
             x_handlers[break_id] = [](Context& ctx) {

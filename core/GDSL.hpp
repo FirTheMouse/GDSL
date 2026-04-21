@@ -7,7 +7,7 @@
 namespace GDSL {
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 1
+#define PRINT_ALL 0
 #define PRINT_STYLE 0
 
 //GDSL, Golden Dynamic Systems Language

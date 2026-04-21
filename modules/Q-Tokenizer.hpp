@@ -143,6 +143,10 @@ namespace GDSL {
                         at_x+=1.0f;
                         ctx.index++;
                     }
+                } else if(c=='\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                    ctx.node->name += c;
                 }
                 else {
                     ctx.node->name += c;
@@ -190,7 +194,10 @@ namespace GDSL {
                     ctx.node->y = at_y;
                     ctx.result->push(ctx.node);
                 }  else {
-                    print("tokenize::default_function missing handling for char: ",c);
+                    if(!ctx.result->empty()) {
+                        attach_error(ctx.result->last(), trivial_error, "tokenize:default_function missing handling for char: "+std::string(1, c));
+                    }
+                    print("tokenize:default_function missing handling for char: ",c);
                 }
             };
         }

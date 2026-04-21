@@ -27,7 +27,7 @@ namespace GDSL {
     
                     ctx.node->quals << copy_as_token(ctx.node);
                     ctx.node->x = -1.0f; ctx.node->y = -1.0f;
-                    
+
                     ctx.node->name = type_term->name+c+id_term->name;
                     
                     if(type_term->type==var_decl_id) {
@@ -190,13 +190,14 @@ namespace GDSL {
 
             x_handlers[slash_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                int divisor = *(int*)ctx.node->right()->value->data;
+                if(divisor == 0) {
+                    attach_error(ctx.node, major_error, "slash:x_handler division by zero");
+                    return;
+                }
                 ctx.node->value->set<int>(
-                    *(int*)ctx.node->left()->value->data
-                    /
-                    *(int*)ctx.node->right()->value->data
+                    *(int*)ctx.node->left()->value->data / divisor
                 );
-                ctx.node->value->type = ctx.node->left()->value->type;
-                ctx.node->value->size = ctx.node->left()->value->size;
             };
 
             x_handlers[star_id] = [this](Context& ctx){

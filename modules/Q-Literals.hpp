@@ -25,10 +25,13 @@ namespace GDSL {
             t_handlers[float_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 ctx.node->type = literal_id;
-    
-                g_ptr<Value> value = make<Value>(float_id,4);
-                value->set<float>(std::stof(ctx.node->name));
-                ctx.node->value = value;
+                try {
+                    g_ptr<Value> value = make<Value>(float_id,4);
+                    value->set<float>(std::stof(ctx.node->name));
+                    ctx.node->value = value;
+                } catch(std::exception& e) {
+                    attach_error(ctx.node, major_error, "float:t_handler Name "+ctx.node->name+" is not valid for conversion to float");
+                }
             }; 
     
             value_to_string[int_id] = [](void* data) {
@@ -40,10 +43,13 @@ namespace GDSL {
             t_handlers[int_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 ctx.node->type = literal_id;
-    
-                g_ptr<Value> value = make<Value>(int_id,4);
-                value->set<int>(std::stoi(ctx.node->name));
-                ctx.node->value = value;
+                try {
+                    g_ptr<Value> value = make<Value>(int_id,4);
+                    value->set<int>(std::stoi(ctx.node->name));
+                    ctx.node->value = value;
+                } catch(std::exception& e) {
+                    attach_error(ctx.node, major_error, "int:t_handler Name "+ctx.node->name+" is not valid for conversion to int");
+                }
             }; 
     
             value_to_string[bool_id] = [](void* data){
@@ -65,7 +71,6 @@ namespace GDSL {
             t_handlers[string_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 ctx.node->type = literal_id;
-    
                 g_ptr<Value> value = make<Value>(string_id,24);
                 value->set<std::string>(ctx.node->name);
                 ctx.node->value = value;

@@ -81,6 +81,8 @@ namespace GDSL {
                         }
                         if (current_scope->parent) {
                             current_scope = current_scope->parent;
+                        } else {
+                            attach_error(node, major_error, "scope:parse_scope unmatched closing brace");
                         }
                     }
                     else {

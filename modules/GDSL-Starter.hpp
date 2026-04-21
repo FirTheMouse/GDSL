@@ -26,7 +26,7 @@ namespace GDSL {
                 // }
                 if(ctx.index + 1 < ctx.result->length()) {
                     ctx.node->children << ctx.result->take(ctx.index + 1);
-                }
+                } 
                 // log("Current post result from ",ctx.node->name," taking right");
                 // for(int c=0;c<ctx.result->length();c++) {
                 //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
@@ -51,10 +51,10 @@ namespace GDSL {
                     ctx.node->children.insert(ctx.result->take(ctx.index - 1),0);
                     ctx.index--;
                 }
-                log("Current post result from ",ctx.node->name," taking left");
-                for(int c=0;c<ctx.result->length();c++) {
-                    log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
-                }
+                //log("Current post result from ",ctx.node->name," taking left");
+                // for(int c=0;c<ctx.result->length();c++) {
+                //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
+                // }
             }
         }
 
@@ -123,12 +123,39 @@ namespace GDSL {
             start_stage(s_handlers);
             parse_scope(root);
 
-            print("==PROCCESSING FINISHED==");
-            print_root(root);
+            // print("==PROCCESSING FINISHED==");
+            // print_root(root);
             //span->print_all();
             
             return root;
         };
+
+        void stamp_onto_page(g_ptr<Node> node, list<std::string>& lines) {
+            if(node->x>=0.0f&&node->y>=0.0f) {
+                int x = (int)node->x;
+                int y = (int)node->y;
+                while(y>=lines.length()) {lines << "";}
+                while((x+node->name.length())>=lines[y].length()) lines[y]+=" ";
+                for(char c : node->name) lines[y][x++] = c;
+            }
+            for(auto c : node->children) stamp_onto_page(c,lines);
+            for(auto q : node->quals) stamp_onto_page(q,lines);
+            for(auto s : node->scopes) stamp_onto_page(s,lines);
+            if(node->value) {
+                for(auto q : node->value->quals) stamp_onto_page(q,lines);
+            }
+        }
+
+        std::string nodenet_to_string(g_ptr<Node> root) {
+            list<std::string> lines;
+            stamp_onto_page(root,lines);
+            std::string out = "";
+            for(auto l : lines) {
+                out+=l+"\n";
+            }
+            return out;
+        }
+
         
         void run(g_ptr<Node> root) override { 
             start_stage(t_handlers);
@@ -151,9 +178,10 @@ namespace GDSL {
             start_stage(x_handlers);
             standard_travel_pass(root);
 
-            for(auto q : root->children[1]->value->quals) {
-                print(node_to_string(q));
-            }
+            // print("AS STRING");
+            // print(nodenet_to_string(root));
+
+
         };
     };
 }

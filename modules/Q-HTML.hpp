@@ -65,9 +65,7 @@ namespace GDSL {
             for(int q=0;q<ctx.node->quals.length();q++) {
                 g_ptr<Node> qual = ctx.node->quals[q];
                 for(auto c : qual->children) {
-                    if(!c->children.empty()) {
-                        //For dynamic properties when we add them
-                    } else {
+                    if(c->type==property_id) {
                         list<std::string>* prop_labels; list<std::string>* prop_values;
                         if(is_prop_structural(c->name)) {
                             prop_labels = &structural_prop_labels; 
@@ -80,6 +78,8 @@ namespace GDSL {
                             prop_labels->push(c->name);
                             prop_values->push(c->opt_str);
                         }
+                    } else {
+
                     }
                 }
             }

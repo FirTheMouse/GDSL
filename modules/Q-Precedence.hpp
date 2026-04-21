@@ -104,6 +104,10 @@ namespace GDSL {
                         i--;
                     }
                 }
+                if(i < 0) {
+                    ctx.result->push(ctx.node); //Return the rparen to carry the error
+                    attach_error(ctx.node, major_error, "rparen:a_handler unmatched closing paren");
+                }
             };
     
             a_handlers[identifier_id] = [this](Context& ctx){

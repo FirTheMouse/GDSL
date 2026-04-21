@@ -37,6 +37,7 @@ namespace GDSL {
 
         size_t node_scope_id = make_keyword("scope",8,"",node_id);
         size_t node_name_id = make_keyword("name",sizeof(std::string),"",string_id);
+        size_t node_mute_id = make_keyword("mute",4,"",bool_id);
         size_t node_in_scope_id = make_keyword("in_scope",8,"",node_id);
         size_t node_owner_id = make_keyword("owner",8,"",node_id);
         size_t node_children_id = make_keyword("children");
@@ -45,6 +46,8 @@ namespace GDSL {
         size_t node_value_table_id = make_keyword("value_table");
 
         size_t value_store_id = make_keyword("store",8,"",store_id);
+
+        size_t xor_encrypy_id = make_tokenized_keyword("xor_encrypt");
 
         size_t read_file_id = make_tokenized_keyword("read_file");
         size_t find_in_labels_id = add_function("find_in_labels");
@@ -189,33 +192,6 @@ namespace GDSL {
             }
             return sub;
         }
-
-        void stamp_onto_page(g_ptr<Node> node, list<std::string>& lines) {
-            if(node->x!=-1.0f&&node->y!=-1.0f) {
-                int x = (int)node->x;
-                int y = (int)node->y;
-                while(y>=lines.length()) {lines << "";}
-                while((x+node->name.length())>=lines[y].length()) lines[y]+=" ";
-                for(char c : node->name) lines[y][x++] = c;
-            }
-            for(auto c : node->children) stamp_onto_page(c,lines);
-            for(auto q : node->quals) stamp_onto_page(q,lines);
-            for(auto s : node->scopes) stamp_onto_page(s,lines);
-            if(node->value) {
-                for(auto q : node->value->quals) stamp_onto_page(q,lines);
-            }
-        }
-
-        std::string nodenet_to_string(g_ptr<Node> root) {
-            list<std::string> lines;
-            stamp_onto_page(root,lines);
-            std::string out = "";
-            for(auto l : lines) {
-                out+=l+"\n";
-            }
-            return out;
-        }
-
 
         void init() override {
             Starter_DSL_Frontend::init();
@@ -563,8 +539,16 @@ namespace GDSL {
             x_handlers[node_scope_id] = [this](Context& ctx){ //node->scope
                 standard_accessor<g_ptr<Node>>(ctx, 
                     ctx.left->value->type==node_id?
-                    ctx.left->value->get<g_ptr<Node>>()->scopes[0] :
-                    ctx.left->scopes[0]
+                        ctx.left->value->get<g_ptr<Node>>()->scopes[0] :
+                        ctx.left->scopes[0]
+                );
+            };
+
+            x_handlers[node_mute_id] = [this](Context& ctx){ //node->scope
+                standard_accessor<bool>(ctx, 
+                    ctx.left->value->type==node_id?
+                        ctx.left->value->get<g_ptr<Node>>()->mute :
+                        ctx.left->mute
                 );
             };
 
@@ -619,7 +603,21 @@ namespace GDSL {
             };
 
             x_handlers[read_file_id] = [this](Context& ctx){
-                ctx.node->value->set<std::string>(readFile(ctx.node->left()->value->get<std::string>()));
+                if(!ctx.node->left()) {
+                    attach_error(ctx.node, major_error, "read_file:x_handler no filename provided");
+                    return;
+                } else if(!ctx.node->left()->value->data) {
+                    attach_error(ctx.node, major_error, "read_file:x_handler left has no data to read filename from");
+                }
+                std::string contents = "";
+                std::string filename = "";
+                try {
+                    filename = ctx.node->left()->value->get<std::string>();
+                    contents = readFile(filename);
+                } catch(std::exception e) {
+                    attach_error(ctx.node, major_error, "read_file:x_handler could not find file: "+filename);
+                }
+                ctx.node->value->set<std::string>(contents);
             };
 
             x_handlers[find_in_labels_id] = [this](Context& ctx){

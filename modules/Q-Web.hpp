@@ -10,6 +10,7 @@ typedef unsigned char uuid_t[16];
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "../ext/g_lib/core/thread.hpp"
 
 #include "../core/GDSL.hpp"
 
@@ -26,6 +27,30 @@ struct Web_Unit : public virtual Unit {
         return id;
     }
 
+    struct Server : q_object {
+        int fd;
+        std::string label;
+        g_ptr<Thread> thread;
+        Unit* unit;
+    };
+
+    list<g_ptr<Server>> servers;
+
+    g_ptr<Server> get_server(int fd) {
+        for(auto& s : servers) {
+            if(s->fd == fd) return s;
+        }
+        return nullptr;
+    }
+
+    g_ptr<Server> get_server(const std::string& label) {
+        for(auto& s : servers) {
+            if(s->label == label) return s;
+        }
+        return nullptr;
+    }
+    
+
     size_t server_id = reg_id("server");
     size_t port_id = reg_id("port");
     size_t request_id = reg_id("request");
@@ -41,7 +66,7 @@ struct Web_Unit : public virtual Unit {
 
     void init() override {
         x_handlers[server_id] = [this](Context& ctx){
-            print("Starting a server");
+            print("Starting a server with ",servers.length()," others");
             int server_fd = socket(AF_INET, SOCK_STREAM, 0);
             if(server_fd < 0) {
                 print(red("server_id::x_handler socket() failed"));
@@ -49,16 +74,26 @@ struct Web_Unit : public virtual Unit {
             }
             ctx.node->value->set<int>(server_fd);
 
+            g_ptr<Server> new_server = make<Server>();
+            new_server->fd = server_fd;
+            new_server->thread = make<Thread>();
+            new_server->unit = this;
+            servers << new_server;
+            
             if(ctx.node->scope()) {
-                standard_travel_pass(ctx.node->scope(),&ctx);
+                g_ptr<Node> scope = ctx.node->scope();
+                new_server->thread->run_blocking([this, scope, ctx]() mutable {
+                    standard_travel_pass(scope, &ctx);
+                });
             }
+        
         };
 
         x_handlers[listen_id] = [this](Context& ctx){
             ctx.node->value->set<int>(ctx.root->owner->value->get<int>()); //Propagate the server_fd
             if(ctx.node->scope()) {
                 while(true) {
-                    standard_travel_pass(ctx.node->scope(),ctx.sub);
+                    if(standard_travel_pass(ctx.node->scope(),ctx.sub)) return;
                 }
             }
         };
@@ -71,21 +106,24 @@ struct Web_Unit : public virtual Unit {
             int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
             if(client_fd < 0) { //The socket to accept inputs into, accept sets the port and such per client
                 print(red("server_id::x_handler accept() failed"));
+                ctx.flag = true;
                 return;
             }
             ctx.sub->state = client_fd;
         };
 
         x_handlers[request_id] = [this](Context& ctx){
+            std::string request;
             char buffer[4096];
-            memset(buffer, 0, sizeof(buffer));
-            int bytes_read = read(ctx.sub->state, buffer, sizeof(buffer) - 1);
-            print("Bytes read: ", bytes_read);
-            if(bytes_read < 0) { //And just reading from the client buffer
-                print(red("server_id::x_handler read() failed"));
-                return;
+            while(true) {
+                int bytes_read = read(ctx.sub->state, buffer, sizeof(buffer) - 1);
+                if(bytes_read <= 0) break;
+                buffer[bytes_read] = 0;
+                request += buffer;
+                if(bytes_read < (int)sizeof(buffer) - 1) break; // got everything
             }
-            std::string request(buffer);
+            
+            print("Total bytes read: ", request.length());
             ctx.sub->source = request;
         };
 
@@ -145,12 +183,12 @@ struct Web_Unit : public virtual Unit {
                             "Content-Type: text/html\r\n"
                             "Content-Length: " + std::to_string(body.length()) + "\r\n"
                             "\r\n" + body;
-                        print("Response:\n",response);
+                        //print("Response:\n",response);
                         if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
                             print(red("server_id::x_handler write() failed"));
                         }
                     } else {
-                        print(red("response:x_handler unable to find node "+target+" in route "+path));
+                        print(red("frag:x_handler unable to find node "+target+" in route "+path));
                     }
                 }
             }

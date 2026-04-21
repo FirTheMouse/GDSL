@@ -231,3 +231,31 @@ server {
 //         });
 //     }, 150);
 // });
+
+
+inlined text_theme {
+    "color" : "blue";
+}
+
+div cont {
+    text "words" {
+        text_theme;
+    }
+}
+
+"/" {
+    text "Hello world" {
+        "color" : "red";
+    }
+}
+
+server {
+    port(8082);
+    listen {
+        accept;
+        request;
+        response;
+        close;
+    }
+}
+

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/GDSL.hpp"
+#include "../modules/GDSL-Core.hpp"
 #include <bitset>
 
 

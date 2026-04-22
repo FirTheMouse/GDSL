@@ -34,7 +34,7 @@ private:
     float sliceTime = 0;
     std::atomic<float> sliceSpeed{0.016f};
 
-std::function<void(ScriptContext&)> onRun = nullptr;
+std::function<void()> onRun = nullptr;
 
 std::mutex taskQueueMutex;
 std::deque<std::function<void()>> taskQueue;
@@ -48,7 +48,7 @@ auto SPSOutput = std::chrono::steady_clock::now();
         float delta = std::chrono::duration<float>(currentTime - lastSliceTime).count();
         if (runningTurn && !runningSlice && delta >= sliceSpeed) {
             runningSlice = true;
-            if(onRun) onRun(context);
+            if(onRun) onRun();
             slice++;
             runningSlice = false;
             float fallback = sliceSpeed;
@@ -77,10 +77,9 @@ auto SPSOutput = std::chrono::steady_clock::now();
 
 public:
 
-ScriptContext context;
 int id;
 
-void run(std::function<void(ScriptContext&)> toRun,float speed = -1) {
+void run(std::function<void()> toRun,float speed = -1) {
     shouldStopThread = false;
     if(speed>0)
         setSpeed(speed);

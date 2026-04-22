@@ -57,27 +57,29 @@ public:
         else
         {
             object = make_func();
-            object->type_ = this; //May want to move this into the makeFunc to give more user control
+            object->type_ = this;
+            store(object);
             for(int i=0;i<init_funcs.size();i++) {
                 init_funcs[i](object);
             }
-            store(object);
         }
         reactivate(object);
         object->recycled.store(false);
         return object;
     }
 
-    void add_column(size_t size) {
+    size_t add_column(size_t size) {
         _column col(size);
         for(size_t i = 0; i < objects.length(); i++) col.push_default();
+        int col_len = columns.length();
         columns.push(col);
+        return col_len;
     }
 
     private:
         void store(g_ptr<Object> object)
         {
-            object->TID = objects.size();
+            object->sidx = objects.size();
             for(int c = 0; c<columns.length(); c++) {
                 columns[c].push_default();
             }
@@ -96,7 +98,7 @@ public:
         }
         object->recycled.store(true);
 
-        return_id(object->TID);
+        return_id(object->sidx);
         deactivate(object);
     }
 

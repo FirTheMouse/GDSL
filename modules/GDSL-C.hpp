@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/GDSL.hpp"
+#include "../modules/GDSL-Core.hpp"
 #include "../modules/Q-Arm64.hpp"
 #include "../modules/Q-Scope.hpp"
 #include "../modules/Q-Function.hpp"

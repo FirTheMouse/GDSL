@@ -21,6 +21,7 @@ namespace GDSL {
         size_t fragment_highlight_id = make_tokenized_keyword("fragment_highlight");
         size_t pebble_post_id = make_tokenized_keyword("pebble_post");
         size_t emit_as_html_id = make_tokenized_keyword("emit_as_html");
+        size_t quick_server_id = make_tokenized_keyword("quick_server");
 
         g_ptr<Node> make_property(g_ptr<Node> type, g_ptr<Node> value, g_ptr<Node> parent = nullptr) {
             g_ptr<Node> prop_node = make<Node>(property_id);
@@ -41,7 +42,7 @@ namespace GDSL {
                 node->scope()->quals << properties;
                 for(int i = 0;i<node->scope()->children.length();i++) {
                     g_ptr<Node> c = node->scope()->children[i];
-                    if(c->type==func_call_id) {
+                    if(c->type==func_call_id) { //Anything defined with a type and identifer becomes a function call when refrenced elsewhere
                         g_ptr<Node> ref = c->value->type_scope;
                         if(!ref || !ref->owner) {
                             attach_error(c, major_error, "gather_from_scope:func_call type_scope or owner is null");
@@ -60,6 +61,10 @@ namespace GDSL {
                         } else {
                             //Is an actual func call, handle as such
                         }
+                    } else if(c->type == func_decl_id) {
+
+
+
                     } else if(c->children.empty()) {
                         if(c->value->type==inlined_id) {
                             node->scope()->quals << copy_as_token(c);
@@ -72,13 +77,7 @@ namespace GDSL {
                         node->scope()->quals <= properties->children.last()->quals; //Stealing the tokens for ourselves
                         node->scope()->children.removeAt(i);
                         i--;
-                    } else if(c->children.length()==1&&(c->value->type==component_id||c->value->type==text_id||c->value->type==foldable_id)) {
-                        properties->children << c;
-                        node->scope()->quals << copy_as_token(c);
-                        node->scope()->quals << copy_as_token(c->left());
-                        node->scope()->children.removeAt(i);
-                        i--;
-                    } 
+                    }
                 }
             }
         }
@@ -307,6 +306,10 @@ namespace GDSL {
                 }
             };
 
+            x_handlers[quick_server_id] = [this](Context& ctx) {
+
+            };
+
             t_handlers[route_id] = [this](Context& ctx) {          
                 size_t this_route = routes.getOrDefault(ctx.node->name,make_route(ctx.node->name));
                 ctx.node->sub_type = this_route;
@@ -360,6 +363,14 @@ namespace GDSL {
                 if(ctx.node->scope()) {
                     ctx.source = html_encode_node(ctx.node->scope());
                 }   
+            };
+
+            html_handlers[inlined_id] = [this](Context& ctx){
+                //Emit nothing
+            };
+
+            html_handlers[invisible_id] = [this](Context& ctx){
+                //Emit nothing
             };
 
             html_handlers[foldable_id] = [this](Context& ctx){
@@ -425,6 +436,14 @@ namespace GDSL {
             add_text_component("text",paragraph_subtype);
             r_handlers[text_id] = [this](Context& ctx) {
                 standard_gather_from_scope(ctx);
+            };
+            x_handlers[text_id] = [this](Context& ctx) {
+                if(ctx.node->left()) {
+                    process_node(ctx, ctx.node->left());
+                    if(ctx.node->left()->value->type == string_id) {
+                        ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
+                    }
+                }
             };
 
             x_handlers[serve_id] = [this](Context& ctx){

@@ -61,6 +61,12 @@ struct _lookup {
     }
 };
 
+struct Ptr {
+    uint32_t pool; //Pool it's at
+    uint32_t idx; //Column
+    uint32_t sidx; //Row
+};
+
 struct _column_image {
     std::string label;
     size_t size;
@@ -378,6 +384,19 @@ public:
         add(name,&value,sizeof(T),column_index,tag);
     }
 
+    //Add but without the column index to be prettier and it returns the column allocated
+    template<typename T>
+    uint32_t new_column(const std::string& name,T value, uint32_t tag = 0) {
+        add(name,&value,sizeof(T),-1,tag);
+        return columns.length()-1;
+    }
+
+    //Add but without the column index to be prettier and it returns the column allocated
+    uint32_t new_column(const std::string& name,void* value, uint32_t size, uint32_t tag) {
+        add(name,value,size,-1,tag);
+        return columns.length()-1;
+    }
+
     //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array
     template<typename T>
     void push(T value, int column_index = -1, uint32_t tag = 0) {
@@ -491,7 +510,7 @@ public:
     //Directly sets the value of a place
     template<typename T>
     void set(int index,int sub_index,T value) {
-        set(index,sub_index,&value);
+        set(index,sub_index,(void*)&value);
     }
 };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/GDSL.hpp"
+#include "../modules/GDSL-Core.hpp"
 
 namespace GDSL {
     struct Error_unit : public virtual Unit {

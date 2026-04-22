@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/GDSL.hpp"
+#include "../modules/GDSL-Core.hpp"
 
 namespace GDSL {
     struct HTML_Unit : public virtual Unit {

@@ -6,6 +6,7 @@
 #include "modules/GDSL-Script.hpp"
 #include "modules/GDSL-GQL.hpp"
 #include "modules/GDSL-Thistle.hpp"
+#include "mixos-acorn/Acorn-Script.hpp"
 
 using namespace GDSL;
 
@@ -24,14 +25,14 @@ int main(int argc, char* argv[]) {
 
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
-
-    // g_ptr<Test_Unit> test = make<Test_Unit>();
+ 
+    // g_ptr<Acorn::Acorn_Script> test = make<Acorn::Acorn_Script>();
     // test->init();
     // test->run(test->process(""));
 
-    g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
-    root = twig->process(readFile("modules/tests/pebble.gld"));
-    twig->run(root);
+    // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
+    // root = twig->process(readFile("modules/tests/pebble.gld"));
+    // twig->run(root);
 
     // g_ptr<Thistle_Unit> thistle = make<Thistle_Unit>();
     // g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
@@ -84,7 +85,43 @@ int main(int argc, char* argv[]) {
     print("TEST FINISHED");
 
 
+ // Acorn::Unit acorn;     acorn.init();
+    // GDSL::Unit gdsl;
 
+    // g_ptr<GDSL::Node> gdsl_root = make<GDSL::Node>();
+    // gdsl_root->sub_type = 3;
+
+    // Acorn::Ptr acorn_root = acorn.make_node();
+    // int three = 3;
+    // acorn.types[acorn_root.pool].columns[acorn.sub_type_col].set(acorn_root.sidx,(void*)&three);
+
+    // Acorn::Object acorn_obj = acorn.node_type.create();
+
+    // list<g_ptr<GDSL::Node>> gdsl_nodes;
+    // list<Acorn::Ptr> acorn_nodes;
+    // for(int i=0;i<1000;i++) {
+    //     gdsl_nodes << make<GDSL::Node>();
+    //     acorn_nodes << acorn.make_node();
+    // }
+
+    // int ITS = 1000;
+    // Log::rig r;
+    // r.add_process("access_gdsl",[&](int i){
+    //     //volatile int a = gdsl_root->sub_type;
+    //     for(int m=0;m<1000;m++) {
+    //         volatile int a = gdsl_nodes[m]->sub_type;
+    //     }
+    // },0);
+    // Acorn::_column& acol = acorn.types[acorn_root.pool].columns[acorn.sub_type_col];
+    // r.add_process("access_acorn",[&](int i){
+    //     // volatile int a = *(int*)acorn.types[acorn_root.pool].columns[acorn.sub_type_col].get(acorn_root.sidx);
+    //     for(int m=0;m<1000;m++) {
+    //         volatile int a = *(int*)acol.get(acorn_nodes[m].sidx);
+    //     }
+    //     //volatile int a = *(int*)acol.get(acorn_root.sidx);
+    // },0);
+    // r.add_comparison("access_gdsl","access_acorn");
+    // r.run(1000,true,ITS);
 
 
     //comp->test_module("modules/tests/ctest.gld");

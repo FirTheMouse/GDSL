@@ -12,7 +12,7 @@ typedef unsigned char uuid_t[16];
 #include <fcntl.h>
 #include "../ext/g_lib/core/thread.hpp"
 
-#include "../core/GDSL.hpp"
+#include "../modules/GDSL-Core.hpp"
 
 namespace GDSL {
 

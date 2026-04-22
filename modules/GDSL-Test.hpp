@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../core/GDSL.hpp"
 #include "../modules/Q-Expression.hpp"
 
 namespace GDSL {

@@ -156,7 +156,7 @@ namespace Acorn {
             mute_col = t.note_value("mute",1,bool_id).index;
 
             t.init_funcs << [this,&t](Object& obj) {
-                Ptr nameptr{name_store_id, (uint32_t)name_store.add_column(sizeof(Ptr)), 0};
+                Ptr nameptr{name_store_id, (uint32_t)name_store.add_column(sizeof(char)), 0};
                 t.set(name_col, obj.sidx, (void*)&nameptr);
             
                 Ptr childrenptr{children_store_id, (uint32_t)children_store.add_column(sizeof(Ptr)), 0};
@@ -225,6 +225,14 @@ namespace Acorn {
 
         inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {
             return types[ptr.pool].columns[idx];
+        }
+
+        inline void set_ptr(const Ptr& ptr, void* to) {
+            types[ptr.pool].columns[ptr.idx].set(ptr.sidx,to);
+        }
+
+        inline void set_ptr(const Ptr& ptr, const uint32_t& idx, void* to) {
+            types[ptr.pool].columns[idx].set(ptr.sidx,to);
         }
 
         Ptr make_node() {
@@ -424,11 +432,11 @@ namespace Acorn {
             labels[pointer_id] = "ptr";
         }
     
-        virtual g_ptr<Node> process(const std::string& path) {
-            return nullptr;
+        virtual Ptr process(const std::string& path) {
+            return make_node();
         }
     
-        virtual void run(g_ptr<Node> root) {
+        virtual void run(Ptr& root) {
             
         }
     

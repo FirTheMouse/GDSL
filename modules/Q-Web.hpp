@@ -10,6 +10,7 @@ typedef unsigned char uuid_t[16];
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
 #include "../ext/g_lib/core/thread.hpp"
 
 #include "../modules/GDSL-Core.hpp"
@@ -20,6 +21,43 @@ struct Web_Unit : public virtual Unit {
     Web_Unit() { init(); }
     map<std::string,size_t> routes;
     map<size_t,g_ptr<Node>> route_nodes;
+
+    std::string generate_token() {
+        unsigned char buf[32];
+        int fd = open("/dev/urandom", O_RDONLY);
+        read(fd, buf, 32);
+        ::close(fd);
+        std::string token = "";
+        const char* hex = "0123456789abcdef";
+        for(int i = 0; i < 32; i++) {
+            token += hex[buf[i] >> 4];
+            token += hex[buf[i] & 0xf];
+        }
+        return token;
+    }
+
+    size_t session_id = reg_id("SESSION");
+    size_t ip_id = reg_id("IP");
+    size_t role_id = reg_id("ROLE");
+    size_t timestamp_id = reg_id("TIMESTAMP");
+    map<std::string, g_ptr<Node>> sessions;
+    map<size_t, list<std::string>> route_roles;
+
+    std::string extract_cookie(const std::string& request, const std::string& name) {
+        std::string cookie_header = "Cookie: ";
+        size_t start = request.find(cookie_header);
+        if(start == std::string::npos) return "";
+        start += cookie_header.length();
+        size_t end = request.find("\r\n", start);
+        std::string cookies = request.substr(start, end - start);
+        
+        std::string search = name + "=";
+        size_t pos = cookies.find(search);
+        if(pos == std::string::npos) return "";
+        pos += search.length();
+        size_t pos_end = cookies.find(";", pos);
+        return cookies.substr(pos, pos_end - pos);
+    }
 
     size_t make_route(const std::string& path) {
         size_t id = reg_id(path);
@@ -109,6 +147,10 @@ struct Web_Unit : public virtual Unit {
                 ctx.flag = true;
                 return;
             }
+
+            g_ptr<Node> ip_qual = make<Node>(ip_id);
+            ip_qual->name = inet_ntoa(client_addr.sin_addr);
+            ctx.sub->out = ip_qual;
             ctx.sub->state = client_fd;
         };
 
@@ -139,6 +181,33 @@ struct Web_Unit : public virtual Unit {
             size_t route_id = routes.getOrDefault(path, root_route);
             ctx.sub->node = route_nodes[route_id]; 
             ctx.sub->root = ctx.sub->node->in_scope;
+            
+            if(route_roles.hasKey(route_id)) {
+                list<std::string> valid_roles = route_roles.get(route_id);
+                std::string token = extract_cookie(request, "session");
+                g_ptr<Node> nosession = nullptr;
+                g_ptr<Node> session = sessions.getOrDefault(token, nosession);
+                if(session) {
+                    std::string role = "";
+                    for(auto q : session->quals) {
+                        if(q->type == role_id) {
+                            role = q->name;
+                            break;
+                        }
+                    }
+                    if(valid_roles.has(role)) {
+                        goto Serve;
+                    }
+                }
+                std::string response = 
+                    "HTTP/1.1 302 Found\r\n"
+                    "Location: /login\r\n"
+                    "\r\n";
+                ::write(ctx.sub->state, response.c_str(), response.length());
+                print(red("response:x_hadnler missing required role"));
+                return;
+            }
+            Serve:;
 
             if(method=="POST") {
                 size_t body_start = request.find("\r\n\r\n");
@@ -146,12 +215,16 @@ struct Web_Unit : public virtual Unit {
                     ctx.sub->source = request.substr(body_start + 4);
                     p_handlers.run(route_id)(*ctx.sub);
                     std::string body = ctx.sub->source;
-                    std::string response = 
-                        "HTTP/1.1 200 OK\r\n"
-                        "Content-Type: text/plain\r\n"
-                        "Content-Length: " + std::to_string(body.length()) + "\r\n"
-                        "\r\n" + body;
-                    print("Response:\n",response);
+                    std::string response;
+                    if(!body.empty() && body.substr(0,5) == "HTTP/") {
+                        response = body; //Handler built the full response
+                    } else {
+                        response = "HTTP/1.1 200 OK\r\n"
+                            "Content-Type: text/plain\r\n"
+                            "Content-Length: " + std::to_string(body.length()) + "\r\n"
+                            "\r\n" + body;
+                    }
+                    //print("Response:\n",response);
                     if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
                         print(red("server_id::x_handler write() failed"));
                     }

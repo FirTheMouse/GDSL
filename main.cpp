@@ -6,6 +6,7 @@
 #include "modules/GDSL-Script.hpp"
 #include "modules/GDSL-GQL.hpp"
 #include "modules/GDSL-Thistle.hpp"
+#include "modules/GDSL-PineNeedle.hpp"
 #include "mixos-acorn/Acorn-Script.hpp"
 
 using namespace GDSL;
@@ -34,9 +35,17 @@ int main(int argc, char* argv[]) {
     // root = twig->process(readFile("modules/tests/pebble.gld"));
     // twig->run(root);
 
-    // g_ptr<Thistle_Unit> thistle = make<Thistle_Unit>();
-    // g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
-    // thistle->run(thistle_root);
+    g_ptr<Thistle_Unit> thistle = make<Thistle_Unit>();
+    g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
+    thistle->run(thistle_root);
+
+    // g_ptr<Thistle_Unit> pine_thistle = make<Thistle_Unit>();
+    // g_ptr<Node> pine_thistle_root = pine_thistle->process(readFile("modules/tests/pinetest.gld"));
+    // pine_thistle->run(pine_thistle_root);
+
+    // g_ptr<PineNeedle_Unit> pine = make<PineNeedle_Unit>();
+    // g_ptr<Node> pine_root = pine->process(readFile("modules/tests/pinetest.gld"));
+    // pine->run(pine_root);
     
     // g_ptr<GQL_Unit> q_script = make<GQL_Unit>();
     // root = q_script->process(readFile("modules/tests/qdemo.gld"));

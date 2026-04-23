@@ -1,3 +1,32 @@
+formed type GEMS_RB {
+    int one {
+        3; onform "Wumbers" {
+            "Default" : 0;
+            "First" : 1;
+            "Second" : 2;
+            "Third" : 3;
+            "Fourth" : 4;
+            "Fifth" : 5;
+        }
+        4; 
+        5; 
+        6;
+    }
+
+    int two {
+        6; 
+        7; onform "Twumbers" {
+            "Default" : 0;
+            "Firsty" : 11;
+            "Secondy" : 22;
+            "Thirdy" : 33;
+        }
+        8; 
+        9;
+    }
+}
+
+
 inlined background_theme {
     "background-color" : "rgb(225, 225, 225)";
 }
@@ -130,14 +159,143 @@ div side_bar {
     ";
 }
 
-"/" {
+"/login" {
     style "
         td:hover {
             background-color:rgb(234, 234, 234);
         }
         input:focus {
             outline: none;
-            border-bottom: 2px solid rgb(68, 137, 50);
+        }
+        textarea:focus {
+            outline: none;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+    ";
+
+    background_theme;
+
+    div container {
+        "display" : "flex";
+        "min-height" : "100vh";
+            div content_panel {
+                "flex" : "1";
+                "display" : "flex";
+                "flex-direction" : "column";
+                "justify-content" : "center";
+                "align-items" : "center";
+                    div actions {
+                        "display" : "flex";
+                        "justify-content" : "center";
+                        "align-items" : "end";
+                        "flex-direction" : "column";
+                        "width" : "480px";
+                        "height" : "200px";
+                        "padding" : "40px";
+                        "gap" : "12px";
+                        card_theme;
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                            inlined login_input_theme {
+                                "border" : "none";
+                                "border-bottom" : "2px solid rgb(200,200,200)";
+                                "border-radius" : "0px";
+                                "background-color" : "transparent";
+                                "padding" : "8px 0px";
+                                input_theme;
+                            }
+
+                            div input_username {
+                                "display" : "flex";
+                                "align-items" : "center";
+                                "width" : "100%";
+                                "gap" : "7px";
+                                    text "Username:" {
+                                        "width" : "70px";
+                                        "font-size" : "14px";
+                                        "flex-shrink" : "0";
+                                        text_theme;
+                                    }
+                                    input username {
+                                        "id" : "username";
+                                        "flex" : "1";
+                                        login_input_theme;
+                                    }
+                            }
+
+                            div input_password {
+                                "display" : "flex";
+                                "align-items" : "center";
+                                "width" : "100%";
+                                "gap" : "8px";
+                                    text "Password:" {
+                                        "width" : "70px";
+                                        "font-size" : "14px";
+                                        "flex-shrink" : "0";
+                                        text_theme;
+                                    }
+                                    input password {
+                                        "id" : "password";
+                                        "type" : "password";
+                                        "flex" : "1";
+                                        login_input_theme;
+                                    }
+                            }
+
+                            button login {
+                                "id" : "login";
+                                "onclick" : "postForm({username: getel('username').value, password: getel('password').value})";
+                                text "Login" {
+                                    "font-size" : "14px";
+                                    text_theme;
+                                }
+                                "width" : "75%";
+                                "border" : "none";
+                                "border-radius" : "4px";
+                                "background-color" : "rgb(230, 230, 230)";
+                            }
+                    }
+            }
+    }
+
+
+
+    script read_file("frag.js");
+
+    in posting {
+        validate_login;
+    }
+}
+
+"/employee" {
+    required_roles("employee, admin");
+
+    text "employee" {
+        "color" : "red";
+    }
+}
+
+
+"/manager" {
+    required_roles("manager, admin");
+
+    text "manager" {
+        "color" : "blue";
+    }
+}
+
+"/" {
+    required_roles("employee, admin");
+    style "
+        td:hover {
+            background-color:rgb(234, 234, 234);
+        }
+        input:focus {
+            outline: none;
         }
 
         * {
@@ -244,7 +402,7 @@ div side_bar {
                 "flex-direction" : "column";
                 "justify-content" : "center";
                 "align-items" : "center";
-                    form(test_form,"test_sheet") {
+                    form(GEMS_RB) {
                         "max-width" : "480px";
                         "width" : "100%";
                         "padding" : "40px";
@@ -294,7 +452,7 @@ div side_bar {
                             card_theme;
                             "border-radius" : "12px";
                             "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
-                                sheet(test_sheet) {
+                                sheet(GEMS_RB) {
                                     "border-collapse" : "collapse";
                                     card_theme;
                                         invisible header_style {

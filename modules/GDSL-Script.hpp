@@ -482,7 +482,7 @@ namespace GDSL {
                 }
                 if(ctx.node->sub_type==0) {
                     //ctx.node->sub_type = reg_id(ctx.node->name);
-                    print(red("WARNING: unrecognized node type: "+ctx.node->name));
+                    print(red("node_block:t_handler unrecognized node type: "+ctx.node->name));
                 }
             };
             x_handlers[node_block_id] = [this](Context& ctx){

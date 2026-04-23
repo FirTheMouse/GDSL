@@ -1,9 +1,10 @@
 #pragma once
 
 #include "../modules/GDSL-TwigSnap.hpp"
+#include "../modules/GDSL-PineNeedle.hpp"
 
 namespace GDSL {
-    struct Thistle_Unit : public virtual TwigSnap_DSL_Frontend {
+    struct Thistle_Unit : public virtual TwigSnap_DSL_Frontend, public virtual PineNeedle_Unit {
         Thistle_Unit() { init(); }
 
         size_t sheet_id = make_tokenized_keyword("sheet");
@@ -47,12 +48,14 @@ namespace GDSL {
 
         void init() override {
             g_ptr<Type> ts = make<Type>();
-            ts->add<int>("one",1,-1,int_id);
-            ts->add<int>("two",2,-1,int_id);
-            ts->add<int>("three",3,-1,int_id);
-            ts->push<int>(5,0);
-            ts->push<int>(8,1);
-            ts->push<int>(12,2);
+            uint32_t one_id = ts->new_column<int>("one",1,int_id);
+            ts->push<int>(5,one_id);
+
+            uint32_t two_id = ts->new_column<int>("two",2,int_id);
+            ts->push<int>(8,two_id);
+
+            uint32_t three_id = ts->new_column<int>("three",3,int_id);
+            ts->push<int>(12,three_id);
             
             g_ptr<Type> tf = make<Type>();
             tf->add<std::string>("Direct input","0-0",-1,string_id);
@@ -69,6 +72,8 @@ namespace GDSL {
             tf->push<std::string>("11-int-Firsty",2);
             tf->push<std::string>("22-int-Secondy",2);
             tf->push<std::string>("33-int-Thirdy",2);
+
+
             
             x_handlers[test_form_id] = [this,tf](Context& ctx) {
                 ctx.node->value->store = tf;
@@ -81,20 +86,29 @@ namespace GDSL {
                 standard_gather_from_scope(ctx);
             };
             html_handlers[form_id] = [this](Context& ctx) {
+                std::string target_sheet = "";
                 if(ctx.node->left()) {
                     process_node(ctx.node->left());
+                    if(ctx.node->left()->value->type_scope) {
+                        if(ctx.node->left()->value->type_scope->owner->value->has_qual(formed_id)) {
+                            ctx.node->left()->value->store = ctx.node->left()->value->type_scope->owner->value->get_qual(formed_id)->value->store;
+                            target_sheet = ctx.node->left()->value->type_scope->owner->name;
+                        }
+                    }
                     ctx.node->value->store = ctx.node->left()->value->store;
-                    ctx.node->name =  ctx.node->left()->name;
+                    //ctx.node->name =  ctx.node->left()->name;
                     ctx.node->in_scope->node_table[ctx.node->name] = ctx.node;
                 } 
-                std::string target_sheet = "";
                 if(ctx.node->right()) {
                     process_node(ctx.node->right());
                     if(ctx.node->right()->value->type==string_id) {
                         target_sheet = ctx.node->right()->value->get<std::string>();
                     }
                 }
-
+                if(!ctx.node->value->store) {
+                    print(red("form:html_handler invalid node provided, no form qual found"));
+                    return;
+                }
                 g_ptr<Type> t = ctx.node->value->store;
                 _type_image img = t->get_image();
             
@@ -176,6 +190,8 @@ namespace GDSL {
                 int row = 0;
                 std::string value = "";
                 std::string target = "";
+                print("A");
+                for(auto e : elements) print(e);
                 if(elements.length()==5) {
                     note_name = elements[0];
                     column = std::stoi(elements[1]);
@@ -191,6 +207,7 @@ namespace GDSL {
                     print(red("recive_sheet_edit:x_handler invalid source: "+ctx.sub->source));
                     return;
                 }
+                print("B");
                 g_ptr<Node> sheet_node = scan_for_node(target,ctx.sub->root);
                 if(!sheet_node) {
                     print(red("COULD NOT FIND THE TYPE"));
@@ -238,6 +255,9 @@ namespace GDSL {
             html_handlers[sheet_id] = [this](Context& ctx) {
                 if(ctx.node->left()) {
                     process_node(ctx.node->left());
+                    if(ctx.node->left()->value->type==type_id) {
+                        ctx.node->left()->value->store = ctx.node->left()->value->type_scope->owner->value->store;
+                    }
                     ctx.node->value->store = ctx.node->left()->value->store;
                     ctx.node->name =  ctx.node->left()->name;
                     ctx.node->in_scope->node_table[ctx.node->name] = ctx.node;
@@ -294,12 +314,20 @@ namespace GDSL {
             
                         std::string column =  std::to_string(access_index);
                         std::string row = std::to_string(access_sub_index);
-            
+                        std::string as_string = "";
+                        if(r>=t->columns[access_index].length()) {
+                            as_string = "";
+                        } else if(value_to_string.hasKey(col_img.tag)) {
+                            as_string = value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index));
+                        } else {
+                           as_string = "[missing value to string for "+labels[col_img.tag]+"]";
+                        }
+
                         out += "<td ";
                         out+=styles->resolve_prop(ctx, "column_style"); 
                         out+=">\n<input "; 
                         out+=styles->resolve_prop(ctx, "input_style"); 
-                        out+=" value=\""+value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index))+"\""
+                        out+=" value=\""+as_string+"\""
                         + " onchange=\"cell_post(this,'" + note_label + "'," + column + "," + row + ",'" + ctx.node->name + "')\""
                         +"/>\n</td>\n";
                     }

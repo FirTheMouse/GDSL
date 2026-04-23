@@ -78,6 +78,14 @@ public:
         return -1;
     } 
 
+    g_ptr<Node> get_qual(size_t q_id) {
+        int q_at = find_qual(q_id);
+        if(q_at!=-1) {
+            return quals[q_at];
+        }
+        return nullptr;
+    } 
+
     bool has_qual(size_t q_id) {
         return find_qual(q_id)!=-1;
     }
@@ -1182,6 +1190,7 @@ struct Unit : public Object {
     }
 
     g_ptr<Node> loadBinary(std::istream& in) {
+        type_buffer.clear();
         node_buffer.clear();
         value_buffer.clear();
 

@@ -310,6 +310,66 @@ namespace GDSL {
 
             };
 
+            x_handlers[make_tokenized_keyword("validate_login")] = [this](Context& ctx){
+                std::string body = ctx.sub->source;
+
+                std::string username = "";
+                std::string password = "";
+                size_t u = body.find("username=");
+                size_t p = body.find("password=");
+                if(u != std::string::npos) username = body.substr(u+9, body.find("&", u) - u - 9);
+                if(p != std::string::npos) password = body.substr(p+9, body.find("&", p) - p - 9);
+            
+                std::string role = "";
+                if(username=="employee" && password=="pass123") role = "employee";
+                if(username=="manager"  && password=="pass456") role = "manager";
+                if(username=="Fir" && password!="NULL") role = "admin";
+            
+                if(!role.empty()) {
+                    std::string token = generate_token();
+                    g_ptr<Node> session = make<Node>(session_id);
+                    session->name = username;
+
+                    if(ctx.sub->out) {
+                        session->quals << ctx.sub->out;
+                    }
+
+                    session->quals << make<Node>(role_id,role);
+                    session->quals << make<Node>(timestamp_id,std::to_string(time(nullptr)));
+
+                    // print("NEW SESSION:\n",node_to_string(session));
+                    // for(auto q : session->quals) {
+                    //     print(node_to_string(q));
+                    // }
+                    // print("===");
+
+                    sessions.put(token, session);
+                    ctx.sub->source = "HTTP/1.1 200 OK\r\n"
+                        "Set-Cookie: session=" + token + "; HttpOnly\r\n"
+                        "Content-Length: " + std::to_string(role.length()) + "\r\n"
+                        "\r\n" + role;
+                } else {
+                    std::string body = "invalid";
+                    ctx.sub->source = "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Content-Length: " + std::to_string(body.length()) + "\r\n"
+                        "\r\n" + body;
+                }
+            };
+
+            x_handlers[make_tokenized_keyword("required_roles")] = [this](Context& ctx){
+                if(ctx.node->left()) {
+                    process_node(ctx, ctx.node->left());
+                    if(routes.hasKey(ctx.node->in_scope->name)) {
+                        list<std::string> roles = split_str(ctx.node->left()->value->get<std::string>(),',');
+                        for(auto& r : roles) strip_whitespace(r);
+                        route_roles[routes.get(ctx.node->in_scope->name)] << roles;
+                    } else {
+                        print(red("required_role:x_handler in scope is not a valid route"));
+                    }
+                }
+            };
+
             t_handlers[route_id] = [this](Context& ctx) {          
                 size_t this_route = routes.getOrDefault(ctx.node->name,make_route(ctx.node->name));
                 ctx.node->sub_type = this_route;
@@ -336,6 +396,8 @@ namespace GDSL {
                 standard_emit_as_html(ctx);
             };
 
+
+
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_gather_from_scope(ctx);
                 if(ctx.node->value->type==invisible_id) {
@@ -352,6 +414,8 @@ namespace GDSL {
                 standard_emit_as_html(ctx);
             };
             html_handlers[func_decl_id] = [this](Context& ctx){
+                if(ctx.node->value->type==inlined_id) return;
+                if(ctx.node->value->type==invisible_id) return;
                 if(ctx.node->scope()) {
                     ctx.source = html_encode_node(ctx.node->scope());
                 }   
@@ -499,6 +563,9 @@ namespace GDSL {
 
             start_stage(e_handlers);
             standard_backwards_pass(root);
+
+            start_stage(i_handlers);
+            standard_travel_pass(root);
 
             #if PRINT_ALL
                 print("==FINAL FORM==");

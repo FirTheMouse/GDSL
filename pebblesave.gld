@@ -1,10 +1,463 @@
-"/" {
-    string words = "wub wub";
-    text "hey" {
-        
+inlined background_theme {
+    "background-color" : "rgb(225, 225, 225)";
+}
+inlined card_theme {
+    "background-color" : "rgb(247, 244, 244)";
+}
+inlined component_theme {
+    "background-color" : "rgb(255, 249, 249)";
+}
+inlined text_theme {
+    "font-size" : "13px";
+    "font-weight" : "600";
+    "color" : "rgb(80,80,80)";
+    "font-family" : "system-ui, sans-serif";
+}
+
+inlined input_theme {
+    component_theme;
+    "border" : "1px solid rgb(200,200,200)";
+    "border-radius" : "8px";
+    "padding" : "10px 14px";
+    "width" : "100%";
+    "font-size" : "15px";
+    "font-family" : "system-ui, sans-serif";
+}
+
+inlined basic_button {
+    "height" : "50%";
+    "width" : "50%";
+}
+
+div side_bar {
+    "id" : "side_bar";
+    "width" : "60px";
+    "min-height" : "100vh";
+    "display" : "flex";
+    "flex-direction" : "column";
+    "transition" : "width 0.2s ease";
+    "overflow" : "hidden";
+    card_theme;
+    
+    div top_section {
+        "display" : "flex";
+        "flex-direction" : "column";
+        "align-items" : "flex-start";
+        "padding" : "12px 8px";
+        "border-bottom" : "1px solid rgb(220,220,220)";
+        "gap" : "12px";
+
+       div thistle_btn {
+            "cursor" : "pointer";
+            "padding" : "8px";
+            "display" : "flex";
+            "align-items" : "center";
+            "justify-content" : "flex-end";
+            "white-space" : "nowrap";
+            "background-color" : "transparent";
+            "width" : "100%";
+            "height" : "30px";
+            
+            text "THISTLE" {
+                "onclick" : "goTo('/')";
+                "cursor" : "pointer";
+                "class" : "label";
+                "opacity" : "0";
+                "transition" : "opacity 0.15s ease";
+                "font-size" : "18px";
+                "flex" : "1";
+                text_theme;
+            }
+
+            div icon {
+                "onclick" : "toggleSidebar()";
+                "width" : "30px";
+                "height" : "30px";
+                "background-color" : "rgb(172, 57, 147)";
+                "flex-shrink" : "0";
+            }
+        }
+
+        div toggle_btn {
+            "onclick" : "toggleSidebar()";
+            "cursor" : "pointer";
+            "padding" : "8px";
+            "display" : "flex";
+            "align-items" : "center";
+            "gap" : "10px";
+            "width" : "30px";
+            "height" : "30px";
+            "white-space" : "nowrap";
+            "background-color" : "transparent";
+            
+            div icon {
+                "width" : "30px";
+                "height" : "30px";
+                "background-color" : "rgb(100, 100, 100)";
+                "flex-shrink" : "0";
+            }
+            
+            text "toggle" {
+                "class" : "label";
+                "opacity" : "0";
+                "transition" : "opacity 0.15s ease";
+                "font-size" : "16px";
+                text_theme;
+            }
+        }
     }
     
+    div main_section {
+        "flex" : "1";
+        "display" : "flex";
+        "flex-direction" : "column";
+        "padding" : "8px 0px";
+    }
+
+    script "
+        function toggleSidebar() {
+            const sidebar = document.getElementById('side_bar');
+            const expanded = sidebar.style.width === '220px';
+            sidebar.style.width = expanded ? '60px' : '220px';
+            document.querySelectorAll('.label').forEach(el => {
+                el.style.opacity = expanded ? '0' : '1';
+            });
+        }
+
+        function goTo(route) {
+            window.location.href = route;
+        }
+    ";
+}
+
+"/login" {
+    style "
+        td:hover {
+            background-color:rgb(234, 234, 234);
+        }
+        input:focus {
+            outline: none;
+        }
+        textarea:focus {
+            outline: none;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+    ";
+
+    background_theme;
+
+    div container {
+        "display" : "flex";
+        "min-height" : "100vh";
+            div content_panel {
+                "flex" : "1";
+                "display" : "flex";
+                "flex-direction" : "column";
+                "justify-content" : "center";
+                "align-items" : "center";
+                    div actions {
+                        "display" : "flex";
+                        "justify-content" : "center";
+                        "align-items" : "end";
+                        "flex-direction" : "column";
+                        "width" : "480px";
+                        "height" : "200px";
+                        "padding" : "40px";
+                        "gap" : "12px";
+                        card_theme;
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                            inlined login_input_theme {
+                                "border" : "none";
+                                "border-bottom" : "2px solid rgb(200,200,200)";
+                                "border-radius" : "0px";
+                                "background-color" : "transparent";
+                                "padding" : "8px 0px";
+                                input_theme;
+                            }
+
+                            div input_username {
+                                "display" : "flex";
+                                "align-items" : "center";
+                                "width" : "100%";
+                                "gap" : "7px";
+                                    text "Username:" {
+                                        "width" : "70px";
+                                        "font-size" : "14px";
+                                        "flex-shrink" : "0";
+                                        text_theme;
+                                    }
+                                    input username {
+                                        "id" : "username";
+                                        "flex" : "1";
+                                        login_input_theme;
+                                    }
+                            }
+
+                            div input_password {
+                                "display" : "flex";
+                                "align-items" : "center";
+                                "width" : "100%";
+                                "gap" : "8px";
+                                    text "Password:" {
+                                        "width" : "70px";
+                                        "font-size" : "14px";
+                                        "flex-shrink" : "0";
+                                        text_theme;
+                                    }
+                                    input password {
+                                        "id" : "password";
+                                        "type" : "password";
+                                        "flex" : "1";
+                                        login_input_theme;
+                                    }
+                            }
+
+                            button login {
+                                "id" : "login";
+                                "onclick" : "postForm({username: getel('username').value, password: getel('password').value})";
+                                text "Login" {
+                                    "font-size" : "14px";
+                                    text_theme;
+                                }
+                                "width" : "75%";
+                                "border" : "none";
+                                "border-radius" : "4px";
+                                "background-color" : "rgb(230, 230, 230)";
+                            }
+                    }
+            }
+    }
+
+
+
     script read_file("frag.js");
+
+    in posting {
+        validate_login;
+    }
+}
+
+"/employee" {
+    required_roles("employee, admin");
+
+    text "employee" {
+        "color" : "red";
+    }
+}
+
+
+"/manager" {
+    required_roles("manager, admin");
+
+    text "manager" {
+        "color" : "blue";
+    }
+}
+
+"/" {
+    required_roles("employee, admin");
+    style "
+        td:hover {
+            background-color:rgb(234, 234, 234);
+        }
+        input:focus {
+            outline: none;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+        }
+    ";
+
+    background_theme;
+
+    div container {
+        "display" : "flex";
+        "min-height" : "100vh";
+            div content_panel {
+                "flex" : "1";
+                "display" : "flex";
+                "flex-direction" : "column";
+                "justify-content" : "center";
+                "align-items" : "center";
+                    div actions {
+                        "display" : "flex";
+                        "justify-content" : "center";
+                        "align-items" : "center";
+                        "width" : "480px";
+                        "height" : "200px";
+                        "padding" : "40px";
+                        "gap" : "24px";
+                        card_theme;
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                            button to_new {
+                                "id" : "to_new";
+                                "onclick" : "goTo('/new')";
+                                text "New" {
+                                    "font-size" : "18px";
+                                    text_theme;
+                                }
+                                basic_button;
+                            }
+                            button to_todo {
+                                "id" : "to_todo";
+                                "onclick" : "goTo('/')";
+                                basic_button;
+                            }
+                            button to_sent {
+                                "id" : "to_sent";
+                                "onclick" : "frag('to_sent')";
+                                basic_button;
+                            }
+                    }
+            }
+    }
+
+    script read_file("frag.js");
+
+    script "
+        function goTo(route) {
+            window.location.href = route;
+        }
+    ";
+
+    in fragmenting {
+        print(node);
+    }
+}
+
+"/new" {
+    style "
+        td:hover {
+            background-color:rgb(234, 234, 234);
+        }
+        input:focus {
+            outline: none;
+            border-bottom: 2px solid rgb(68, 137, 50);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        td:first-child {
+            border-right: none;
+        }
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+        }
+    ";
+
+    background_theme;
+
+    div container {
+        "display" : "flex";
+        "min-height" : "100vh";
+        side_bar;
+            div form_panel {
+                "flex" : "1";
+                "display" : "flex";
+                "flex-direction" : "column";
+                "justify-content" : "center";
+                "align-items" : "center";
+                    form(test_form,"test_sheet") {
+                        "max-width" : "480px";
+                        "width" : "100%";
+                        "padding" : "40px";
+                        card_theme;
+                        "border-radius" : "12px";
+                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                            paragraph "Numbers Form" {
+                                "font-size" : "18px";
+                                "color" : "rgb(57, 57, 57)";
+                                text_theme;
+                            }
+
+                            invisible select_style {
+                                input_theme;
+                            }
+                            invisible input_style {
+                                "border" : "none";
+                                "border-bottom" : "2px solid rgb(200,200,200)";
+                                "border-radius" : "0px";
+                                "background-color" : "transparent";
+                                "padding" : "8px 0px";
+                                input_theme;
+                            }
+                            invisible field_style {
+                                "display" : "flex";
+                                "flex-direction" : "column";
+                                "gap" : "6px";
+                                "margin-bottom" : "20px";
+                            }
+                            invisible label_style {
+                                text_theme;
+                            }
+                            invisible header_label_style {
+                                "font-size" : "16px";
+                                text_theme;
+                            }
+                    }
+
+                    foldable spreadsheet {
+                        "width" : "480px";
+                        text_theme;
+                        div sheet_panel {
+                            "max-width" : "480px";
+                            "width" : "100%";
+                            "padding" : "10px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                                sheet(test_sheet) {
+                                    "border-collapse" : "collapse";
+                                    card_theme;
+                                        invisible header_style {
+                                            "background-color" : "rgb(240, 240, 240)";
+                                            "padding" : "10px 12px";
+                                            "font-size" : "14px";
+                                            "color" : "rgb(26, 26, 26)";
+                                            text_theme;
+                                        }
+                                        invisible column_style {
+                                            "border-right" : "1px solid rgb(200,200,200)";
+                                        }
+                                        invisible row_style {
+                                            "border-bottom" : "1px solid rgb(220,220,220)";
+                                        }
+                                        invisible input_style {
+                                            "border" : "none";
+                                            "background-color" : "transparent";
+                                            "width" : "100%";
+                                            "padding" : "8px 4px";
+                                            "font-size" : "13px";
+                                            "font-family" : "system-ui, sans-serif";
+                                        }
+                                }
+                        }
+                    }
+            }
+    }
+
+    script read_file("frag.js");
+
+    in posting {
+        recive_sheet_edit;
+    }
 }
 
 

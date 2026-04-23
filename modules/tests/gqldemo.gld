@@ -5,5 +5,9 @@ l << 6;
 l << "nub";
 l << 9;
 
+l << 1("one");
+l << 2("two");
+l << 3("three");
+
 store nums = find (last 3 in l where size 4);
 print(nums(0),nums(1),nums(2));

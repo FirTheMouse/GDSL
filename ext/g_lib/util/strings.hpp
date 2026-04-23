@@ -21,6 +21,12 @@ inline std::string add_commas(int num) {
         pos += pad.length() + 1;
     }
   }
+
+    inline void strip_whitespace(std::string& s) {
+        s.erase(std::remove_if(s.begin(), s.end(), [](char c) {
+            return c == ' ' || c == '\n' || c == '\r' || c == '\t';
+        }), s.end());
+    }
   
   inline std::string wrap_str(const std::string& s,const std::string& c) {
     return c+s+c;

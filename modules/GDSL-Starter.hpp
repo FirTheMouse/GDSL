@@ -169,6 +169,10 @@ namespace GDSL {
     
             start_stage(e_handlers);
             standard_backwards_pass(root);
+
+            start_stage(i_handlers);
+            standard_travel_pass(root);
+
             #if PRINT_ALL
                 span->print_all();
                 print("==FINAL FORM==");
@@ -177,6 +181,8 @@ namespace GDSL {
 
             start_stage(x_handlers);
             standard_travel_pass(root);
+
+            print("MY TYPE ",root->type," AS: ",labels[root->type]);
 
             // print("AS STRING");
             // print(nodenet_to_string(root));

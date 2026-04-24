@@ -334,8 +334,8 @@ namespace Acorn {
             return to_return;
         }
     
-        #define MUTE_TABLES 1
-        #define MUTE_MUTED_QUALS 1
+        // #define MUTE_TABLES 1
+        // #define MUTE_MUTED_QUALS 1
     
         std::string node_to_string(const Ptr& node, int depth = 0, int index = 0, bool print_sub_scopes = false) {
             std::string indent(depth * 2, ' ');

@@ -1,6 +1,7 @@
-formed type GEMS_RB {
+scripted formed type GEMS_RB {
     int one {
         3; onform "Wumbers" {
+            "Default" : 0;
             "First" : 1;
             "Second" : 2;
             "Third" : 3;
@@ -15,16 +16,23 @@ formed type GEMS_RB {
     int two {
         6; 
         7; onform "Twumbers" {
+            "Default" : 0;
             "Firsty" : 11;
             "Secondy" : 22;
             "Thirdy" : 33;
         }
-        8; 
+        8; onscript "
+                int a = 0;
+                if(1(2)==11) {a = 6;}
+                if(1(2)==22) {a = 12;}
+            ";
+            onform "testing" {
+                "Default" : 0;
+                "Firstye" : 11;
+                "Secondye" : 22;
+                "Thirdye" : 33;
+            }
         9;
-    }
-
-    string names {
-        "alex"; "axel"; "bob";
     }
 }
 

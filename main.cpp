@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     // twig->run(root);
 
     g_ptr<Thistle_Unit> thistle = make<Thistle_Unit>();
-    g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
+    g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/pinetest.gld"));
     thistle->run(thistle_root);
 
     // g_ptr<Thistle_Unit> pine_thistle = make<Thistle_Unit>();
@@ -73,8 +73,8 @@ int main(int argc, char* argv[]) {
 
     // g_ptr<C_Compiler> c = make<C_Compiler>();
     // c->init();
-    // // root = c->process(readFile("modules/tests/ctest.gld"));
-    // // c->run(root);
+    // root = c->process(readFile("modules/tests/ctest.gld"));
+    // c->run(root);
 
     // c->emit_mode = true;
     // root = c->process(readFile("modules/tests/cemittest.gld"));

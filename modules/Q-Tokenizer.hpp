@@ -48,10 +48,12 @@ namespace GDSL {
         size_t rbrace_id = add_token('}', "RBRACE");
 
         size_t in_string_id = reg_id("IN_STRING_KEY");
+        size_t in_short_string_id = reg_id("IN_SHORT_STRING_KEY");
         size_t in_alpha_id = reg_id("IN_ALPHA");
         size_t in_digit_id = reg_id("IN_DIGIT");
         size_t end_id = add_token(';',"END"); //Can commonly be changed to be a line return
         size_t quote_id = reg_id("QUOTE");
+        size_t single_quote_id = reg_id("SINGLE_QUOTE");
 
         list<g_ptr<Node>> tokenize(const std::string& code) {
             list<g_ptr<Node>> result;
@@ -162,6 +164,45 @@ namespace GDSL {
                 ctx.result->push(ctx.node);
 
                 g_ptr<Node> quote = make<Node>(quote_id,'"');
+                quote->x = at_x; quote->y = at_y;
+                quote->mute = true;
+                ctx.result->last()->quals << quote;
+            });
+
+
+            tokenizer_state_functions.put(in_short_string_id,[this](Context& ctx) {
+                char c = ctx.source.at(ctx.index);
+                if(c=='\'') {
+                    ctx.state=0;
+                    g_ptr<Node> quote = make<Node>(single_quote_id,c);
+                    quote->x = at_x; quote->y = at_y;
+                    quote->mute = true;
+                    ctx.result->last()->quals << quote;
+                } else if(c=='\\') {
+                    if(ctx.index+1<ctx.source.length()) {
+                        ctx.node->name += ctx.source.at(ctx.index+1);
+                        at_x+=1.0f;
+                        ctx.index++;
+                    }
+                } else if(c=='\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                    ctx.node->name += c;
+                }
+                else {
+                    ctx.node->name += c;
+                }
+            });
+            tokenizer_functions.put('\'',[this](Context& ctx) {
+                ctx.state = in_short_string_id;
+                ctx.node = make<Node>();
+                ctx.node->x = at_x+1;
+                ctx.node->y = at_y;
+                ctx.node->type = string_id;
+                ctx.node->name = "";
+                ctx.result->push(ctx.node);
+
+                g_ptr<Node> quote = make<Node>(single_quote_id,'\'');
                 quote->x = at_x; quote->y = at_y;
                 quote->mute = true;
                 ctx.result->last()->quals << quote;

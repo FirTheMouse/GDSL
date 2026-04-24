@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../modules/GDSL-Core.hpp"
+#include "../modules/Q-Literals.hpp"
 
 namespace GDSL {
-    struct HTML_Unit : public virtual Unit {
+    struct HTML_Unit : public virtual Literals_Unit {
         HTML_Unit() { init(); }
 
         size_t html_id = reg_id("html");
@@ -66,17 +66,35 @@ namespace GDSL {
                 g_ptr<Node> qual = ctx.node->quals[q];
                 for(auto c : qual->children) {
                     if(c->type==property_id) {
+                        std::string prop = "";
+                        std::string val = "";
+
+                        if(c->left()->value->type==string_id) {
+                            process_node(ctx,c->left());
+                            prop = c->left()->value->get<std::string>();
+                        } else {
+                            prop = c->left()->name;
+                        }
+
+                        if(c->right()->value->type==string_id) {
+                            process_node(ctx,c->right());
+                            val = c->right()->value->get<std::string>();
+                        } else {
+                            val = c->right()->name;
+                        }
+
                         list<std::string>* prop_labels; list<std::string>* prop_values;
-                        if(is_prop_structural(c->name)) {
+                        if(is_prop_structural(prop)) {
                             prop_labels = &structural_prop_labels; 
                             prop_values = &structural_prop_values;
                         } else {
                             prop_labels = &style_prop_labels; 
                             prop_values = &style_prop_values;
                         }
-                        if(q==0||!prop_labels->has(c->name)) {
-                            prop_labels->push(c->name);
-                            prop_values->push(c->opt_str);
+
+                        if(q==0||!prop_labels->has(prop)) {
+                            prop_labels->push(prop);
+                            prop_values->push(val);
                         }
                     } else {
 
@@ -170,7 +188,9 @@ namespace GDSL {
                 
                 if(ctx.node->left()) {
                     process_node(ctx, ctx.node->left());
-                    ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
+                    if(ctx.node->left()->value->data) {
+                        ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
+                    }
                 }
                 
                 s+=">\n"+ctx.node->opt_str+"\n</"+labels[ctx.node->sub_type]+">\n";

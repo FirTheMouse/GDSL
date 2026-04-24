@@ -12,6 +12,7 @@ namespace GDSL {
             size_t identifier_id = reg_id("IDENTIFIER");
             size_t object_id = reg_id("OBJECT");
             size_t literal_id = reg_id("LITERAL");
+            size_t ptr_id = reg_id("PTR");
 
             size_t var_decl_id = reg_id("VAR_DECL");
             size_t func_call_id = reg_id("FUNC_CALL");

@@ -2,6 +2,7 @@
 
 #include "../modules/GDSL-TwigSnap.hpp"
 #include "../modules/GDSL-PineNeedle.hpp"
+#include "../modules/GDSL-GQL.hpp"
 
 namespace GDSL {
     struct Thistle_Unit : public virtual TwigSnap_DSL_Frontend, public virtual PineNeedle_Unit {
@@ -46,6 +47,101 @@ namespace GDSL {
             }
         };
 
+        void recive_sheet_edit(Context& ctx){
+            list<std::string> elements = split_str(ctx.sub->source,' ');
+            std::string note_name = "";
+            int column = 0;
+            int row = 0;
+            std::string value = "";
+            std::string target = "";
+            for(auto e : elements) print(e);
+            if(elements.length()==5) {
+                note_name = elements[0];
+                column = std::stoi(elements[1]);
+                row = std::stoi(elements[2]);
+                value = elements[3];
+                target = elements[4];
+            } else if(elements.length()==4) {
+                column = std::stoi(elements[0]);
+                row = std::stoi(elements[1]);
+                value = elements[2];
+                target = elements[3];
+            } else if(elements.length()<4) {
+                print(red("recive_sheet_edit:x_handler invalid source: "+ctx.sub->source));
+                return;
+            }
+            g_ptr<Node> sheet_node = scan_for_node(target,ctx.sub->node->scope());
+            if(!sheet_node) {
+                print(red("COULD NOT FIND THE TYPE"));
+                return;
+            }
+            g_ptr<Type> ts = sheet_node->value->store;
+            if(!ts) {
+                print(red("SHEET NODE HAS NO SHEET: make sure the right sheet name is being found!"));
+                return;
+            }
+        
+            print(red("EDIT: "+value+" "+target));
+            // print(ts->table_to_string(4));
+
+            int tag = 0;
+            int esize = ts->columns[column].element_size;
+            if(note_name=="") {
+                if(esize==4) {
+                    tag = int_id;
+                } else if(esize==1) {
+                    tag = bool_id;
+                } else if(esize==sizeof(std::string)) {
+                    tag = string_id;
+                }
+            } else {
+                _note& note = ts->get_note(note_name);
+                tag = note.tag;
+            }
+        
+        
+            if(tag == int_id) {
+                int val = std::stoi(value);
+                ts->set(column,row,(void*)&val);
+            } else if(tag == float_id) {
+                float val = std::stof(value);
+                ts->set(column,row,(void*)&val);
+            } else if(tag == bool_id) {
+                bool val = (value=="true");
+                ts->set(column,row,(void*)&val);
+            } else if(tag == string_id) {
+                ts->set(column,row,(void*)&value);
+            } else {
+                print(red("cell_edit:post_handler unrecognized tag: "+labels[tag]));
+            }
+
+            //And run scripts
+            if(g_ptr<Node> scriptqual = sheet_node->value->get_qual(scripted_id)) {
+                if(g_ptr<Type> scripts = scriptqual->value->store) {
+                    print(scripts->table_to_string(4));
+                    for(int c = 0; c<scripts->column_count();c++) {
+                        for(int r = 0; r<scripts->row_count(c);r++) {
+                            Ptr script_ticket = scripts->get<Ptr>(c, r);
+                            if(script_ticket.idx!=0) {
+                                g_ptr<GQL_Unit> script_unit = make<GQL_Unit>();
+                                script_unit->self = ts;
+                                _column& get_from = types[script_ticket.pool]->columns[script_ticket.idx];
+                                std::string codestr = "";
+                                for(int h=0;h<get_from.length();h++) {
+                                    codestr+=*(char*)get_from.get(h);
+                                }
+                                g_ptr<Node> script_root = script_unit->process(codestr);
+                                script_unit->run(script_root);
+                                if(script_root->left() && script_root->left()->value->data) {
+                                    ts->set(c, r, script_root->left()->value->data);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         void init() override {
             g_ptr<Type> ts = make<Type>();
             uint32_t one_id = ts->new_column<int>("one",1,int_id);
@@ -81,23 +177,31 @@ namespace GDSL {
             x_handlers[test_sheet_id] = [this,ts](Context& ctx) {
                 ctx.node->value->store = ts;
             };
-            
+
+            // n_handlers[form_id] = [this](Context& ctx){
+            //     if(ctx.index+1<ctx.result->length()) {
+            //         ctx.node->quals << copy_as_token(ctx.node);
+            //         ctx.node->quals << copy_as_token(ctx.result->get(ctx.index+1));
+            //         ctx.node->name = ctx.result->take(ctx.index+1)->name;
+            //     }
+            // };
             r_handlers[form_id] = [this](Context& ctx){
                 standard_gather_from_scope(ctx);
             };
             html_handlers[form_id] = [this](Context& ctx) {
-                std::string target_sheet = "";
+                std::string target_sheet = "sheet";
                 if(ctx.node->left()) {
-                    process_node(ctx.node->left());
-                    if(ctx.node->left()->value->type_scope) {
-                        if(ctx.node->left()->value->type_scope->owner->value->has_qual(formed_id)) {
-                            ctx.node->left()->value->store = ctx.node->left()->value->type_scope->owner->value->get_qual(formed_id)->value->store;
-                            target_sheet = ctx.node->left()->value->type_scope->owner->name;
+                    if(ctx.node->left()->value->has_qual(formed_id)) {
+                        ctx.node->value = ctx.node->left()->value->get_qual(formed_id)->value;
+                    } else {
+                        process_node(ctx.node->left());
+                        if(ctx.node->left()->value->type_scope) {
+                            if(ctx.node->left()->value->type_scope->owner->value->has_qual(formed_id)) {
+                                ctx.node->left()->value->store = ctx.node->left()->value->type_scope->owner->value->get_qual(formed_id)->value->store;
+                            }
                         }
+                        ctx.node->value->store = ctx.node->left()->value->store;
                     }
-                    ctx.node->value->store = ctx.node->left()->value->store;
-                    //ctx.node->name =  ctx.node->left()->name;
-                    ctx.node->in_scope->node_table[ctx.node->name] = ctx.node;
                 } 
                 if(ctx.node->right()) {
                     process_node(ctx.node->right());
@@ -110,12 +214,11 @@ namespace GDSL {
                     return;
                 }
                 g_ptr<Type> t = ctx.node->value->store;
-                _type_image img = t->get_image();
-            
+                _type_image img = t->get_image();            
 
                 g_ptr<style_manager> styles = make<style_manager>(this);
 
-                std::string out = "<div class='form'";
+                std::string out = "<div class='form' id='form'";
                 if(ctx.node->scope()) {
                     out += emit_inline_html(ctx, ctx.node->scope());
                     for(auto c : ctx.node->scope()->children) {
@@ -184,71 +287,65 @@ namespace GDSL {
             };
             
             x_handlers[recive_sheet_edit_id] = [this](Context& ctx) {
-                list<std::string> elements = split_str(ctx.sub->source,' ');
-                std::string note_name = "";
-                int column = 0;
-                int row = 0;
-                std::string value = "";
-                std::string target = "";
-                print("A");
-                for(auto e : elements) print(e);
-                if(elements.length()==5) {
-                    note_name = elements[0];
-                    column = std::stoi(elements[1]);
-                    row = std::stoi(elements[2]);
-                    value = elements[3];
-                    target = elements[4];
-                } else if(elements.length()==4) {
-                    column = std::stoi(elements[0]);
-                    row = std::stoi(elements[1]);
-                    value = elements[2];
-                    target = elements[3];
-                } else if(elements.length()<4) {
-                    print(red("recive_sheet_edit:x_handler invalid source: "+ctx.sub->source));
-                    return;
-                }
-                print("B");
-                g_ptr<Node> sheet_node = scan_for_node(target,ctx.sub->root);
-                if(!sheet_node) {
-                    print(red("COULD NOT FIND THE TYPE"));
-                    return;
-                }
-                g_ptr<Type> ts = sheet_node->value->store;
-            
-                print(red("EDIT: "+value+" "+target));
-                int tag = 0;
-                int esize = ts->columns[column].element_size;
-                if(note_name=="") {
-                    if(esize==4) {
-                        tag = int_id;
-                    } else if(esize==1) {
-                        tag = bool_id;
-                    } else if(esize==sizeof(std::string)) {
-                        tag = string_id;
+                recive_sheet_edit(ctx);
+            };
+
+            x_handlers[make_tokenized_keyword("thistle_editor")] = [this](Context& ctx){
+                std::string source = ctx.sub->source;
+                print("RECIVED: ",source);
+    
+                size_t first = source.find(" ");
+                size_t second = source.find(" ", first + 1);
+                
+                std::string target = source.substr(0, first);
+                std::string instruction = source.substr(first + 1, second - first - 1);
+                std::string content = source.substr(second + 1);
+
+                print("TARGET: ",target);
+                print("INSTRUCTION: ",instruction);
+                print("CONTENT: ",content);
+
+                std::string out = "";
+                g_ptr<Node> node = ctx.sub->node;
+                if(instruction=="toggle_visibility") {
+                    if(node->mute) {
+                        node->mute = false;
+                        out = html_encode_node(node);
+                    } else {
+                        node->mute = true;
+                        out = "<div id=\""+target+"\"></div>";
                     }
+                } else if(instruction=="add_column") {
+                    g_ptr<Type> t = node->value->store;
+                    t->new_column<int>("NEW",0,int_id);
+                    out = html_encode_node(node);
+                } else if(instruction=="add_row") {
+                    g_ptr<Type> t = node->value->store;
+                    for(int i=0;i<t->column_count();i++) t->add_row(i);
+                    out = html_encode_node(node);
+                } else if(instruction=="swap") {
+                    for(auto c : ctx.sub->root->children) {
+                        if(c->type==type_col_id&&c->name==content) {
+                            node->left()->value = c->value;
+                            break;
+                        }
+                    }
+                    out = html_encode_node(node);
                 } else {
-                    _note& note = ts->get_note(note_name);
-                    tag = note.tag;
+                    out = html_encode_node(node);
                 }
-            
-            
-                if(tag == int_id) {
-                    int val = std::stoi(value);
-                    ts->set(column,row,(void*)&val);
-                } else if(tag == float_id) {
-                    float val = std::stof(value);
-                    ts->set(column,row,(void*)&val);
-                } else if(tag == bool_id) {
-                    bool val = (value=="true");
-                    ts->set(column,row,(void*)&val);
-                } else if(tag == string_id) {
-                    ts->set(column,row,(void*)&value);
-                } else {
-                    print(red("cell_edit:post_handler unrecognized tag: "+labels[tag]));
-                }
+
+                ctx.sub->source = out;
             };
             
 
+            // n_handlers[sheet_id] = [this](Context& ctx){
+            //     if(ctx.index+1<ctx.result->length()) {
+            //         ctx.node->quals << copy_as_token(ctx.node);
+            //         ctx.node->quals << copy_as_token(ctx.result->get(ctx.index+1));
+            //         ctx.node->name = ctx.result->take(ctx.index+1)->name;
+            //     }
+            // };
             r_handlers[sheet_id] = [this](Context& ctx){
                 standard_gather_from_scope(ctx);
             };
@@ -256,11 +353,9 @@ namespace GDSL {
                 if(ctx.node->left()) {
                     process_node(ctx.node->left());
                     if(ctx.node->left()->value->type==type_id) {
-                        ctx.node->left()->value->store = ctx.node->left()->value->type_scope->owner->value->store;
+                        ctx.node->left()->value = ctx.node->left()->value->type_scope->owner->value;
                     }
-                    ctx.node->value->store = ctx.node->left()->value->store;
-                    ctx.node->name =  ctx.node->left()->name;
-                    ctx.node->in_scope->node_table[ctx.node->name] = ctx.node;
+                    ctx.node->value = ctx.node->left()->value;
                 } 
 
                 g_ptr<style_manager> styles = make<style_manager>(this);
@@ -316,7 +411,7 @@ namespace GDSL {
                         std::string row = std::to_string(access_sub_index);
                         std::string as_string = "";
                         if(r>=t->columns[access_index].length()) {
-                            as_string = "";
+                            continue;
                         } else if(value_to_string.hasKey(col_img.tag)) {
                             as_string = value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index));
                         } else {

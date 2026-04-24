@@ -6,7 +6,7 @@ namespace GDSL {
     struct Scope_Unit : public virtual Tokenizer_Unit {
         map<uint32_t, std::function<void(g_ptr<Node>, g_ptr<Node>, g_ptr<Node>)>> scope_link_handlers;
         map<uint32_t, int> scope_precedence;
-    
+        list<g_ptr<Node>> scope_daycare;
         void print_scope(g_ptr<Node> scope, int depth = 0) {
             std::string indent(depth * 2, ' ');
             
@@ -54,19 +54,10 @@ namespace GDSL {
         std::function<void(g_ptr<Node>, g_ptr<Node>, g_ptr<Node>)> default_scope_function = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node){
             standard_scope_link_handler(new_scope,current_scope,owner_node);
         };
-    
-        void parse_scope(g_ptr<Node> root) {
-            root->name = "GLOBAL";
-            root->type = scope_id;
-            root->is_scope = true;
-            list<g_ptr<Node>> nodes;
-            nodes <= root->children;
+
+        void inner_parse_scope(list<g_ptr<Node>>& nodes, g_ptr<Node> root) {
             g_ptr<Node> current_scope = root;
             list<g_value> stack{g_value()};
-    
-            #if PRINT_ALL
-                newline("Parse scope pass");
-            #endif
     
             for (int i = 0; i < nodes.size(); ++i) {
                 g_ptr<Node> node = nodes[i];
@@ -86,6 +77,15 @@ namespace GDSL {
                         }
                     }
                     else {
+                        if(!node->children.empty()) {
+                            g_ptr<Node> subscope = make<Node>(scope_id,"marked-by-"+node->name);
+                            scope_daycare << subscope;
+                            inner_parse_scope(node->children,subscope);
+                            for(int i=node->children.length()-1;i>=0;i--) {
+                                if(node->children[i]->in_scope!=subscope) node->children.removeAt(i);
+                                else node->children[i]->in_scope = current_scope.getPtr();
+                            }
+                        }
                         current_scope->children << node; 
                         node->place_in_scope(current_scope.getPtr());
                         if(on_stack && !stack.last().deferred && !stack.last().explc) {
@@ -133,7 +133,23 @@ namespace GDSL {
                     }
                 }
             }
+
+        }
     
+        void parse_scope(g_ptr<Node> root) {
+
+            #if PRINT_ALL
+                newline("Parse scope pass");
+            #endif
+
+            root->name = "GLOBAL";
+            root->type = scope_id;
+            root->is_scope = true;
+            list<g_ptr<Node>> nodes;
+            nodes <= root->children;
+            
+            inner_parse_scope(nodes,root);
+
             #if PRINT_ALL
             //print_scope(root_scope);
             endline();

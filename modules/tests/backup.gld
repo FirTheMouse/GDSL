@@ -259,3 +259,9 @@ server {
     }
 }
 
+
+"onclick" : "
+    const panel = getel('form_panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+";
+

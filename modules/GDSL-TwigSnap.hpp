@@ -5,7 +5,7 @@
 #include "../modules/Q-HTML.hpp"
 
 namespace GDSL {
-    struct TwigSnap_DSL_Frontend : public virtual HTML_Unit,  public virtual Q_Script_Unit, public virtual Web_Unit {
+    struct TwigSnap_DSL_Frontend : public virtual Q_Script_Unit, public virtual HTML_Unit, public virtual Web_Unit {
         TwigSnap_DSL_Frontend() { init(); }
 
         size_t route_id = reg_id("route");
@@ -25,13 +25,41 @@ namespace GDSL {
 
         g_ptr<Node> make_property(g_ptr<Node> type, g_ptr<Node> value, g_ptr<Node> parent = nullptr) {
             g_ptr<Node> prop_node = make<Node>(property_id);
-            prop_node->name = type->name;
-            prop_node->opt_str = value->name;
-            prop_node->quals << copy_as_token(type);
-            prop_node->quals << copy_as_token(value);
+            prop_node->children << type;
+            prop_node->children << value;
             if(parent)
                 prop_node->quals << copy_as_token(parent);
             return prop_node;
+        }
+
+        void instantiate_template(g_ptr<Node> call, g_ptr<Node> decl) {
+            if(call->scope()) {
+                call->scopes[0] = make<Node>(decl->scope()->type,decl->name);
+                call->scope()->value->copy(decl->scope()->value,true);
+                call->scope()->owner = call.getPtr();
+                call->scope()->quals << decl->scope()->quals;
+                call->in_scope->scopes << call->scope();
+
+                map<g_ptr<Value>,g_ptr<Value>> value_alias_table;
+                map<g_ptr<Node>,g_ptr<Node>> node_alias_table;
+                for(int i=0;i<call->children.length();i++) {
+                    process_node(call->children[i]);
+                    if(i<decl->children.length()) {
+                        value_alias_table.put(decl->children[i]->value, call->children[i]->value);
+                        node_alias_table.put(decl->children[i], call->children[i]);
+                    }
+                }
+
+
+                for(auto c : decl->scope()->children) {
+                    g_ptr<Node> copy = make<Node>();
+                    copy->in_scope = call->scope().getPtr();
+                    deep_copy_node(copy,c,value_alias_table,node_alias_table);
+                    call->scope()->children << copy;
+                }
+            } else {
+                print("CALL HAS NO SCOPE");
+            }
         }
 
         void standard_gather_from_scope(Context& ctx) {
@@ -55,15 +83,18 @@ namespace GDSL {
                             node->scope()->children.removeAt(i);
                             i--;
                         } else if(ref_v->type==component_id) {
-                            node->scope()->quals << copy_as_token(c);
-                            node->scope()->children.removeAt(i);
-                            node->scope()->children.insert(ref->owner,i);
+                            if(ref->owner->children.empty()) {
+                                node->scope()->quals << copy_as_token(c);
+                                node->scope()->children.removeAt(i);
+                                node->scope()->children.insert(ref->owner,i);
+                            } else {
+                                instantiate_template(c,ref->owner);
+                            }
                         } else {
+                            print("ACTUAL FUNC CALL");
                             //Is an actual func call, handle as such
                         }
                     } else if(c->type == func_decl_id) {
-
-
 
                     } else if(c->children.empty()) {
                         if(c->value->type==inlined_id) {
@@ -194,6 +225,8 @@ namespace GDSL {
             tokenized_keywords.put(labels[request_id],request_id);
             tokenized_keywords.put(labels[response_id],response_id);
             tokenized_keywords.put(labels[close_id],close_id);
+
+            r_handlers[func_call_id] = [this](Context& ctx){standard_sub_process(ctx);};
 
             scope_link_handlers[string_id] = [this](g_ptr<Node> new_scope, g_ptr<Node> current_scope, g_ptr<Node> owner_node) {
                 standard_scope_link_handler(new_scope,current_scope,owner_node);
@@ -399,17 +432,21 @@ namespace GDSL {
 
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
                 standard_gather_from_scope(ctx);
-                if(ctx.node->value->type==invisible_id) {
-                    ctx.node->scope()->type = invisible_id;
-                } else if(ctx.node->value->type==foldable_id) {
-                    ctx.node->scope()->type = foldable_id;
-                } else if(ctx.node->value->type==iframe_id) {
-                    ctx.node->scope()->type = iframe_id;
-                } else {
-                    ctx.node->scope()->type = div_id;
+                for(auto s : ctx.node->scopes) { 
+                    if(ctx.node->value->type==invisible_id) {
+                        s->type = invisible_id;
+                    } else if(ctx.node->value->type==foldable_id) {
+                        s->type = foldable_id;
+                    } else if(ctx.node->value->type==iframe_id) {
+                        s->type = iframe_id;
+                    } else {
+                        s->type = div_id;
+                    }
                 }
             };
+            r_handlers[func_call_id] = r_handlers[func_decl_id];
             html_handlers[body_id] = [this](Context& ctx){
                 standard_emit_as_html(ctx);
             };
@@ -417,9 +454,12 @@ namespace GDSL {
                 if(ctx.node->value->type==inlined_id) return;
                 if(ctx.node->value->type==invisible_id) return;
                 if(ctx.node->scope()) {
-                    ctx.source = html_encode_node(ctx.node->scope());
+                    for(auto s : ctx.node->scopes) { 
+                        ctx.source = html_encode_node(s);
+                    }
                 }   
             };
+            html_handlers[func_call_id] = html_handlers[func_decl_id];
             html_handlers[div_id] = [this](Context& ctx){
                 standard_emit_as_html(ctx);
             };

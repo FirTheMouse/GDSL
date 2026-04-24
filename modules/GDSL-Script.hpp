@@ -386,6 +386,7 @@ namespace GDSL {
                 standard_sub_process(ctx);
 
                 if(!ctx.node->left()||!ctx.node->right()) return;
+                ctx.node->value = ctx.node->left()->value;
 
                 g_ptr<Value> from = ctx.node->right()->value;
                 g_ptr<Value> to = ctx.node->left()->value;
@@ -722,18 +723,18 @@ namespace GDSL {
                 g_ptr<Value> decl_value = make<Value>();
                 
                 bool found_a_value = node->find_value_in_scope();
-                bool is_qualifier = node->value->type!=0;
-
+                bool is_qualifier = node->value->type!=0 && node->value->sub_type != 0; 
+                //We count it as a qualifer if it has a fully valid value to stamp
 
                 int root_idx = -1;
-                if(is_qualifier && node->value->sub_type != 0) {
+                if(is_qualifier) {
                     decl_value->quals << value_to_qual(node->value);
                     decl_value->quals.last()->name = node->name;
                     decl_value->quals.last()->x = node->x;
                     decl_value->quals.last()->y = node->y;
                     for(int i = 0; i < node->children.length(); i++) {
                         g_ptr<Node> c = node->children[i];
-                        c->find_value_in_scope();
+                        c->find_value_in_scope(); //Process forward and consume other qualifers
                         if(c->value->type!=0) {
                             decl_value->quals << value_to_qual(c->value);
                             decl_value->quals.last()->name = c->name;
@@ -788,6 +789,7 @@ namespace GDSL {
                         node->type = func_decl_id;
                         node->scopes[0] = node->in_scope->distribute_node(node->name,node->scope());
                         node->value->type_scope = node->scope().getPtr();
+                        node->value->sub_type = 0;
                         node->value = node->in_scope->distribute_value(node->name,node->value);
                     } else {
                         node->type = type_decl_id;
@@ -812,16 +814,17 @@ namespace GDSL {
                         node->find_value_in_scope(); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
                         if(node->value->type_scope)
                             node->scopes[0] = node->value->type_scope; //Swap to the type scope
-                        if(!node->children.empty()) {
-                            node->name.append("(");
-                            for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
-                        }
+                        // if(!node->children.empty()) {
+                        //     node->name.append("(");
+                        //     for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
+                        // }
                     } else if(found_a_value) { //if we already had a value and nothing interesting happened to us, reclaim it
                         node->find_value_in_scope();
                     } else {                                         
                         //We don't know what the thing is
                     }
                 }
+
             };
         } 
     };

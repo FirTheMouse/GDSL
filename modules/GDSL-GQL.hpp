@@ -16,6 +16,7 @@ namespace GDSL {
         size_t query_or_id = make_contextual_keyword("or",query_id,"query_or");
         size_t query_and_id = make_contextual_keyword("and",query_id,"query_and");
 
+        g_ptr<Type> self = nullptr;
 
         bool eval_terms(Context& ctx, g_ptr<Node> node, _note& note, g_ptr<Type> t) {
             if(node->type == query_where_id) {
@@ -152,6 +153,32 @@ namespace GDSL {
                     }
                 }
             };
+
+
+            x_handlers[literal_id] = [this](Context& ctx){
+                if(self) {
+                    if(ctx.node->left()) {
+                        process_node(ctx, ctx.node->left());
+                        _type_image img = self->get_image();
+                        int col = 0;
+                        if(ctx.node->value->type==int_id) {
+                            col = ctx.node->value->get<int>();
+                        } else if(ctx.node->value->type==string_id) {
+                            for(auto cimg : img.columns) {
+                                if(cimg.label==ctx.node->value->get<std::string>()) {
+                                    col = cimg.index;
+                                    break;
+                                }
+                            }
+                        }
+                        int row = ctx.node->left()->value->get<int>();
+                        ctx.node->value->data = self->get(col,row);
+                        ctx.node->value->size = img.columns[col].size;
+                        ctx.node->value->type = img.columns[col].tag;
+                    }
+                }
+            };
+
         }
     };
 }

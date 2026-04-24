@@ -221,22 +221,47 @@ public:
         return false;
     }
 
-    void copy(g_ptr<Node> o) {
+    void copy(g_ptr<Node> o, bool is_deep = false) {
         type = o->type;
         sub_type = o->sub_type;
         name = o->name;
         x = o->x;
         y = o->y;
         z = o->z;
-        value = o->value;
-        children = o->children;
-        quals = o->quals;
-        scopes = o->scopes;
+        mute = o->mute;
+        is_scope = o->is_scope;
+        if(is_deep) {
+            value->copy(o->value,true);
+            children.clear();
+            for(auto c : o->children) {
+                g_ptr<Node> newc = make<Node>();
+                newc->copy(c,true);
+                children << newc;
+            }
+            quals.clear();
+            for(auto q : o->quals) {
+                g_ptr<Node> newq = make<Node>();
+                newq->copy(q,true);
+                quals << newq;
+            }
+            scopes.clear();
+            for(auto s : o->scopes) {
+                g_ptr<Node> news = make<Node>();
+                news->copy(s,true);
+                o->in_scope->scopes << news;
+                scopes << news;
+            }
+        } else {
+            value = o->value;
+            children = o->children;
+            quals = o->quals;
+            scopes = o->scopes;
+        }
+        value_table = o->value_table;
+        node_table = o->node_table;
         parent = o->parent;
         owner = o->owner;
         in_scope = o->in_scope;
-        value_table = o->value_table;
-        node_table = o->node_table;
         opt_str = o->opt_str;
     }
 
@@ -363,11 +388,11 @@ void copy_value(g_ptr<Value> val, g_ptr<Value> o, bool is_deep) {
     val->size = o->size; 
     val->sub_size = o->sub_size;
     val->type_scope = o->type_scope;
-    val->store = o->store;
+    val->store = o->store; //Add deep copying here too
     if(is_deep) {
         for(auto oq : o->quals) {
             g_ptr<Node> cpy = make<Node>();
-            cpy->copy(oq);
+            cpy->copy(oq,is_deep);
             val->quals << cpy;
         }
     } else {
@@ -388,12 +413,65 @@ g_ptr<Node> value_to_qual(g_ptr<Value> val) {
     return to_return;
 }
 
+
+void deep_copy_node(g_ptr<Node> n, g_ptr<Node> o, map<g_ptr<Value>,g_ptr<Value>>& value_alias_table, map<g_ptr<Node>,g_ptr<Node>>& node_alias_table) {
+    n->type = o->type;
+    n->sub_type = o->sub_type;
+    n->name = o->name;
+    n->x = o->x;
+    n->y = o->y;
+    n->z = o->z;
+    n->mute = o->mute;
+    n->is_scope = o->is_scope;
+    n->children.clear();
+    for(auto c : o->children) {
+        g_ptr<Node> newc = make<Node>();
+        deep_copy_node(newc,c,value_alias_table,node_alias_table);
+        n->children << newc;
+    }
+    n->quals.clear();
+    for(auto q : o->quals) {
+        g_ptr<Node> newq = make<Node>();
+        deep_copy_node(newq,q,value_alias_table,node_alias_table);
+        n->quals << newq;
+    }
+    n->scopes.clear();
+    for(auto s : o->scopes) {
+        g_ptr<Node> news = make<Node>();
+        deep_copy_node(news,s,value_alias_table,node_alias_table);
+        if(n->in_scope) 
+            n->in_scope->scopes << news;
+        n->scopes << news;
+    }
+
+    if(value_alias_table.hasKey(o->value)) {
+        n->value = value_alias_table.get(o->value);
+        if(n->value->type_scope) {
+            if(n->scope())
+                n->scopes[0] = n->value->type_scope;
+            else 
+                n->scopes << n->value->type_scope;
+            n->in_scope->scopes << n->scope();
+        } 
+    } else {
+        n->value->copy(o->value,true);
+    }
+
+    n->value_table = o->value_table;
+    n->node_table = o->node_table;
+    n->parent = o->parent;
+    n->owner = o->owner;
+    n->in_scope = o->in_scope;
+    n->opt_str = o->opt_str;
+}
+
 using Handler = std::function<void(Context&)>;
 
 
 struct Unit : public Object {
 
     map<uint32_t,std::string> labels;
+    list<g_ptr<Type>> types;
 
     //Used for debugging, and for printing 
     map<uint32_t,std::function<std::string(void*)>> value_to_string;
@@ -452,7 +530,6 @@ struct Unit : public Object {
 
     std::string node_info(g_ptr<Node> node) {
         std::string to_return = "";
-        
         to_return += labels[node->type]
         + (node->sub_type==0?"":":"+labels[node->sub_type])
         + (node->name.empty()?"":" "+green(node->name)+" ")  
@@ -469,7 +546,7 @@ struct Unit : public Object {
     std::string node_to_string(g_ptr<Node> node, int depth = 0, int index = 0, bool print_sub_scopes = false) {
         std::string indent(depth * 2, ' ');
         std::string to_return = "";
-        
+
         to_return += indent + std::to_string(index) + ": " + node_info(node);
         
         if(!node->quals.empty()) {
@@ -1183,16 +1260,19 @@ struct Unit : public Object {
         write_raw<uint32_t>(out, type_buffer.length());
         write_raw<uint32_t>(out, value_buffer.length());
         write_raw<uint32_t>(out, node_buffer.length());
+        write_raw<uint32_t>(out, types.length());
 
         for(auto t : type_buffer) write_type(t, out);
         for(auto v : value_buffer) write_value(v, out);
         for(auto n : node_buffer) write_node(n, out);
+        for(auto t2 : types) write_type(t2, out);
     }
 
     g_ptr<Node> loadBinary(std::istream& in) {
         type_buffer.clear();
         node_buffer.clear();
         value_buffer.clear();
+        types.clear();
 
         //Remap the ids into a map for ease of acess 
         map<uint32_t, uint32_t> id_remap;
@@ -1216,6 +1296,7 @@ struct Unit : public Object {
         uint32_t type_count = read_raw<uint32_t>(in);
         uint32_t value_count = read_raw<uint32_t>(in);
         uint32_t node_count = read_raw<uint32_t>(in);
+        uint32_t types_count = read_raw<uint32_t>(in);
 
         //Pre allocate
         for(uint32_t i = 0; i < type_count; i++) {
@@ -1233,11 +1314,16 @@ struct Unit : public Object {
             n->save_idx = i;
             node_buffer << n;
         }
+        for(uint32_t i = 0; i < types_count; i++) {
+            auto t = make<Type>();
+            t->save_idx = i;
+            types << t;
+        }
         //Annotate
         for(uint32_t i = 0; i < type_count; i++) read_type(type_buffer[i], in);
         for(uint32_t i = 0; i < value_count; i++) read_value(value_buffer[i], in, id_remap);
         for(uint32_t i = 0; i < node_count; i++) read_node(node_buffer[i], in, id_remap);
-
+        for(uint32_t i = 0; i < types_count; i++) read_type(types[i], in);
 
         return node_buffer.empty() ? nullptr : node_buffer[0];
     }

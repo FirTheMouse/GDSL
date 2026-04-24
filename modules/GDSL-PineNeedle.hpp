@@ -9,17 +9,31 @@ namespace GDSL {
         size_t type_id = add_type("type");
         size_t eval_id = add_type("eval");
         size_t onform_id = make_tokenized_keyword("onform");
+        size_t onscript_id = make_tokenized_keyword("onscript");
 
         size_t type_col_id = reg_id("type_col");
 
-        size_t qscript_id = add_qualifier("qscript");
+
 
         size_t formed_id = add_qualifier("formed");
+        size_t scripted_id = add_qualifier("scripted");
         size_t calculator_id = add_qualifier("calculator");
 
+        g_ptr<Type> string_daycare = make<Type>(); uint32_t string_daycare_id = 0;
+
         void init() override {
+            string_daycare->add_column(); //For null
+            string_daycare_id = types.length(); types << string_daycare; 
             set_binding_powers(colon_id,4,6);
             n_handlers[onform_id] = [this](Context& ctx){
+                if(ctx.index+1<ctx.result->length()) {
+                    ctx.node->quals << copy_as_token(ctx.node);
+                    ctx.node->quals << copy_as_token(ctx.result->get(ctx.index+1));
+                    ctx.node->name = ctx.result->take(ctx.index+1)->name;
+                }
+            };
+
+            n_handlers[onscript_id] = [this](Context& ctx){
                 if(ctx.index+1<ctx.result->length()) {
                     ctx.node->quals << copy_as_token(ctx.node);
                     ctx.node->quals << copy_as_token(ctx.result->get(ctx.index+1));
@@ -49,51 +63,54 @@ namespace GDSL {
                 }
 
                 if(t) {
-                    if(!v->data) {
-                        if(v->type==string_id) {v->set<std::string>("wub");}
-                        else if(v->type==int_id) {v->set<int>(0);}
-                        else if(v->type==float_id) {v->set<float>(0.0f);}
-                        else {v->data = malloc(v->size);}
+                    size_t col = t->note_value(ctx.node->name, v->size, v->type).index;
+
+                    g_ptr<Type> form = nullptr;
+                    int formed_at = ctx.sub->node->value->find_qual(formed_id);
+                    if(g_ptr<Node> formqual = ctx.sub->node->value->get_qual(formed_id)) {
+                        if(!formqual->value->store) formqual->value->store = make<Type>();
+                        form = formqual->value->store;
                     }
-                    size_t col = t->new_column(ctx.node->name, v->data, v->size, v->type);
 
-                    if(v->has_qual(qscript_id)) {
-                        g_ptr<Q_Script_Unit> script = make<Q_Script_Unit>();
-                        g_ptr<Node> script_root = script->process(ctx.node->scope()->left()->value->get<std::string>());
-                        script->run(script_root);
-                        t->set(col,0,script_root->left()->value->data);
-                    } else {
-                        g_ptr<Type> form = nullptr;
-                        int formed_at = ctx.sub->node->value->find_qual(formed_id);
-                        if(formed_at!=-1) {
-                            g_ptr<Value> formqualv = ctx.sub->node->value->quals[formed_at]->value;
-                            if(!formqualv->store) formqualv->store = make<Type>();
-                            form = formqualv->store;
-                        }
-                        if(ctx.node->scope()) {
-                            for(auto c : ctx.node->scope()->children) {
-                                int col_idx = t->column_count()-1;
-                                int row_idx = t->row_count(col_idx)-1;
+                    g_ptr<Type> scripts = nullptr;
+                    if(g_ptr<Node> scriptqual = ctx.sub->node->value->get_qual(scripted_id)) {
+                        if(!scriptqual->value->store) scriptqual->value->store = make<Type>();
+                        scripts = scriptqual->value->store;
+                    }
 
-                                if(c->type==onform_id) {
-                                    if(form) {
-                                        std::string cords = std::to_string(col_idx)+"-"+std::to_string(row_idx);
-                                        size_t f_col = form->new_column<std::string>(c->name,cords,string_id);
-                                        if(c->scope()) {
-                                            for(auto c2 : c->scope()->children) {
-                                                if(c2->type==colon_id) {
-                                                    if(!c2->left()||!c2->right()) continue;
-                                                    g_ptr<Value> rv = c2->right()->value;
-                                                    form->push<std::string>(value_as_string(rv)+"-"+labels[rv->type]+"-"+c2->left()->name,f_col,string_id);
-                                                }
+                    if(ctx.node->scope()) {
+                        for(auto c : ctx.node->scope()->children) {
+                            int col_idx = t->column_count()-1;
+                            int row_idx = t->row_count(col_idx)-1;
+
+                            if(c->type==onform_id) {
+                                if(form) {
+                                    std::string cords = std::to_string(col_idx)+"-"+std::to_string(row_idx);
+                                    size_t f_col = form->new_column<std::string>(c->name,cords,string_id);
+                                    if(c->scope()) {
+                                        for(auto c2 : c->scope()->children) {
+                                            if(c2->type==colon_id) {
+                                                if(!c2->left()||!c2->right()) continue;
+                                                g_ptr<Value> rv = c2->right()->value;
+                                                form->push<std::string>(value_as_string(rv)+"-"+labels[rv->type]+"-"+c2->left()->name,f_col,string_id);
                                             }
                                         }
-                                    } else {
-                                        print(red("func_decl:i_handler attempted onform in a type with no form"));
                                     }
                                 } else {
-                                    t->push(c->value->data,c->value->size,col,c->value->type);
+                                    print(red("func_decl:i_handler attempted onform in a type with no form"));
                                 }
+                            } else if(c->type==onscript_id) {
+                                Ptr null_col{0,0,0};
+                                while(col_idx>=scripts->column_count()) scripts->new_column<Ptr>("",null_col,ptr_id);
+                                while(row_idx>=scripts->row_count(col_idx)) scripts->add_row(col_idx);
+
+                                uint32_t str_col = string_daycare->column_count(); 
+                                string_daycare->add_column(sizeof(char));
+                                for(char ch : c->name) {string_daycare->push<char>(ch, str_col);}
+                                Ptr str_ticket{string_daycare_id,str_col,0};
+                                scripts->set<Ptr>(col_idx,row_idx,str_ticket);
+                            } else {
+                                t->push(c->value->data,c->value->size,col,c->value->type);
                             }
                         }
                     }

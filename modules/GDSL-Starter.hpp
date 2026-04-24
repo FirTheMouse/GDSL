@@ -123,8 +123,8 @@ namespace GDSL {
             start_stage(s_handlers);
             parse_scope(root);
 
-            // print("==PROCCESSING FINISHED==");
-            // print_root(root);
+            print("==PROCCESSING FINISHED==");
+            print_root(root);
             //span->print_all();
             
             return root;
@@ -174,15 +174,13 @@ namespace GDSL {
             standard_travel_pass(root);
 
             #if PRINT_ALL
-                span->print_all();
+                //span->print_all();
                 print("==FINAL FORM==");
                 print_root(root);
             #endif
 
             start_stage(x_handlers);
             standard_travel_pass(root);
-
-            print("MY TYPE ",root->type," AS: ",labels[root->type]);
 
             // print("AS STRING");
             // print(nodenet_to_string(root));

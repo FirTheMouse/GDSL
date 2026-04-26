@@ -20,17 +20,9 @@ namespace GDSL {
             }
 
             for(int i = 0; i<amt; i++) {
-                // log("Current before result from ",ctx.node->name," taking right");
-                // for(int c=0;c<ctx.result->length();c++) {
-                //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
-                // }
                 if(ctx.index + 1 < ctx.result->length()) {
                     ctx.node->children << ctx.result->take(ctx.index + 1);
                 } 
-                // log("Current post result from ",ctx.node->name," taking right");
-                // for(int c=0;c<ctx.result->length();c++) {
-                //     log((c==ctx.index?"->":"  "),c,":\n",node_to_string(ctx.result->get(c),2));
-                // }
             }
         }
 
@@ -123,8 +115,8 @@ namespace GDSL {
             start_stage(s_handlers);
             parse_scope(root);
 
-            print("==PROCCESSING FINISHED==");
-            print_root(root);
+            // print("==PROCCESSING FINISHED==");
+            // print_root(root);
             //span->print_all();
             
             return root;

@@ -17,8 +17,8 @@ namespace GDSL {
         size_t div_id = make_keyword("div",0,"",component_id);
         size_t find_id = make_tokenized_keyword("find");
         size_t serve_id = make_tokenized_keyword("serve");
+        size_t template_id = add_qualifier("template");
 
-        size_t fragment_highlight_id = make_tokenized_keyword("fragment_highlight");
         size_t pebble_post_id = make_tokenized_keyword("pebble_post");
         size_t emit_as_html_id = make_tokenized_keyword("emit_as_html");
         size_t quick_server_id = make_tokenized_keyword("quick_server");
@@ -39,9 +39,12 @@ namespace GDSL {
                 call->scope()->owner = call.getPtr();
                 call->scope()->quals << decl->scope()->quals;
                 call->in_scope->scopes << call->scope();
+                // if(call->has_qual(template_id)) { //Strip it off the value and hand it back to the template decl
+                //     decl->quals << call->value->quals.take(call->value->find_qual(template_id));
+                // }
 
                 map<g_ptr<Value>,g_ptr<Value>> value_alias_table;
-                map<g_ptr<Node>,g_ptr<Node>> node_alias_table;
+                map<g_ptr<Node>,g_ptr<Node>> node_alias_table; //Not actually nessecary, doesn't hurt to have around though
                 for(int i=0;i<call->children.length();i++) {
                     process_node(call->children[i]);
                     if(i<decl->children.length()) {
@@ -103,7 +106,7 @@ namespace GDSL {
                             node->scope()->children.removeAt(i);
                             i--;
                         }
-                    } else if(c->children.length()==2&&c->type==colon_id||c->type==equals_id) {
+                    } else if(c->children.length()==2&&c->type==colon_id) {
                         properties->children << make_property(c->left(),c->right(),c);
                         node->scope()->quals <= properties->children.last()->quals; //Stealing the tokens for ourselves
                         node->scope()->children.removeAt(i);
@@ -215,8 +218,6 @@ namespace GDSL {
             return out;
         }
 
-        list<g_ptr<TwigSnap_DSL_Frontend>> twig_daycare;
-
         void init() override {
             tokenized_keywords.put(labels[server_id],server_id);
             tokenized_keywords.put(labels[port_id],port_id);
@@ -254,73 +255,6 @@ namespace GDSL {
                 ctx.node->value->set<std::string>(standard_emit_as_html(ctx, ctx.node->left()->value->get<g_ptr<Node>>()));
                 ctx.node->value->type = string_id;
                 ctx.node->value->size = 24;
-            };
-
-            x_handlers[fragment_highlight_id] = [this](Context& ctx) {
-                std::string source = ctx.sub->source;
-    
-                size_t first = source.find(" ");
-                size_t second = source.find(" ", first + 1);
-                
-                std::string target = source.substr(0, first);
-                std::string instruction = source.substr(first + 1, second - first - 1);
-                std::string content = source.substr(second + 1);
-
-                print("TARGET: ",target);
-                print("INSTRUCTION: ",instruction);
-                print("CONTENT: ",content);
-
-                std::string out = "";
-                g_ptr<TwigSnap_DSL_Frontend> twig = make<TwigSnap_DSL_Frontend>();
-                if(instruction=="compile") {
-                    Log::Line l; l.start();
-                    g_ptr<Node> root = twig->process(content);
-                    twig->resolve_and_evaluate(root);
-                    double a_time = l.end(); l.start();
-                    out += twig->nodenet_to_highlighted(root, content);
-                    double b_time = l.end(); 
-                    // l.start();
-                    //print_root(root);
-                    // double c_time = l.end();
-
-                    print("A: ",ftime(a_time));
-                    print("B: ",ftime(b_time));
-                    //print("C: ",ftime(c_time));
-                } else if(instruction=="end") {
-                    print("REQUEST TO END: ",target," OF ",servers.length());
-                    g_ptr<Server> to_end = get_server(target);
-                    if(to_end) {
-                        ::close(to_end->fd); 
-                        to_end->fd = -1;
-                        to_end->thread->end();
-                        servers.erase(to_end);
-                    } else {
-                        print(red("Unable to find server "+target+" to end"));
-                    }
-                } else if(instruction=="preview") {
-                    twig_daycare << twig;
-                    g_ptr<Node> root = twig->process(content);
-                    twig->run(root);
-                    int port_num = 8082;
-                    for(auto c : root->children) {
-                        if(c->type==server_id) {
-                            for(auto sc : c->scope()->children) {
-                                if(sc->type==port_id) {
-                                    port_num = sc->left()->value->get<int>();
-                                }
-                            }
-                        }
-                    }
-                    servers << twig->servers;
-                    servers.last()->label = target;
-                    print("SPINNING UP A NEW SERVER ON ",port_num," CALLED ",servers.last()->label);
-                    out = std::to_string(port_num);
-                } else if(instruction=="read") {
-                    out = readFile(content);
-                } else {
-                    print(red("Unrecognized instruction for fragment: "+ctx.sub->source));
-                }
-                ctx.sub->source = out;
             };
 
             x_handlers[pebble_post_id] = [this](Context& ctx) {
@@ -433,16 +367,24 @@ namespace GDSL {
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-                standard_gather_from_scope(ctx);
-                for(auto s : ctx.node->scopes) { 
-                    if(ctx.node->value->type==invisible_id) {
-                        s->type = invisible_id;
-                    } else if(ctx.node->value->type==foldable_id) {
-                        s->type = foldable_id;
-                    } else if(ctx.node->value->type==iframe_id) {
-                        s->type = iframe_id;
-                    } else {
-                        s->type = div_id;
+                standard_gather_from_scope(ctx);    
+                if(ctx.node->scope()) {
+                    for(auto c : ctx.node->children) {
+                        if(c->type==var_decl_id||c->type==func_decl_id) {
+                            ctx.node->quals << make<Node>(template_id);
+                            break;
+                        }
+                    }
+                    for(auto s : ctx.node->scopes) { 
+                        if(ctx.node->value->type==invisible_id) {
+                            s->type = invisible_id;
+                        } else if(ctx.node->value->type==foldable_id) {
+                            s->type = foldable_id;
+                        } else if(ctx.node->value->type==iframe_id) {
+                            s->type = iframe_id;
+                        } else {
+                            s->type = div_id;
+                        }
                     }
                 }
             };
@@ -453,6 +395,7 @@ namespace GDSL {
             html_handlers[func_decl_id] = [this](Context& ctx){
                 if(ctx.node->value->type==inlined_id) return;
                 if(ctx.node->value->type==invisible_id) return;
+                if(ctx.node->has_qual(template_id)) return;
                 if(ctx.node->scope()) {
                     for(auto s : ctx.node->scopes) { 
                         ctx.source = html_encode_node(s);
@@ -547,6 +490,30 @@ namespace GDSL {
                     if(ctx.node->left()->value->type == string_id) {
                         ctx.node->opt_str = ctx.node->left()->value->get<std::string>();
                     }
+                }
+            };
+
+            html_handlers[make_tokenized_keyword("repeat")] = [this](Context& ctx){
+                if(ctx.node->left()) {
+                    int times = ctx.node->left()->value->get<int>();
+                    ctx.node->scope()->type = div_id;
+                    for(int i=0;i<times;i++) {
+                        ctx.source += html_encode_node(ctx.node->scope());
+                    }
+                }
+            };
+            html_handlers[var_decl_id] = x_handlers[var_decl_id];
+            html_handlers[equals_id] = x_handlers[equals_id];
+
+            html_handlers[if_id] = [this](Context& ctx) {
+                process_node(ctx, ctx.node->left());
+                if(ctx.node->left()->value->is_true()) {
+                    ctx.node->scope()->type = div_id;
+                    ctx.source += html_encode_node(ctx.node->scope());
+                }
+                else if(ctx.node->scopes.length()>1) {
+                    ctx.node->scopes[1] ->type = div_id;
+                    ctx.source += html_encode_node(ctx.node->scopes[1]);
                 }
             };
 

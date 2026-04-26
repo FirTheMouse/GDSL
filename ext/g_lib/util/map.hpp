@@ -221,7 +221,7 @@ public:
     
 
     bool set(const K& key,V value) {
-        return buckets.get(hashT(key)%capacity,"map::set::186").set(key,value);
+        return buckets.get(hashT(key)%capacity).set(key,value);
     }
 
     // keylist<K, V> b = buckets[hashT(key)%capacity];
@@ -229,8 +229,13 @@ public:
     // else {throw}
     V& get(const K& key)
     {
-       return buckets.get(hashT(key)%capacity,"map::get::195").get(key);
+       return buckets.get(hashT(key)%capacity).get(key);
     }
+
+    keylist<K, V>& getBucket(const K& key) {
+        return buckets.get(hashT(key)%capacity);
+    }
+    
 
     //Returns all values in the map
     list<V> getAll(){
@@ -317,7 +322,6 @@ public:
         }
     }
 
-        //Something appears to be corrupting the resized bucket, removing all the projectiles
     bool remove(const K& key) {
         int hash = (hashT(key)%capacity);
         if(hash<buckets.length())

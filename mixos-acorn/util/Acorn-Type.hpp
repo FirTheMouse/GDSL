@@ -4,50 +4,57 @@
 #include "../util/Acorn-Object.hpp"
 
 namespace Acorn {
-
-    struct _note {
-        _note() {}
-        _note(int _index) : index(_index) {}
-        _note(int _index, int _sub_index) : index(_index), sub_index(_sub_index) {}
-        _note(int _index, int _sub_index, uint32_t _tag) : index(_index), sub_index(_sub_index), tag(_tag) {}
-        
-        int index = -1;
-        int sub_index = -1;
-        uint32_t tag = 0;
-    };
-
-    static _note note_fallback;
-
     struct Col {
         Col(size_t _size = 1) : element_size(_size) {}
-        size_t element_size;
+        uint32_t element_size;
         list<uint8_t> storage;
+
+        std::string label;
+        uint32_t tag = 0;
+
+        map<std::string,uint32_t> cells;
+
+        inline uint32_t length() {return storage.length() / element_size;}
+        inline bool empty() {return storage.length()==0;}
         
-        inline void* get(size_t index) {
-            return &storage[index * element_size];
+        inline void* get(uint32_t index) {return &storage[index * element_size];}
+        inline void* operator[](uint32_t index) {return get(index);}
+        template<typename T> inline T& get(uint32_t index) {return *(T*)get(index);}
+
+        inline bool hasKey(const std::string& key) {return cells.hasKey(key);}
+
+        inline void* get(const std::string& key) {
+            if(!hasKey(key)) {print(red("acorntype:col:get does not have key "+key+"!")); return nullptr;}
+            return &storage[cells.get(key) * element_size];
+        }
+        inline void* operator[](const std::string& key) {return get(key);}
+        template<typename T> inline T& get(const std::string& key) {return *(T*)get(key);}
+
+        inline void set(size_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
+        inline void set(const std::string& key, const void* element) {
+            if(!hasKey(key)) {print(red("acorntype:col:set does not have key "+key+"!"));} 
+            else {memcpy(&storage[cells.get(key) * element_size], element, element_size);}
         }
 
-        inline size_t length() {
-        return storage.length() / element_size;
-        }
-        
         void push(const void* element) {
             size_t old_size = storage.size();
             storage.resize(old_size + element_size);
             memcpy(&storage[old_size], element, element_size);
         }
-
+        void operator<<(const void* element) {push(element);}
         void push_default() {
             size_t old_size = storage.size();
             storage.resize(old_size + element_size);
             memset(&storage[old_size], 0, element_size);
         }
 
-        inline void set(size_t index, const void* element) {
-            memcpy(&storage[index * element_size], element, element_size);
+        void put(const std::string& key, const void* element) {
+            cells[key] = length();
+            push(element);
         }
     };
 
+    //Convience for ergonomic white/blacklist things
     struct _lookup {
         _lookup(list<std::string> init, bool _default_state) 
         : default_state(_default_state)  {
@@ -70,52 +77,18 @@ namespace Acorn {
         uint32_t sidx; //Row
     };
 
-    struct _column_image {
-        std::string label;
-        size_t size;
-        uint32_t tag;
-        int index;
-        list<_note*> cells;
-    };
-
-    struct _type_image {
-        list<_column_image> columns;
-        int row_count = 0;
-    };
 
     class Type {
     public:
         Type() {}
         ~Type() {}
 
-        //Consider making notes be uint32_t,_note, and have all the puts pre-hash, this will allow us to do enum notes and avoid the string stuff
-        map<std::string,_note> notes; // Where reflection info is stored
-        list<_note> array; //Ordered array for usage of Type as a MultiArray
+        list<Ptr> array;
         list<Col> columns;
 
         int save_idx = -1;
         std::string type_name = "bullets";
 
-        _type_image get_image() {
-            _type_image img;
-            for(auto& [label,note] : notes.entrySet()) {
-                int idx = note.index;
-                int sidx = note.sub_index;
-
-                while(img.columns.length()<=idx) {img.columns << _column_image{};}
-                _column_image& col = img.columns[idx];
-                if(sidx==0) {
-                    col.label = label;
-                    col.size = columns[idx].element_size;
-                    col.tag = note.tag;
-                    col.index = idx;
-                }
-                while(col.cells.length()<=sidx) {col.cells << nullptr;} //Not sure if this is safe
-                col.cells[sidx] = &note;
-                if(row_count(idx)>img.row_count) img.row_count = row_count(idx);
-            }
-            return img;
-        };
 
         std::string make_table_string(int mode) {
             std::string table = "";
@@ -198,33 +171,34 @@ namespace Acorn {
                     ids_max_size[i] = headers[i].length();
                 }
 
-                if(notes.size() != 0) {
-                    for(auto e : notes.entrySet()) {
-                        int col = e.value.index;
-                        int row = e.value.sub_index;
-                        if(col == -1) continue;
-                        if(row == -1) {
-                            headers[col] = e.key;
-                            ids_max_size[col] = std::max(ids_max_size[col], (int)e.key.length());
-                        } else {
-                            ids[col][row] = e.key;
-                            ids_max_size[col] = std::max(ids_max_size[col], (int)e.key.length());
-                        }
-                    }
-                }
+                //Replace later
+                // if(notes.size() != 0) {
+                //     for(auto e : notes.entrySet()) {
+                //         int col = e.value.index;
+                //         int row = e.value.sub_index;
+                //         if(col == -1) continue;
+                //         if(row == -1) {
+                //             headers[col] = e.key;
+                //             ids_max_size[col] = std::max(ids_max_size[col], (int)e.key.length());
+                //         } else {
+                //             ids[col][row] = e.key;
+                //             ids_max_size[col] = std::max(ids_max_size[col], (int)e.key.length());
+                //         }
+                //     }
+                // }
 
-                if(array.size() != 0) {
-                    for(int a=0;a<array.length();a++) {
-                        int col = array[a].index;
-                        int row = array[a].sub_index;
-                        if(col == -1 || row == -1) continue;
-                        if(ids[col][row] == "") {
-                            std::string s = std::to_string(a);
-                            ids[col][row] = s;
-                            ids_max_size[col] = std::max(ids_max_size[col], (int)s.length());
-                        }
-                    }
-                }
+                // if(array.size() != 0) {
+                //     for(int a=0;a<array.length();a++) {
+                //         int col = array[a].index;
+                //         int row = array[a].sub_index;
+                //         if(col == -1 || row == -1) continue;
+                //         if(ids[col][row] == "") {
+                //             std::string s = std::to_string(a);
+                //             ids[col][row] = s;
+                //             ids_max_size[col] = std::max(ids_max_size[col], (int)s.length());
+                //         }
+                //     }
+                // }
 
                 std::string header = "COL: ";
                 for(int c=0;c<columns.length();c++) {
@@ -260,6 +234,10 @@ namespace Acorn {
             return make_table_string(mode);
         }
 
+        inline Col& operator[](size_t index) {
+            return columns[index];
+        }
+
         size_t column_count() {
             return columns.length();
         }
@@ -278,50 +256,32 @@ namespace Acorn {
         }
 
         inline bool has_column(int index) {return index<columns.length();}
-        inline bool has(const std::string& label) {return notes.hasKey(label);}
-        bool validate(list<std::string> check) {
-            for(auto c : check) {
-                if(!notes.hasKey(c)) {
-                    print("validate::470 type missing ",c);
-                    return false;
-                }
-            }
-            return true;
-        }
-        //Maybe add some more explcitness to validate, like listing *what* is actually missing
-
-        _note& get_note(const std::string& label) {
-            return notes.getOrDefault(label,note_fallback);
-        }
-        _note& get_note(int index) {
-            return array[index];
-        }
-
-        //Creates a new column and note for an entry of the provided size, then returns the note
-        _note& note_value(const std::string& name, size_t size, uint32_t tag = 0) {
-            _note note(columns.length(),0,tag); add_column(size); notes.put(name,note);
-            return notes.get(name);
-        }
-
-        //Creates a new column and note for an entry of the provided size, then returns the note
-        template<typename T>
-        _note& note_value(const std::string& name, uint32_t tag = 0) {
-            return note_value(name,sizeof(T),tag);
-        }
 
         //Returns the adress of the column at the index
         inline void* address_column(int index) {
             return &columns[index];
         }
 
-        //Returns the adress of a column specificed by the note
-        inline void* address_column(const std::string& name) {
-            _note note = notes.getOrDefault(name,note_fallback);
-            if(note.index==-1) return nullptr;
-            return address_column(note.index);
+        int get_column(const std::string& label) {
+            for(int i=0;i<columns.length();i++) {
+                if(columns[i].label==label) return i;
+            }
+            return -1;
         }
 
+        //Returns the adress of a column with the label
+        inline void* address_column(const std::string& label) {
+            int at_id = get_column(label);
+            if(at_id==-1) return nullptr;
+            return address_column(at_id);
+        }
 
+        size_t note_value(const std::string& key, uint32_t size, uint32_t tag) {
+            add_column(size);
+            columns.last().label = key;
+            columns.last().tag = tag;
+            return columns.length()-1;
+        }
 
         //Direct get from a pointer to the adress of a column
         inline static void* get(void* ptr, size_t sub_index) {   
@@ -354,12 +314,14 @@ namespace Acorn {
                 column_index = columns.length();
                 add_column(size);
             } else if(columns[column_index].element_size!=size) {
-                print("push::365 provided column index ",column_index," is the wrong size, expected: ",size);
+                print("acorntype:push provided column index ",column_index," is the wrong size, expected: ",size);
                 return;
             }
-            _note note(column_index, columns[column_index].length(),tag);
+            if(tag!=0&&columns[column_index].tag!=tag) {
+                print(yellow("acorntype:push columns tag is "+std::to_string(columns[column_index].tag)+" but an elment of tag "+std::to_string(tag)+" was pushed"));
+            }
+            array << Ptr{0,(uint32_t)column_index,(uint32_t)row_count(column_index)};
             columns[column_index].push(value);
-            array << note;
         }
 
         //Same as push, except it will try to insert into the first column matching the provided size instead of creating one
@@ -376,9 +338,20 @@ namespace Acorn {
         }
 
         //Takes the result of the base push and inserts the note into the notes map with the provided name as well
-        void add(const std::string& name, void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
-            push(value,size,column_index, tag);
-            notes.put(name, array.last());
+        void add(const std::string& label, void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
+            if(column_index == -1) {
+                column_index = columns.length();
+                add_column(size);
+                columns[column_index].tag = tag;
+            } else if(columns[column_index].element_size!=size) {
+                print("acorntype:add provided column index ",column_index," is the wrong size, expected: ",size);
+                return;
+            }
+            if(tag!=0&&columns[column_index].tag!=tag) {
+                print(yellow("acorntype:add columns tag is "+std::to_string(columns[column_index].tag)+" but an elment of tag "+std::to_string(tag)+" was pushed"));
+            }
+            array << Ptr{0,(uint32_t)column_index,(uint32_t)row_count(column_index)};
+            columns[column_index].put(label,value);
         }
 
         //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array as well as the notes map
@@ -416,7 +389,7 @@ namespace Acorn {
         static void set(void* ptr,void* value, int sub_index) {
             return (*(Col*)ptr).set(sub_index,value);
         }
-
+        void set(int index,int sub_index,void* value) {columns[index].set(sub_index,value);}
         //Sets the value associated with the label 
         void set(const std::string& label,void* value, int sub_index, int size = -1) {
             void* ptr = address_column(label);
@@ -430,139 +403,82 @@ namespace Acorn {
             }
             set(ptr,value,sub_index);
         }
-
-
-
         template<typename T>
         void set(const std::string& label,T value,size_t index) {
             size_t size = sizeof(T);
             set(label,&value,index,size);
         }
 
-        inline void* get(int index,int sub_index) {
-        return columns[index].get(sub_index);
-        }
+        inline void* get(int index,int sub_index) {return columns[index].get(sub_index);}
+        inline void* get_from_ptr(Ptr& ptr) {return columns[ptr.idx][ptr.sidx];}
+        void* array_get(int index) {return get_from_ptr(array[index]);}
 
-        void* get_from_note(const _note& note) {
-            return get(note.index,note.sub_index);
-        }
-
-        void* data_get(const std::string& name) {
-            return get_from_note(notes.getOrDefault(name,note_fallback));
-        }
-
-        void* data_get_at(const std::string& name, int sub_index) {
-            _note& note = notes.getOrDefault(name,note_fallback);
-            return get(note.index,sub_index);
-        }
-
-        void* array_get(int index) {
-            return get_from_note(array[index]);
-        }
-
-    //Uses data get
-    template<typename T>
-    T& get(const std::string& label) {
-            return *(T*)data_get(label);
-    }
-
-    //Retrives based on an index into the array, only works if values were pushed in
-    template<typename T>
-    T& get(int index) {
-            return *(T*)array_get(index);
-    }
-
-    template<typename T>
-    T& get(int index,int sub_index) {
-            return *(T*)get(index,sub_index);
-    }
-
-        void set(int index,int sub_index,void* value) {
-            columns[index].set(sub_index,value);
-        }
-
-    void set_from_note(const _note& note,void* value) {
-            set(note.index,note.sub_index,value);
-        }
+        //Retrives based on an index into the array, only works if values were pushed in
+        template<typename T>
+        T& get(int index) {return *(T*)array_get(index);}
 
         template<typename T>
-        void set(const std::string& label,T value) {
-            _note& note = notes.getOrDefault(label,note_fallback);
-            if(note.index==-1) {
-                add<T>(label,value);
-            } else {
-                size_t size = sizeof(T);
-                set_from_note(note,&value);
-            }
-        }
-
-        void data_set(const std::string& name,void* value) {
-            set_from_note(get_note(name),value);
-        }
-
-        void array_set(int index,void* value) {
-            set_from_note(array[index],value);
-        }
-
-        //Uses array set
-        template<typename T>
-        void set(int index,T value) {
-        array_set(index,&value);
-        }
+        T& get(int index,int sub_index) {return *(T*)get(index,sub_index);}
 
         //Directly sets the value of a place
         template<typename T>
-        void set(int index,int sub_index,T value) {
-            set(index,sub_index,(void*)&value);
-        }
+        void set(int index,int sub_index,T value) {set(index,sub_index,(void*)&value);}
     };
 
 
-    static void write_note(_note& note, std::ostream& out) {
-        write_raw<int>(out, note.index);
-        write_raw<int>(out, note.sub_index);
-        write_raw<uint32_t>(out, note.tag);
+    static void write_col(std::ostream& out, Col& col) {
+        write_raw<size_t>(out, col.element_size);
+        write_raw<uint32_t>(out, (uint32_t)col.length());
+        out.write((const char*)col.storage.data(), col.storage.size());
+        write_string(out, col.label);
+        write_raw<uint32_t>(out, col.tag);
+        write_raw<uint32_t>(out, (uint32_t)col.cells.size());
+        for(auto e : col.cells.entrySet()) {
+            write_string(out, e.key);
+            write_raw<uint32_t>(out, e.value);
+        }
     }
 
-    static void write_type(Type t, std::ostream& out) {
-        //Header
+    static void write_ptr(std::ostream& out, Ptr& ptr) {
+        write_raw<uint32_t>(out, ptr.pool);
+        write_raw<uint32_t>(out, ptr.idx);
+        write_raw<uint32_t>(out, ptr.sidx);
+    }
+
+    static void write_type(std::ostream& out, Type t) {
         write_raw<uint32_t>(out, t.columns.length());
-        write_raw<uint32_t>(out, t.notes.size());
         write_raw<uint32_t>(out, t.array.length());
 
         write_raw<int>(out, t.save_idx);
         write_string(out, t.type_name);
 
-        //Columns
-        for(int i = 0; i < t.columns.length(); i++) {
-            Col& col = t.columns[i];
-            write_raw<size_t>(out, col.element_size);
-            write_raw<uint32_t>(out, (uint32_t)col.length());
-            out.write((const char*)col.storage.data(), col.storage.size());
-        }
+        for(int i = 0; i < t.columns.length(); i++) {write_col(out, t.columns[i]);}
+        for(int i = 0; i < t.array.length(); i++) {write_ptr(out, t.array[i]);}
+    }
 
-        //Notes
-        for(auto e : t.notes.entrySet()) {
-            write_string(out, e.key);
-            write_note(e.value, out);
-        }
-
-        //Array
-        for(int i = 0; i < t.array.length(); i++) {
-            write_note(t.array[i], out);
+    static void read_col(std::istream& in, Col& col) {
+        col.element_size = read_raw<size_t>(in);
+        uint32_t len = read_raw<uint32_t>(in);
+        col.storage.resize(len * col.element_size);
+        in.read((char*)col.storage.data(), len);
+        col.label = read_string(in);
+        col.tag = read_raw<uint32_t>(in);
+        uint32_t cells_count = read_raw<uint32_t>(in);
+        for(uint32_t i = 0; i < cells_count; i++) {
+            std::string key = read_string(in);
+            col.cells[key] = read_raw<uint32_t>(in);
         }
     }
 
-    static _note read_note(std::istream& in) {
-        int index     = read_raw<int>(in);
-        int sub_index = read_raw<int>(in);
-        uint32_t tag  = read_raw<uint32_t>(in); 
-        return _note(index, sub_index, tag);
+    static Ptr read_ptr(std::istream& in) {
+        uint32_t pool = read_raw<uint32_t>(in);
+        uint32_t idx = read_raw<uint32_t>(in);
+        uint32_t sidx = read_raw<uint32_t>(in);
+        return Ptr{pool,idx,sidx};
     }
 
     static void read_type(Type t, std::istream& in) {
         uint32_t col_count   = read_raw<uint32_t>(in);
-        uint32_t notes_count = read_raw<uint32_t>(in);
         uint32_t array_count = read_raw<uint32_t>(in);
 
         t.save_idx = read_raw<int>(in);
@@ -570,31 +486,20 @@ namespace Acorn {
 
         //Columns
         for(uint32_t i = 0; i < col_count; i++) {
-            size_t   element_size = read_raw<size_t>(in);
-            uint32_t row_count    = read_raw<uint32_t>(in);
-            Col col(element_size);
-            size_t byte_count = element_size * row_count;
-            col.storage.resize(byte_count);
-            in.read((char*)col.storage.data(), byte_count);
+            Col col;
             t.columns.push(col);
-        }
-
-        //Notes
-        for(uint32_t i = 0; i < notes_count; i++) {
-            std::string key = read_string(in);
-            t.notes.put(key, read_note(in));
         }
 
         //Array
         for(uint32_t i = 0; i < array_count; i++) {
-            t.array << read_note(in);
+            t.array << read_ptr(in);
         }
     }
 
     static void save_type(Type t, const std::string& path) {
         std::ofstream out(path, std::ios::binary);
         if(!out) throw std::runtime_error("Can't write to file: " + path);
-        write_type(t, out);
+        write_type(out, t);
         out.close();
     }
 
@@ -655,7 +560,7 @@ namespace Acorn {
             else
             {
                 object = make_func();
-                object.type_ = this;
+                object.pool = this;
                 store(object);
                 for(int i=0;i<init_funcs.size();i++) {
                     init_funcs[i](object);

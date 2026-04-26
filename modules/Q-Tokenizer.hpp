@@ -46,14 +46,120 @@ namespace GDSL {
         size_t rbracket_id = add_token(']', "RBRACKET");
         size_t lbrace_id = add_token('{', "LBRACE");
         size_t rbrace_id = add_token('}', "RBRACE");
+        size_t slash_id = add_token('/',"SLASH");
 
-        size_t in_string_id = reg_id("IN_STRING_KEY");
-        size_t in_short_string_id = reg_id("IN_SHORT_STRING_KEY");
         size_t in_alpha_id = reg_id("IN_ALPHA");
         size_t in_digit_id = reg_id("IN_DIGIT");
         size_t end_id = add_token(';',"END"); //Can commonly be changed to be a line return
         size_t quote_id = reg_id("QUOTE");
+        size_t comment_id = reg_id("COMMENT");
         size_t single_quote_id = reg_id("SINGLE_QUOTE");
+
+        void add_string_token(char open, size_t open_id, size_t state_id) {
+            tokenizer_functions.put(open,[this, open, open_id, state_id](Context& ctx) {
+                ctx.state = state_id;
+                ctx.node = make<Node>();
+                ctx.node->x = at_x + 1;
+                ctx.node->y = at_y;
+                ctx.node->type = string_id;
+                ctx.node->name = "";
+                ctx.result->push(ctx.node);
+        
+                g_ptr<Node> quote = make<Node>(open_id, open);
+                quote->x = at_x; quote->y = at_y;
+                quote->mute = true;
+                ctx.result->last()->quals << quote;
+            });
+        
+            tokenizer_state_functions.put(state_id,[this, open, open_id](Context& ctx) {
+                char c = ctx.source.at(ctx.index);
+                if(c == open) {
+                    ctx.state = 0;
+                    g_ptr<Node> quote = make<Node>(open_id, c);
+                    quote->x = at_x; quote->y = at_y;
+                    quote->mute = true;
+                    ctx.result->last()->quals << quote;
+                } else if(c == '\\') {
+                    if(ctx.index + 1 < ctx.source.length()) {
+                        ctx.node->name += ctx.source.at(ctx.index + 1);
+                        at_x += 1.0f;
+                        ctx.index++;
+                    }
+                } else if(c == '\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                    ctx.node->name += c;
+                } else {
+                    ctx.node->name += c;
+                }
+            });
+        }
+
+
+        void add_double_string_token(char open, char open2, size_t open_id, size_t open_id2, size_t state_id, size_t type_id, bool break_on_newline = false, map<std::string,Handler>* parts = nullptr) {      
+            Handler open_func = [this, open, open2, open_id, open_id2, state_id, type_id](Context& ctx) {
+                char c = ctx.source.at(ctx.index+1);
+                if(c==open2) {
+                    ctx.node = make<Node>(type_id);
+                    g_ptr<Node> slashes = make<Node>(type_id);
+                    slashes->name = std::string({open,open2});
+                    slashes->x = at_x; slashes->y = at_y;
+                    slashes->mute = true;
+                    ctx.node->quals << slashes;
+                    ctx.result->push(ctx.node);
+                    at_x+=1.0f;
+                    ctx.index++;
+                    ctx.state = state_id;
+                }
+            };
+            Handler open_else_func = [this, open, open_id, state_id](Context& ctx) {
+                char c = ctx.source.at(ctx.index+1);
+                ctx.node = make<Node>(open_id,c);
+                ctx.node->x = at_x;
+                ctx.node->y = at_y;
+                ctx.result->push(ctx.node);
+            };
+            Handler full_package_func = [this, state_id, open_func, open_else_func](Context& ctx) {
+                open_func(ctx);
+                if(ctx.state!=state_id)
+                    open_else_func(ctx);
+            };
+            tokenizer_functions[open] = full_package_func;
+            if(parts) {
+                parts->put("if",open_func);
+                parts->put("else",open_else_func);
+                parts->put("full",full_package_func);
+            }
+        
+            Handler state_func = [this, open, open2, open_id, open_id2, state_id, type_id, break_on_newline](Context& ctx) {
+                char c = ctx.source.at(ctx.index);
+                if(c == open&&ctx.source.at(ctx.index+1)==open2) {
+                    ctx.state=0;
+                    g_ptr<Node> slashes = make<Node>(type_id);
+                    slashes->name = std::string({open,open2});
+                    slashes->x = at_x; slashes->y = at_y;
+                    slashes->mute = true;
+                    ctx.result->last()->quals << slashes;
+                    ctx.index++;
+                } else if(c == '\\') {
+                    if(ctx.index + 1 < ctx.source.length()) {
+                        ctx.node->name += ctx.source.at(ctx.index + 1);
+                        at_x += 1.0f;
+                        ctx.index++;
+                    }
+                } else if(c=='\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                    ctx.node->name += c;
+                    if(break_on_newline)
+                        ctx.state = 0;
+                }
+                else {
+                    ctx.node->name += c;
+                }
+            };
+            tokenizer_state_functions.put(state_id,state_func);
+        }
 
         list<g_ptr<Node>> tokenize(const std::string& code) {
             list<g_ptr<Node>> result;
@@ -74,13 +180,17 @@ namespace GDSL {
 
             while (index<code.length()) {
                 char c = code.at(index);
+                Handler* func = nullptr;
                 if(ctx.state!=0&&tokenizer_state_functions.hasKey(ctx.state)) {
-                    auto state_func = tokenizer_state_functions.get(ctx.state);
-                    state_func(ctx);
+                    func = &tokenizer_state_functions.get(ctx.state);
                 } else {
-                    auto func = tokenizer_functions.getOrDefault(c,tokenizer_default_function);
-                    func(ctx);
+                    func = &tokenizer_functions.getOrDefault(c,tokenizer_default_function);
                 }
+
+                if(func) {
+                    (*func)(ctx);
+                }
+
                 at_x += 1.0f;
                 ++index;
             }  
@@ -131,82 +241,50 @@ namespace GDSL {
                 ctx.node->name += c;
             });
 
-            tokenizer_state_functions.put(in_string_id,[this](Context& ctx) {
-                char c = ctx.source.at(ctx.index);
-                if(c=='"') {
-                    ctx.state=0;
-                    g_ptr<Node> quote = make<Node>(quote_id,c);
-                    quote->x = at_x; quote->y = at_y;
-                    quote->mute = true;
-                    ctx.result->last()->quals << quote;
-                } else if(c=='\\') {
-                    if(ctx.index+1<ctx.source.length()) {
-                        ctx.node->name += ctx.source.at(ctx.index+1);
-                        at_x+=1.0f;
-                        ctx.index++;
-                    }
-                } else if(c=='\n') {
-                    at_y += 1.0f;
-                    at_x = -1.0f;
-                    ctx.node->name += c;
-                }
-                else {
-                    ctx.node->name += c;
-                }
-            });
-            tokenizer_functions.put('"',[this](Context& ctx) {
-                ctx.state = in_string_id;
-                ctx.node = make<Node>();
-                ctx.node->x = at_x+1;
-                ctx.node->y = at_y;
-                ctx.node->type = string_id;
-                ctx.node->name = "";
-                ctx.result->push(ctx.node);
+            add_string_token('"', quote_id, reg_id("IN_STRING"));
+            add_string_token('\'', single_quote_id, reg_id("IN_SHORT_STRING"));
+            map<std::string,Handler> slash_parts;
+            add_double_string_token('/', '/', slash_id, slash_id, reg_id("IN_COMMENT"), comment_id, true, &slash_parts);
 
-                g_ptr<Node> quote = make<Node>(quote_id,'"');
-                quote->x = at_x; quote->y = at_y;
-                quote->mute = true;
-                ctx.result->last()->quals << quote;
-            });
-
-
-            tokenizer_state_functions.put(in_short_string_id,[this](Context& ctx) {
-                char c = ctx.source.at(ctx.index);
-                if(c=='\'') {
-                    ctx.state=0;
-                    g_ptr<Node> quote = make<Node>(single_quote_id,c);
-                    quote->x = at_x; quote->y = at_y;
-                    quote->mute = true;
-                    ctx.result->last()->quals << quote;
-                } else if(c=='\\') {
-                    if(ctx.index+1<ctx.source.length()) {
-                        ctx.node->name += ctx.source.at(ctx.index+1);
-                        at_x+=1.0f;
-                        ctx.index++;
-                    }
-                } else if(c=='\n') {
-                    at_y += 1.0f;
-                    at_x = -1.0f;
-                    ctx.node->name += c;
-                }
-                else {
-                    ctx.node->name += c;
-                }
-            });
-            tokenizer_functions.put('\'',[this](Context& ctx) {
-                ctx.state = in_short_string_id;
-                ctx.node = make<Node>();
-                ctx.node->x = at_x+1;
-                ctx.node->y = at_y;
-                ctx.node->type = string_id;
-                ctx.node->name = "";
-                ctx.result->push(ctx.node);
-
-                g_ptr<Node> quote = make<Node>(single_quote_id,'\'');
-                quote->x = at_x; quote->y = at_y;
-                quote->mute = true;
-                ctx.result->last()->quals << quote;
-            });
+            // tokenizer_state_functions.put(in_comment_id,[this](Context& ctx) {
+            //     char c = ctx.source.at(ctx.index);
+            //     if(c=='/'&&ctx.source.at(ctx.index+1)=='/') {
+            //         ctx.state=0;
+            //         g_ptr<Node> slashes = make<Node>(slash_id,c);
+            //         slashes->x = at_x; slashes->y = at_y;
+            //         slashes->mute = true;
+            //         ctx.result->last()->quals << slashes;
+            //         ctx.index++;
+            //     } else if(c=='\n') {
+            //         at_y += 1.0f;
+            //         at_x = -1.0f;
+            //         ctx.node->name += c;
+            //         ctx.state = 0;
+            //     }
+            //     else {
+            //         ctx.node->name += c;
+            //     }
+            // });
+            // tokenizer_functions['/'] = [this](Context& ctx){
+            //     char c = ctx.source.at(ctx.index+1);
+            //     if(c=='/') {
+            //         ctx.node = make<Node>(comment_id);
+            //         g_ptr<Node> slashes = make<Node>(comment_id);
+            //         slashes->name = "//";
+            //         slashes->x = at_x; slashes->y = at_y;
+            //         slashes->mute = true;
+            //         ctx.node->quals << slashes;
+            //         ctx.result->push(ctx.node);
+            //         at_x+=1.0f;
+            //         ctx.index++;
+            //         ctx.state = in_comment_id;
+            //     } else {
+            //         ctx.node = make<Node>(slash_id,c);
+            //         ctx.node->x = at_x;
+            //         ctx.node->y = at_y;
+            //         ctx.result->push(ctx.node);
+            //     }
+            // };
 
             tokenizer_functions[' '] = [this](Context& ctx) {
                 //Just skip

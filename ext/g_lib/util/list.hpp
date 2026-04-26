@@ -140,6 +140,12 @@ public:
         }
     }
 
+    void insertAll(const list<T>& input, size_t index) {
+        for(int i = 0;i<input.size_;i++) {
+            insert(input[i],index);
+        }
+    }
+
     // void printAll() const {
     //     for(size_t i = 0;i<size;i++)
     //     {

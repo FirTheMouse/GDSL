@@ -281,6 +281,32 @@ namespace GDSL {
                 ctx.node->value->set<bool>(!result);
             };
 
+            a_handlers[make_tokenized_keyword("include")] = [this](Context& ctx){
+                n_take_right(ctx,1);
+                if(ctx.node->left()) {
+                    std::string code = readFile(ctx.node->left()->name);
+                    list<g_ptr<Node>> tokens = tokenize(code);
+                    tokens.reverse();
+                    ctx.result->removeAt(ctx.index);
+                    ctx.result->insertAll(tokens,ctx.index);
+                }
+            };
+
+            x_handlers[make_tokenized_keyword("compile")] = [this](Context& ctx){
+                if(ctx.node->left()) {
+                    std::string code = "";
+                    if(ctx.node->left()->value->type==string_id) {
+                        code = ctx.node->left()->value->get<std::string>();
+                    } else {
+                        code = ctx.node->left()->name;
+                    }
+                    g_ptr<Node> root = process(code);
+                    ctx.node->scopes << root;
+                    ctx.node->in_scope->scopes << root;
+                    run(root);
+                }
+            };
+
             x_handlers[travel_pass_id] = [this](Context& ctx){
                 standard_travel_pass(ctx.node->scope());
             };
@@ -289,8 +315,12 @@ namespace GDSL {
             };
 
             r_handlers[in_id] = [this](Context& ctx){
-                ctx.node->name = "in "+ctx.node->left()->name+" "+labels[ctx.node->in_scope->owner->sub_type];
-                ctx.node->scope()->name = ctx.node->name;
+                if(ctx.node->left()&&ctx.node->in_scope&&ctx.node->in_scope->owner) {
+                    ctx.node->name = "in "+ctx.node->left()->name+" "+labels[ctx.node->in_scope->owner->sub_type];
+                    if(ctx.node->scope()) {
+                        ctx.node->scope()->name = ctx.node->name;
+                    }
+                }
             };
             x_handlers[in_id] = [this](Context& ctx){
                 g_ptr<Node> this_node = ctx.node;
@@ -315,7 +345,8 @@ namespace GDSL {
                 ctx.value->set<g_ptr<Node>>(ctx.node);
             };
             r_handlers[to_prefix_id(string_id)] = [this](Context& ctx){
-                ctx.value->set<std::string>(ctx.node->name);
+                if(ctx.node->type==literal_id)
+                    ctx.value->set<std::string>(ctx.node->name);
             };
             value_to_string[node_id] = [this](void* data) -> std::string {
                 return ptr_to_string((*(g_ptr<Node>*)data)->value.getPtr());
@@ -333,7 +364,19 @@ namespace GDSL {
             };
             x_handlers[var_decl_id] = [this](Context& ctx){
                 fire_quals(ctx,ctx.node->value);
+                // if(ctx.node->value->type==string_id) ctx.node->value->set<std::string>(ctx.node->name);
+                // else if(ctx.node->value->type==node_id) {
+                //     g_ptr<Node> newnode = make<Node>();
+                //     ctx.node->quals << newnode;
+                //     ctx.node->value->set<g_ptr<Node>>(newnode);
+                //     // new (ctx.node->value->data) g_ptr<q_object>(); 
+                //     //print("ADDR AT DECL: ",(uint64_t)ctx.node->value->data," ",ptr_to_string(ctx.node->value->data));
+                // }
+                // //else ctx.node->value->data = malloc(ctx.node->value->size);
             };
+
+            //span->log_everything = true;
+
 
 
 
@@ -384,7 +427,6 @@ namespace GDSL {
 
             x_handlers[equals_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-
                 if(!ctx.node->left()||!ctx.node->right()) return;
                 ctx.node->value = ctx.node->left()->value;
 
@@ -422,10 +464,13 @@ namespace GDSL {
                         return;
                     }
                 }
-
+              
                 if(from_type == string_id) {
-                    *(std::string*)to_dst = *(std::string*)from_src;
+                    to->data = from->data;
+                    //*(std::string*)to_dst = *(std::string*)from_src; //Investigate why this is causing crashes in TwigSnap later
                 } else if(from_type == object_id || from_type == node_id || from_type == value_id) {
+                    new (to_dst) g_ptr<q_object>(); //Kludge which works, this entire method is screwed
+                    //Just going to make a better memory model instead
                     *(g_ptr<q_object>*)to_dst = *(g_ptr<q_object>*)from_src;
                 } else {
                     memcpy(to_dst, from_src, from_size);

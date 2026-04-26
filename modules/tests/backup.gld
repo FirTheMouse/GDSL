@@ -265,3 +265,49 @@ server {
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 ";
 
+
+
+                            button add_column {
+                                "onclick" : "fragthree('sheet','add_column','')";
+                                "height" : "100%";
+                                "width" : "40px";
+                                text "+C" {
+                                    text_theme;
+                                }
+                            }
+
+                            button add_row {
+                                "onclick" : "fragthree('sheet','add_row','')";
+                                "height" : "100%";
+                                "width" : "40px";
+                                text "+R" {
+                                    text_theme;
+                                }
+                            }
+
+                            button swap_sheet_TT {
+                                "onclick" : "fragthree('sheet','swap','RTT');fragthree('form','swap','RTT')";
+                                "height" : "100%";
+                                "width" : "40px";
+                                text "TT" {
+                                    text_theme;
+                                }
+                            }
+
+                            button swap_sheet_RB {
+                                "onclick" : "fragthree('sheet','swap','GEMS_RB');fragthree('form','swap','GEMS_RB')";
+                                "height" : "100%";
+                                "width" : "40px";
+                                text "RB" {
+                                    text_theme;
+                                }
+                            }
+
+                            button show_form {
+                                "onclick" : "fragthree('form_panel','toggle_visibility','')";
+                                "height" : "100%";
+                                "width" : "80px";
+                                text "form" {
+                                    text_theme;
+                                }
+                            }

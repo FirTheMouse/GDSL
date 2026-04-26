@@ -76,6 +76,7 @@ namespace GDSL {
                 list<g_ptr<Node>> gathered;
                 while(i>=0) {
                     g_ptr<Node> on = ctx.result->get(i);
+                    g_ptr<Node> was_on = on; //Storing the root for cases where we want to notify once children are gathered
                     while(!on->children.empty()&&on->type!=lparen_id) {
                         on = on->children.last();
                     }

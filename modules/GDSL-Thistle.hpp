@@ -14,6 +14,8 @@ namespace GDSL {
         size_t test_form_id = make_tokenized_keyword("test_form");
         size_t recive_sheet_edit_id = make_tokenized_keyword("recive_sheet_edit");
 
+        list<g_ptr<Thistle_Unit>> twig_daycare;
+
         struct style_manager : public q_object {
             style_manager(HTML_Unit* _unit) : unit(_unit) {}
             style_manager(HTML_Unit* _unit, list<std::string> init) : unit(_unit) {
@@ -176,6 +178,75 @@ namespace GDSL {
             };
             x_handlers[test_sheet_id] = [this,ts](Context& ctx) {
                 ctx.node->value->store = ts;
+            };
+
+
+
+            x_handlers[make_tokenized_keyword("fragment_highlight")] = [this](Context& ctx) {
+                std::string source = ctx.sub->source;
+    
+                size_t first = source.find(" ");
+                size_t second = source.find(" ", first + 1);
+                
+                std::string target = source.substr(0, first);
+                std::string instruction = source.substr(first + 1, second - first - 1);
+                std::string content = source.substr(second + 1);
+
+                print("TARGET: ",target);
+                print("INSTRUCTION: ",instruction);
+                print("CONTENT: ",content);
+
+                std::string out = "";
+                g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
+                if(instruction=="compile") {
+                    Log::Line l; l.start();
+                    g_ptr<Node> root = twig->process(content);
+                    twig->resolve_and_evaluate(root);
+                    double a_time = l.end(); l.start();
+                    out += twig->nodenet_to_highlighted(root, content);
+                    double b_time = l.end(); 
+                    // l.start();
+                    //print_root(root);
+                    // double c_time = l.end();
+
+                    print("A: ",ftime(a_time));
+                    print("B: ",ftime(b_time));
+                    //print("C: ",ftime(c_time));
+                } else if(instruction=="end") {
+                    print("REQUEST TO END: ",target," OF ",servers.length());
+                    g_ptr<Server> to_end = get_server(target);
+                    if(to_end) {
+                        ::close(to_end->fd); 
+                        to_end->fd = -1;
+                        to_end->thread->end();
+                        servers.erase(to_end);
+                    } else {
+                        print(red("Unable to find server "+target+" to end"));
+                    }
+                } else if(instruction=="preview") {
+                    twig_daycare << twig;
+                    g_ptr<Node> root = twig->process(content);
+                    twig->run(root);
+                    int port_num = 8082;
+                    for(auto c : root->children) {
+                        if(c->type==server_id) {
+                            for(auto sc : c->scope()->children) {
+                                if(sc->type==port_id) {
+                                    port_num = sc->left()->value->get<int>();
+                                }
+                            }
+                        }
+                    }
+                    servers << twig->servers;
+                    servers.last()->label = target;
+                    print("SPINNING UP A NEW SERVER ON ",port_num," CALLED ",servers.last()->label);
+                    out = std::to_string(port_num);
+                } else if(instruction=="read") {
+                    out = readFile(content);
+                } else {
+                    print(red("Unrecognized instruction for fragment: "+ctx.sub->source));
+                }
+                ctx.sub->source = out;
             };
 
             // n_handlers[form_id] = [this](Context& ctx){

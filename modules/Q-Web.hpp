@@ -237,7 +237,7 @@ struct Web_Unit : public virtual Unit {
                     "Content-Type: text/html\r\n"
                     "Content-Length: " + std::to_string(body.length()) + "\r\n"
                     "\r\n" + body;
-                print("Response:\n",response);
+                //print("Response:\n",response);
                 if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
                     print(red("server_id::x_handler write() failed"));
                 }
@@ -256,7 +256,7 @@ struct Web_Unit : public virtual Unit {
                             "Content-Type: text/html\r\n"
                             "Content-Length: " + std::to_string(body.length()) + "\r\n"
                             "\r\n" + body;
-                        print("Response:\n",response);
+                        //print("Response:\n",response);
                         if(::write(ctx.sub->state, response.c_str(), response.length()) < 0) {
                             print(red("server_id::x_handler write() failed"));
                         }

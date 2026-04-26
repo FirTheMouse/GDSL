@@ -1,0 +1,14 @@
+type userrecord {
+    string username {
+        "Fir";
+        "Reed";
+    }
+    string password {
+        " ";
+        "Mouse";
+    }
+    string recordpath {
+        "user1.thsl";
+        "user2.thsl";
+    }
+}

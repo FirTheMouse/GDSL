@@ -1,3 +1,81 @@
+scripted formed type GEMS_RB {
+    int one {
+        3; onform "Wumbers" {
+            "Default" : 0;
+            "First" : 1;
+            "Second" : 2;
+            "Third" : 3;
+            "Fourth" : 4;
+            "Fifth" : 5;
+        }
+        4; 
+        5; 
+        6;
+    }
+
+    int two {
+        6; 
+        7; onform "Twumbers" {
+            "Default" : 0;
+            "Firsty" : 11;
+            "Secondy" : 22;
+            "Thirdy" : 33;
+        }
+        8; onscript "
+                int a = 1(1);
+                if(1(1)==11) {a = 6;}
+                if(1(1)==22) {a = 12;}
+            ";
+        9;
+    }
+
+    string names {
+        'Alex';
+        'Bob'; onscript "
+                string a = 2(1);
+                if(2(1)=='a') {a = 'joe';}
+                if(2(1)=='b') {a = 'mary';}
+            ";
+            onform "teststr" {
+                "Default" : 'null';
+                "Father" : 'a';
+                "Mother" : 'b';
+            }
+        'Jill';
+    }
+}
+
+
+scripted formed type RTT {
+    int first {
+        8; onform "Qwumbers" {
+            "Default" : 0;
+            "First" : 1;
+            "Second" : 2;
+            "Third" : 3;
+        }
+        9;
+        7;
+    }
+
+    int second {
+        6; 
+        7; onform "Fwumbers" {
+            "Default" : 0;
+            "Firsty" : 11;
+            "Secondy" : 22;
+            "Thirdy" : 33;
+        }
+        8; onscript "
+                int a = 1(1);
+                if(1(1)==11) {a = 12;}
+                if(1(1)==22) {a = 6;}
+            ";
+        9;
+    }
+}
+
+
 inlined background_theme {
     "background-color" : "rgb(225, 225, 225)";
 }
@@ -312,7 +390,7 @@ div side_bar {
                             }
                             button to_todo {
                                 "id" : "to_todo";
-                                "onclick" : "goTo('/')";
+                                "onclick" : "goTo('/edit')";
                                 basic_button;
                             }
                             button to_sent {
@@ -373,7 +451,7 @@ div side_bar {
                 "flex-direction" : "column";
                 "justify-content" : "center";
                 "align-items" : "center";
-                    form(test_form,"test_sheet") {
+                    form(GEMS_RB) {
                         "max-width" : "480px";
                         "width" : "100%";
                         "padding" : "40px";
@@ -423,7 +501,7 @@ div side_bar {
                             card_theme;
                             "border-radius" : "12px";
                             "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
-                                sheet(test_sheet) {
+                                sheet(GEMS_RB) {
                                     "border-collapse" : "collapse";
                                     card_theme;
                                         invisible header_style {
@@ -461,8 +539,159 @@ div side_bar {
 }
 
 
+"/edit" {
+    style "
+        td:hover {
+            background-color:rgb(234, 234, 234);
+        }
+        input:focus {
+            outline: none;
+            border-bottom: 2px solid rgb(68, 137, 50);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        td:first-child {
+            border-right: none;
+        }
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+        }
+    ";
+
+    background_theme;
+
+    div container {
+        "display" : "flex";
+        "min-height" : "100vh";
+            side_bar;
+
+            div main_panel {
+                "flex" : "1";
+                "display" : "flex";
+                "flex-direction" : "column";
+                "justify-content" : "start";
+                "background-color" : "rgb(237, 237, 237)";
+                    div top_bar {
+                        "height" : "5%";
+                        "width" : "100%";
+                        "display" : "flex";
+                        "gap" : "8px";
+                            div control_btns(string label, string behaviour) { 
+                                button instance {
+                                    "onclick" : behaviour; "height" : "100%"; "width" : "40px"; text label { text_theme; }
+                                } 
+                            }
+
+                            // add column // control_btns("+C","fragthree('sheet','add_column','')");
+                            // add row    // control_btns("+R","fragthree('sheet','add_row','')");
+                            // swap to TT // control_btns("TT","fragthree('sheet','swap','RTT');fragthree('form','swap','RTT')");
+                            // swap to RB // control_btns("RB","fragthree('sheet','swap','GEMS_RB');fragthree('form','swap','GEMS_RB')");
+                            // show form  // control_btns("form","fragthree('form_panel','toggle_visibility','')");
+                    }
+
+                    div editor {
+                        "height" : "95%";
+                        "width" : "100%";
+                        "display" : "flex";
+                        "justify-content" : "start";
+                            div sheet_panel {
+                                "width" : "100%";
+                                "padding" : "10px";
+                                card_theme;
+                                "border-radius" : "12px";
+                                "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                                    sheet(GEMS_RB) {
+                                        "border-collapse" : "collapse";
+                                        card_theme;
+                                            invisible header_style {
+                                                "background-color" : "rgb(240, 240, 240)";
+                                                "padding" : "10px 12px";
+                                                "font-size" : "14px";
+                                                "color" : "rgb(26, 26, 26)";
+                                                text_theme;
+                                            }
+                                            invisible column_style {
+                                                "border-right" : "1px solid rgb(200,200,200)";
+                                            }
+                                            invisible row_style {
+                                                "border-bottom" : "1px solid rgb(220,220,220)";
+                                            }
+                                            invisible input_style {
+                                                "border" : "none";
+                                                "background-color" : "transparent";
+                                                "width" : "100%";
+                                                "padding" : "8px 4px";
+                                                "font-size" : "13px";
+                                                "font-family" : "system-ui, sans-serif";
+                                            }
+                                    }
+                            }
+
+                            div form_panel {
+                                "id" : "form_panel";
+                                "width" : "480px";
+                                    form(GEMS_RB) {
+                                        "max-width" : "480px";
+                                        "width" : "100%";
+                                        "padding" : "40px";
+                                        card_theme;
+                                        "border-radius" : "12px";
+                                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                                            paragraph "Numbers Form" {
+                                                "font-size" : "18px";
+                                                "color" : "rgb(57, 57, 57)";
+                                                text_theme;
+                                            }
+
+                                            invisible select_style {
+                                                input_theme;
+                                            }
+                                            invisible input_style {
+                                                "border" : "none";
+                                                "border-bottom" : "2px solid rgb(200,200,200)";
+                                                "border-radius" : "0px";
+                                                "background-color" : "transparent";
+                                                "padding" : "8px 0px";
+                                                input_theme;
+                                            }
+                                            invisible field_style {
+                                                "display" : "flex";
+                                                "flex-direction" : "column";
+                                                "gap" : "6px";
+                                                "margin-bottom" : "20px";
+                                            }
+                                            invisible label_style {
+                                                text_theme;
+                                            }
+                                            invisible header_label_style {
+                                                "font-size" : "16px";
+                                                text_theme;
+                                            }
+                                    }
+                            }
+                    }
+            }
+    }
+
+    script read_file("frag.js");
+
+    in fragmenting {
+        thistle_editor;
+    }
+
+    in posting {
+        recive_sheet_edit;
+    }
+}
+
 server {
-    port(8081);
+    port(8082);
     listen {
         accept;
         request;

@@ -1,28 +1,7 @@
-div displaytext(string words, div sub {}, string othercolor, string target) {
-    text words {
-        target : othercolor;
-    }
-    sub;
-}
+include "modules/tests/userdata/userrecord.pine"
 
 "/" {
-    displaytext("nothing",div thungy{
-        text "thungy" {
-            "color" : "blue";
-        }
-        text "otter";
-    },"green","background-color");
-}
-
-"/a" {
-    displaytext("something",div thingy{
-        text "thingy" {
-            "color" : "red";
-        }
-        text "otter" {
-            "color" : "yellow";
-        }
-    },"blue","color");
+    
 }
 
 server {

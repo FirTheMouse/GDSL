@@ -64,7 +64,6 @@ namespace GDSL {
 
         size_t plus_id = add_binary_operator('+',"PLUS");
         size_t dash_id = add_binary_operator('-',"DASH");
-        size_t slash_id = add_binary_operator('/',"SLASH");
         size_t rangle_id = add_binary_operator('>',"RANGLE");
         size_t langle_id = add_binary_operator('<',"LANGLE");
         size_t equals_id = add_binary_operator('=', "ASSIGNMENT");
@@ -165,6 +164,7 @@ namespace GDSL {
 
         void init() override {
             Tokenizer_Unit::init();
+            add_binary_operator('/',"SLASH",slash_id);
 
             x_handlers[plus_id] = [this](Context& ctx){
                 standard_sub_process(ctx);

@@ -4,7 +4,7 @@
 #include <sys/mman.h>
 
 //Controls for the compiler printing, for debugging
-#define PRINT_ALL 1
+#define PRINT_ALL 0
 
 g_ptr<Log::Span> span = nullptr;
 static inline void newline(const std::string& label) {

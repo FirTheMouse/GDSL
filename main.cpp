@@ -27,16 +27,16 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
  
-    // g_ptr<Acorn::Acorn_Script> test = make<Acorn::Acorn_Script>();
+    //g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
     // test->init();
     // test->run(test->process(""));
 
-    // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
-    // root = twig->process(readFile("modules/tests/pebble.gld"));
-    // twig->run(root);
+    g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
+    root = twig->process(readFile("modules/tests/pebble.gld"));
+    twig->run(root);
 
     g_ptr<Thistle_Unit> thistle = make<Thistle_Unit>();
-    g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/pinetest.gld"));
+    g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
     thistle->run(thistle_root);
 
     // g_ptr<Thistle_Unit> pine_thistle = make<Thistle_Unit>();

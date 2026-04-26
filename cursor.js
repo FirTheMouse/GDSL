@@ -88,8 +88,17 @@ let abort_controller = null;
 const el = document.getElementById('code');
 
 
+let is_typing = false;
+let typing_timer = null;
+
 
 el.addEventListener('keydown', function(e) {
+    is_typing = true;
+    clearTimeout(typing_timer);
+    typing_timer = setTimeout(function() {
+        is_typing = false;
+    }, 150);
+
     if(e.key === 'Tab') {
         e.preventDefault();
         const sel = window.getSelection();
@@ -170,6 +179,7 @@ el.addEventListener('input', function() {
         })
         .then(r => r.text())
         .then(html => {
+            if(is_typing) return;
             el.innerHTML = html;
             const new_offset = xyToOffset(el.innerText, pos.x, pos.y);
             setCursorOffset(el, new_offset);

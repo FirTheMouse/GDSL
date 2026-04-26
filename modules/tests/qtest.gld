@@ -1,7 +1,3 @@
-int func(int a) {
-    print(b);
-}
-
 Node n; 
 Node k;
 Node j;

@@ -107,7 +107,7 @@ inlined basic_button {
     "width" : "50%";
 }
 
-div side_bar(string words) {
+div side_bar {
     "id" : "side_bar";
     "width" : "60px";
     "min-height" : "100vh";
@@ -190,9 +190,6 @@ div side_bar(string words) {
         "display" : "flex";
         "flex-direction" : "column";
         "padding" : "8px 0px";
-        text words {
-            text_theme;
-        }
     }
 
     script "
@@ -447,7 +444,7 @@ div side_bar(string words) {
     div container {
         "display" : "flex";
         "min-height" : "100vh";
-        side_bar("something");
+        side_bar;
             div form_panel {
                 "flex" : "1";
                 "display" : "flex";
@@ -541,6 +538,7 @@ div side_bar(string words) {
     }
 }
 
+
 "/edit" {
     style "
         td:hover {
@@ -570,7 +568,7 @@ div side_bar(string words) {
     div container {
         "display" : "flex";
         "min-height" : "100vh";
-            side_bar("nothing");
+            side_bar;
 
             div main_panel {
                 "flex" : "1";
@@ -583,50 +581,17 @@ div side_bar(string words) {
                         "width" : "100%";
                         "display" : "flex";
                         "gap" : "8px";
-                            button add_column {
-                                "onclick" : "fragthree('sheet','add_column','')";
-                                "height" : "100%";
-                                "width" : "40px";
-                                text "+C" {
-                                    text_theme;
-                                }
+                            div control_btns(string label, string behaviour) { 
+                                button instance {
+                                    "onclick" : behaviour; "height" : "100%"; "width" : "40px"; text label { text_theme; }
+                                } 
                             }
 
-                            button add_row {
-                                "onclick" : "fragthree('sheet','add_row','')";
-                                "height" : "100%";
-                                "width" : "40px";
-                                text "+R" {
-                                    text_theme;
-                                }
-                            }
-
-                            button swap_sheet_TT {
-                                "onclick" : "fragthree('sheet','swap','RTT');fragthree('form','swap','RTT')";
-                                "height" : "100%";
-                                "width" : "40px";
-                                text "TT" {
-                                    text_theme;
-                                }
-                            }
-
-                            button swap_sheet_RB {
-                                "onclick" : "fragthree('sheet','swap','GEMS_RB');fragthree('form','swap','GEMS_RB')";
-                                "height" : "100%";
-                                "width" : "40px";
-                                text "RB" {
-                                    text_theme;
-                                }
-                            }
-
-                            button show_form {
-                                "onclick" : "fragthree('form_panel','toggle_visibility','')";
-                                "height" : "100%";
-                                "width" : "80px";
-                                text "form" {
-                                    text_theme;
-                                }
-                            }
+                            // add column // control_btns("+C","fragthree('sheet','add_column','')");
+                            // add row    // control_btns("+R","fragthree('sheet','add_row','')");
+                            // swap to TT // control_btns("TT","fragthree('sheet','swap','RTT');fragthree('form','swap','RTT')");
+                            // swap to RB // control_btns("RB","fragthree('sheet','swap','GEMS_RB');fragthree('form','swap','GEMS_RB')");
+                            // show form  // control_btns("form","fragthree('form_panel','toggle_visibility','')");
                     }
 
                     div editor {

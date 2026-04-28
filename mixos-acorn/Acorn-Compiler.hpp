@@ -166,6 +166,7 @@ namespace Acorn {
 
         Node tokenize(const std::string& code) {
             Node root = make_node(this);
+            root.name("ROOT");
             node_list result = root.children();
             uint32_t state = 0;
             int index = 0;
@@ -210,46 +211,7 @@ namespace Acorn {
             return root;
         }
 
-
-
-
-        size_t add_binary_operator(char c, const std::string& f, int use_id = -1) {
-            size_t id = use_id;
-            if(id==-1) {
-                id = add_token(c,f);
-            }
-        
-            size_t decl_id = reg_id(f+"_decl");
-            size_t unary_id = reg_id(f+"_unary");
-    
-            return id;
-        }
-
-        size_t register_binary_operator(int use_id) {
-            return add_binary_operator(' ',labels[use_id],use_id);
-        }
-
-        size_t plus_id = add_binary_operator('+',"PLUS");
-        size_t dash_id = add_binary_operator('-',"DASH");
-        size_t rangle_id = add_binary_operator('>',"RANGLE");
-        size_t langle_id = add_binary_operator('<',"LANGLE");
-        size_t equals_id = add_binary_operator('=', "EQUALS");
-        size_t star_id = add_binary_operator('*',"STAR");
-        size_t caret_id = add_binary_operator('^',"CARET");
-        size_t amp_id = add_binary_operator('&',"AMPERSAND");
-        size_t dot_id = add_binary_operator('.', "DOT");
-
-
-        map<uint32_t,int> left_binding_power;
-        map<uint32_t,int> right_binding_power;
-        void set_binding_powers(uint32_t id, int lbp, int rbp) {
-            left_binding_power.put(id,lbp);
-            right_binding_power.put(id,rbp);
-        }
-
-
-
-        void init() {
+        void init_tokenizer() {
             // Literals_Unit::init();
             char_is_split.put(' ',true);
             tokenizer_state_functions.put(in_alpha_id,[this](Context& ctx) {
@@ -357,9 +319,46 @@ namespace Acorn {
                     print("tokenize:default_function missing handling for char: ",c);
                 }
             };
+        }
 
 
-            
+
+
+        size_t add_binary_operator(char c, const std::string& f, int use_id = -1) {
+            size_t id = use_id;
+            if(id==-1) {
+                id = add_token(c,f);
+            }
+        
+            size_t decl_id = reg_id(f+"_decl");
+            size_t unary_id = reg_id(f+"_unary");
+    
+            return id;
+        }
+
+        size_t register_binary_operator(int use_id) {
+            return add_binary_operator(' ',labels[use_id],use_id);
+        }
+
+        size_t plus_id = add_binary_operator('+',"PLUS");
+        size_t dash_id = add_binary_operator('-',"DASH");
+        size_t rangle_id = add_binary_operator('>',"RANGLE");
+        size_t langle_id = add_binary_operator('<',"LANGLE");
+        size_t equals_id = add_binary_operator('=', "EQUALS");
+        size_t star_id = add_binary_operator('*',"STAR");
+        size_t caret_id = add_binary_operator('^',"CARET");
+        size_t amp_id = add_binary_operator('&',"AMPERSAND");
+        size_t dot_id = add_binary_operator('.', "DOT");
+
+
+        map<uint32_t,int> left_binding_power;
+        map<uint32_t,int> right_binding_power;
+        void set_binding_powers(uint32_t id, int lbp, int rbp) {
+            left_binding_power.put(id,lbp);
+            right_binding_power.put(id,rbp);
+        }
+
+        void init_stage_a() {
             discard_types.push_if_absent(undefined_id);
             discard_types.push_if_absent(end_id);
             discard_types.push_if_absent(lparen_id);
@@ -466,6 +465,13 @@ namespace Acorn {
                     ctx.index--;
                 } 
             };
+        }
+
+         
+
+        void init() override {
+            init_tokenizer();
+            init_stage_a();
         }
     };
 }

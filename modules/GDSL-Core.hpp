@@ -540,8 +540,8 @@ struct Unit : public Object {
         return to_return;
     }
 
-    #define MUTE_TABLES 1
-    #define MUTE_MUTED_QUALS 1
+    #define MUTE_TABLES 0
+    #define MUTE_MUTED_QUALS 0
 
     std::string node_to_string(g_ptr<Node> node, int depth = 0, int index = 0, bool print_sub_scopes = false) {
         std::string indent(depth * 2, ' ');

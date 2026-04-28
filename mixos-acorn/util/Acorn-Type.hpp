@@ -587,7 +587,7 @@ namespace Acorn {
             }
         }
 
-        size_t add_column(size_t size) {
+        uint32_t add_column(size_t size) {
             Col col(size);
             for(size_t i = 0; i < handles.length(); i++) col.push_default();
             int col_len = columns.length();

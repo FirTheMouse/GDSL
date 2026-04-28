@@ -8,6 +8,7 @@ namespace Acorn {
     static int _ctx_dummy_index = 0;
     class Unit;
     struct Node;
+    struct Value;
 
     struct string {
         string(Col& _col) : col(_col) {}
@@ -64,9 +65,82 @@ namespace Acorn {
         inline void push(Node n);
         inline void operator<<(Node n);
     };
+
+
+    struct value_list {
+        Ptr col_ptr;
+        Unit* unit = nullptr;
+        
+        value_list(Ptr _col_ptr, Unit* _unit) : col_ptr(_col_ptr), unit(_unit) {}
+        value_list() {};
+        
+        inline Col& col();
+        
+        inline uint32_t length() { return col().length(); }
+        inline bool empty() { return col().empty(); }
+        
+        inline Value operator[](uint32_t idx);
+        inline Value get(uint32_t idx);
+        inline Value last();
+
+        inline void removeAt(uint32_t idx);
+        inline Value take(uint32_t idx);
+        inline Value pop();
+
+        inline void push(Value n);
+        inline void operator<<(Value n);
+    };
+
+    struct Value : public opt_ptr {
+        Unit* unit = nullptr;
+
+        Value() {}
+        Value(opt_ptr p) { pool = p.pool; sidx = p.sidx; }
+        Value(opt_ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit;}
+        Value(opt_ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit;}
+        Value(Ptr p) { pool = p.pool; sidx = p.sidx; }
+        Value(Ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit;}
+        Value(Ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit;}
+    
+        inline uint32_t&      type();
+        inline void           type(uint32_t t);
+        inline uint32_t&      sub_type();
+        inline void           sub_type(uint32_t st);
+
+        inline Ptr&           data_ptr();
+        inline Col&           data_col();
+        inline void           set(void* data);
+        inline void*          get();
+
+        inline int&           address();
+        inline int&           reg();
+        inline int&           loc();
+
+        inline uint32_t&      size();
+        inline uint32_t&      sub_size();
+
+        inline Ptr&           quals_ptr();
+        inline Col&           quals_col();
+        inline node_list      quals();
+
+        inline Ptr&           sub_values_ptr();
+        inline Col&           sub_values_col();
+        inline value_list     sub_values();
+
+        inline Node           type_scope();
+        inline Ptr&           store();
+    };
     
     struct Node : public opt_ptr {
         Unit* unit = nullptr;
+
+        Node() {}
+        Node(opt_ptr p) { pool = p.pool; sidx = p.sidx; }
+        Node(opt_ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit;}
+        Node(opt_ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit;}
+        Node(Ptr p) { pool = p.pool; sidx = p.sidx; }
+        Node(Ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit;}
+        Node(Ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit;}
     
         inline uint32_t&      type();
         inline void           type(uint32_t t);
@@ -147,7 +221,7 @@ namespace Acorn {
     using Handler = std::function<void(Context&)>;
         
     struct Unit : public q_object {
-    
+        Unit() {init();}
         map<uint32_t,std::string> labels;
         list<TypePool> types;
 
@@ -227,15 +301,15 @@ namespace Acorn {
             return at;
         }
         
-        size_t type_col = 0;
-        size_t sub_type_col = 0;
+        size_t node_type_col = 0;
+        size_t node_sub_type_col = 0;
         size_t name_col = 0;
         size_t x_col = 0;
         size_t y_col = 0;
         size_t z_col = 0;
         size_t value_col = 0;
         size_t children_col = 0;
-        size_t quals_col = 0;
+        size_t node_quals_col = 0;
         size_t node_table_col = 0;
         size_t value_table_col = 0;
         size_t scopes_col = 0;
@@ -256,18 +330,21 @@ namespace Acorn {
         uint32_t scopes_store_id = make_store_type(); 
         uint32_t opt_str_store_id = make_store_type();
 
+        uint32_t data_store_id = make_store_type();
+        uint32_t sub_value_store_id = make_store_type();
+
         uint32_t init_node_type() {
             uint32_t at = make_object_type();
-            TypePool& t = types.last();
-            type_col = t.note_value("type",4,int_id);
-            sub_type_col = t.note_value("sub_type",4,int_id);
+            TypePool& t = types[at];
+            node_type_col = t.note_value("type",4,int_id);
+            node_sub_type_col = t.note_value("sub_type",4,int_id);
             name_col = t.note_value("name",sizeof(Ptr),string_id);
             x_col = t.note_value("x",4,float_id);
             y_col = t.note_value("y",4,float_id);
             z_col = t.note_value("z",4,float_id);
             value_col = t.note_value("value",sizeof(Ptr),ptr_id);
             children_col = t.note_value("children",sizeof(Ptr),list_id);
-            quals_col = t.note_value("quals",sizeof(Ptr),list_id);
+            node_quals_col = t.note_value("quals",sizeof(Ptr),list_id);
             node_table_col = t.note_value("node_table",sizeof(Ptr),map_id);
             value_table_col = t.note_value("value_table",sizeof(Ptr),map_id);
             scopes_col = t.note_value("scopes",sizeof(Ptr),list_id);
@@ -288,7 +365,7 @@ namespace Acorn {
                 t.set(children_col, optr.sidx, (void*)&childrenptr);
             
                 Ptr qualsptr{quals_store_id, (uint32_t)types[quals_store_id].add_column(sizeof(opt_ptr)), 0};
-                t.set(quals_col, optr.sidx, (void*)&qualsptr);
+                t.set(node_quals_col, optr.sidx, (void*)&qualsptr);
             
                 Ptr scopesptr{scopes_store_id, (uint32_t)types[scopes_store_id].add_column(sizeof(opt_ptr)), 0};
                 t.set(scopes_col, optr.sidx, (void*)&scopesptr);
@@ -322,9 +399,54 @@ namespace Acorn {
             return at;
         }
 
+
+        uint32_t value_type_col = 0;
+        uint32_t value_sub_type_col = 0;
+        uint32_t data_col = 0;
+        uint32_t address_col = 0;
+        uint32_t reg_col = 0;
+        uint32_t loc_col = 0;
+        uint32_t size_col = 0;
+        uint32_t sub_size_col = 0;
+        uint32_t value_quals_col = 0;
+        uint32_t sub_values_col = 0;
+        uint32_t type_scope_col = 0;
+        uint32_t store_col = 0;
+
         uint32_t init_value_type() {
             uint32_t at = make_object_type();
-            TypePool& t = types.last();
+            TypePool& t = types[at];
+
+            value_type_col = t.note_value("type",4,int_id);
+            value_sub_type_col = t.note_value("sub_type",4,int_id);
+            data_col = t.note_value("data",sizeof(Ptr),ptr_id);
+            address_col = t.note_value("address",4,int_id);
+            reg_col = t.note_value("reg",4,int_id);
+            loc_col = t.note_value("loc",4,int_id);
+            size_col = t.note_value("size",4,int_id);
+            sub_size_col = t.note_value("sub_size",4,int_id);
+            value_quals_col = t.note_value("quals",sizeof(Ptr),ptr_id);
+            sub_values_col = t.note_value("sub_values",sizeof(Ptr),ptr_id);
+            type_scope_col = t.note_value("type_scope",sizeof(Ptr),ptr_id);
+            store_col = t.note_value("store",sizeof(Ptr),ptr_id);
+
+            t.init_funcs << [this,at](opt_ptr& optr) {
+                TypePool& t = types[at];
+                optr.pool = at;                       
+                Ptr qualsptr{quals_store_id, (uint32_t)types[quals_store_id].add_column(sizeof(opt_ptr)), 0};
+                t.set(value_quals_col, optr.sidx, (void*)&qualsptr);
+            
+                Ptr subvalueptr{sub_value_store_id, (uint32_t)types[sub_value_store_id].add_column(sizeof(opt_ptr)), 0};
+                t.set(sub_values_col, optr.sidx, (void*)&subvalueptr);
+            
+                Ptr noptr{0, 0, 0};
+                t.set(type_scope_col, optr.sidx, (void*)&noptr);
+                t.set(store_col, optr.sidx, (void*)&noptr);
+                t.set(data_col, optr.sidx, (void*)&noptr);
+
+                int neg_one = -1;
+                t.set(reg_col, optr.sidx, (void*)&neg_one);
+            };
 
             return at;
         }
@@ -673,10 +795,84 @@ namespace Acorn {
         }
     };
 
-    inline uint32_t& Node::type()                   {return *(uint32_t*)unit->types[unit->node_type_id][unit->type_col][sidx];}
-    inline void      Node::type(uint32_t t)         {unit->types[unit->node_type_id][unit->type_col].set(sidx,(void*)&t);}
-    inline uint32_t& Node::sub_type()               {return *(uint32_t*)unit->types[unit->node_type_id][unit->sub_type_col][sidx];}
-    inline void      Node::sub_type(uint32_t st)    {unit->types[unit->node_type_id][unit->sub_type_col].set(sidx,(void*)&st);}
+
+    inline uint32_t& Value::type()                 {return *(uint32_t*)unit->types[unit->value_type_id][unit->value_type_col][sidx];}
+    inline void      Value::type(uint32_t t)       {unit->types[unit->value_type_id][unit->value_type_col].set(sidx,(void*)&t);}
+    inline uint32_t& Value::sub_type()             {return *(uint32_t*)unit->types[unit->value_type_id][unit->value_sub_type_col][sidx];}
+    inline void      Value::sub_type(uint32_t st)  {unit->types[unit->value_type_id][unit->value_sub_type_col].set(sidx,(void*)&st);}
+
+    inline Ptr&      Value::data_ptr()             {return *(Ptr*)unit->types[unit->value_type_id][unit->data_col][sidx];}
+    inline Col&      Value::data_col()             {Ptr& p = data_ptr(); return unit->types[p.pool][p.idx];}
+
+    inline int&      Value::address()              {return *(int*)unit->types[unit->value_type_id][unit->address_col][sidx];}
+    inline int&      Value::reg()                  {return *(int*)unit->types[unit->value_type_id][unit->reg_col][sidx];}
+    inline int&      Value::loc()                  {return *(int*)unit->types[unit->value_type_id][unit->loc_col][sidx];}
+
+    inline uint32_t& Value::size()                 {return *(uint32_t*)unit->types[unit->value_type_id][unit->size_col][sidx];}
+    inline uint32_t& Value::sub_size()             {return *(uint32_t*)unit->types[unit->value_type_id][unit->sub_size_col][sidx];}
+
+    inline Ptr&      Value::quals_ptr()            {return *(Ptr*)unit->types[unit->value_type_id][unit->value_quals_col][sidx];}
+    inline Col&      Value::quals_col()            {Ptr& p = quals_ptr(); return unit->types[p.pool][p.idx];}
+    inline node_list Value::quals()                {return node_list(quals_ptr(),unit);}
+
+    inline Ptr&       Value::sub_values_ptr()      {return *(Ptr*)unit->types[unit->value_type_id][unit->sub_values_col][sidx];}
+    inline Col&       Value::sub_values_col()      {Ptr& p = sub_values_ptr(); return unit->types[p.pool][p.idx];}
+    inline value_list Value::sub_values()          {return value_list(sub_values_ptr(),unit);}
+
+    inline Ptr&      Value::store()                {return *(Ptr*)unit->types[unit->value_type_id][unit->store_col][sidx];}
+
+    inline Node Value::type_scope()  {
+        Ptr& p = *(Ptr*)unit->types[unit->value_type_id][unit->type_scope_col][sidx];
+        Node n;
+        n.pool = p.pool;
+        n.sidx = p.sidx;
+        n.unit = unit;
+        return n;
+    }
+
+
+    inline void Value::set(void* data) {
+        Ptr dataptr = data_ptr();
+        if(dataptr.pool==0) {
+            dataptr = {unit->data_store_id, unit->types[unit->data_store_id].add_column(size()), 0};
+            unit->types[unit->data_store_id].add_row(dataptr.idx);
+            unit->types[pool][unit->data_col].set(sidx,(void*)&dataptr);
+        }
+        unit->types[dataptr.pool][dataptr.idx].set(dataptr.sidx,data);
+    }
+    inline void* Value::get() {
+        Ptr dataptr = data_ptr();
+        return unit->types[dataptr.pool][dataptr.idx][dataptr.sidx];
+    }
+
+
+    inline Col& value_list::col()                         {return unit->types[col_ptr.pool][col_ptr.idx]; }
+    inline Value value_list::get(uint32_t idx)             {return Value(*(opt_ptr*)col().get(idx),unit);}
+    inline Value value_list::operator[](uint32_t idx)      {return get(idx);}
+    inline Value value_list::last()                        {return get(length()-1);}
+    inline void value_list::removeAt(uint32_t idx)        {col().removeAt(idx);}
+    inline Value value_list::take(uint32_t idx) {
+        Value val = get(idx);
+        removeAt(idx);
+        return val;
+    }
+    inline Value value_list::pop() {
+        opt_ptr p;
+        col().pop(&p);
+        return Value(p,unit);
+    }
+    inline void value_list::push(Value n) {
+        opt_ptr p{n.pool, n.sidx};
+        col().push(&p);
+    }
+    inline void value_list::operator<<(Value n) {push(n);}
+
+
+
+    inline uint32_t& Node::type()                   {return *(uint32_t*)unit->types[unit->node_type_id][unit->node_type_col][sidx];}
+    inline void      Node::type(uint32_t t)         {unit->types[unit->node_type_id][unit->node_type_col].set(sidx,(void*)&t);}
+    inline uint32_t& Node::sub_type()               {return *(uint32_t*)unit->types[unit->node_type_id][unit->node_sub_type_col][sidx];}
+    inline void      Node::sub_type(uint32_t st)    {unit->types[unit->node_type_id][unit->node_sub_type_col].set(sidx,(void*)&st);}
     
     inline Ptr&      Node::name_ptr()               {return *(Ptr*)unit->types[unit->node_type_id][unit->name_col][sidx];}
     inline Col&      Node::name_col()               {Ptr& p = name_ptr(); return unit->types[p.pool][p.idx];}
@@ -693,7 +889,7 @@ namespace Acorn {
     inline Col&      Node::children_col()           {Ptr& p = children_ptr(); return unit->types[p.pool][p.idx];}
     inline node_list Node::children()               {return node_list(children_ptr(),unit);}
     
-    inline Ptr&      Node::quals_ptr()              {return *(Ptr*)unit->types[unit->node_type_id][unit->quals_col][sidx];}
+    inline Ptr&      Node::quals_ptr()              {return *(Ptr*)unit->types[unit->node_type_id][unit->node_quals_col][sidx];}
     inline Col&      Node::quals_col()              {Ptr& p = quals_ptr(); return unit->types[p.pool][p.idx];}
     inline node_list Node::quals()                  {return node_list(quals_ptr(),unit);}
     
@@ -728,35 +924,13 @@ namespace Acorn {
         }
     }
 
-    Node make_node(Unit* unit) {
-        opt_ptr obj = unit->types[unit->node_type_id].create();
-        Node n;
-        n.sidx = obj.sidx;
-        n.pool = unit->node_type_id;
-        n.unit = unit;
-        return n;
-    }
+    Node make_node(Unit* unit) {return Node(unit->types[unit->node_type_id].create(), unit);}
 
-    inline Col& node_list::col() { return unit->types[col_ptr.pool][col_ptr.idx]; }
-
-    inline Node node_list::get(uint32_t idx) {
-        opt_ptr& p = *(opt_ptr*)col().get(idx);
-        Node n;
-        n.unit = unit;
-        n.pool = p.pool;
-        n.sidx = p.sidx;
-        return n;
-    }
-    inline Node node_list::operator[](uint32_t idx) {
-        return get(idx);
-    }
-    inline Node node_list::last() {
-        return get(length()-1);
-    }
-
-    inline void node_list::removeAt(uint32_t idx) {
-        col().removeAt(idx);
-    }
+    inline Col& node_list::col()                         {return unit->types[col_ptr.pool][col_ptr.idx]; }
+    inline Node node_list::get(uint32_t idx)             {return Node(*(opt_ptr*)col().get(idx),unit);}
+    inline Node node_list::operator[](uint32_t idx)      {return get(idx);}
+    inline Node node_list::last()                        {return get(length()-1);}
+    inline void node_list::removeAt(uint32_t idx)        {col().removeAt(idx);}
     inline Node node_list::take(uint32_t idx) {
         Node val = get(idx);
         removeAt(idx);
@@ -765,18 +939,11 @@ namespace Acorn {
     inline Node node_list::pop() {
         opt_ptr p;
         col().pop(&p);
-        Node n;
-        n.unit = unit;
-        n.pool = p.pool;
-        n.sidx = p.sidx;
-        return n;
+        return Node(p,unit);
     }
-
     inline void node_list::push(Node n) {
         opt_ptr p{n.pool, n.sidx};
         col().push(&p);
     }
-    inline void node_list::operator<<(Node n) {
-        push(n);
-    }
+    inline void node_list::operator<<(Node n) {push(n);}
 }

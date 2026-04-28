@@ -57,18 +57,16 @@ namespace GDSL {
             std::string value = "";
             std::string target = "";
             for(auto e : elements) print(e);
-            if(elements.length()==5) {
+            if(elements.length()>4) {
                 note_name = elements[0];
                 column = std::stoi(elements[1]);
                 row = std::stoi(elements[2]);
-                value = elements[3];
-                target = elements[4];
-            } else if(elements.length()==4) {
-                column = std::stoi(elements[0]);
-                row = std::stoi(elements[1]);
-                value = elements[2];
                 target = elements[3];
-            } else if(elements.length()<4) {
+                for(int i=4;i<elements.length();i++) {
+                    value+=elements[i];
+                    if(i!=elements.length()-1) {value+=" ";}
+                }
+            } else if(elements.length()<=4) {
                 print(red("recive_sheet_edit:x_handler invalid source: "+ctx.sub->source));
                 return;
             }
@@ -89,13 +87,20 @@ namespace GDSL {
             int tag = 0;
             int esize = ts->columns[column].element_size;
             if(note_name=="") {
-                if(esize==4) {
-                    tag = int_id;
-                } else if(esize==1) {
-                    tag = bool_id;
-                } else if(esize==sizeof(std::string)) {
-                    tag = string_id;
+                //This is why Acorn's column tags are better
+                for(auto e : ts->notes.entrySet()) {
+                    if(e.value.index==column) {
+                        tag = e.value.tag;
+                        break;
+                    }
                 }
+                // if(esize==4) {
+                //     tag = int_id;
+                // } else if(esize==1) {
+                //     tag = bool_id;
+                // } else if(esize==sizeof(std::string)) {
+                //     tag = string_id;
+                // }
             } else {
                 _note& note = ts->get_note(note_name);
                 tag = note.tag;
@@ -113,6 +118,8 @@ namespace GDSL {
                 ts->set(column,row,(void*)&val);
             } else if(tag == string_id) {
                 ts->set(column,row,(void*)&value);
+            } else if(tag == string_ptr_id) {
+                set_string(ts->get<Ptr>(column,row),value);
             } else {
                 print(red("cell_edit:post_handler unrecognized tag: "+labels[tag]));
             }
@@ -120,18 +127,13 @@ namespace GDSL {
             //And run scripts
             if(g_ptr<Node> scriptqual = sheet_node->value->get_qual(scripted_id)) {
                 if(g_ptr<Type> scripts = scriptqual->value->store) {
-                    print(scripts->table_to_string(4));
                     for(int c = 0; c<scripts->column_count();c++) {
                         for(int r = 0; r<scripts->row_count(c);r++) {
                             Ptr script_ticket = scripts->get<Ptr>(c, r);
                             if(script_ticket.idx!=0) {
                                 g_ptr<GQL_Unit> script_unit = make<GQL_Unit>();
                                 script_unit->self = ts;
-                                _column& get_from = types[script_ticket.pool]->columns[script_ticket.idx];
-                                std::string codestr = "";
-                                for(int h=0;h<get_from.length();h++) {
-                                    codestr+=*(char*)get_from.get(h);
-                                }
+                                std::string codestr = retrive_string(script_ticket);
                                 g_ptr<Node> script_root = script_unit->process(codestr);
                                 script_unit->run(script_root);
                                 if(script_root->left() && script_root->left()->value->data) {
@@ -308,7 +310,12 @@ namespace GDSL {
                 }
 
                 for(auto& col_img : img.columns) {
-                    std::string addr = t->get<std::string>(col_img.index, 0);
+                    std::string addr = "";
+                    if(col_img.tag==string_ptr_id) {
+                        addr = retrive_string(*(Ptr*)t->columns[col_img.index].get(0));
+                    } else {
+                        addr = t->get<std::string>(col_img.index, 0);
+                    }
                     std::string col_str = split_str(addr,'-')[0];
                     std::string row_str = split_str(addr,'-')[1];
                     
@@ -324,7 +331,14 @@ namespace GDSL {
                     out += styles->resolve_prop(ctx,label_sub_style+"label_style");
                     out+=">\n" + split_col[0] + "\n</label>\n";
             
-                    std::string current = t->columns[col_img.index].length() > 1 ? t->get<std::string>(col_img.index, 1) : "";
+                    std::string current = "";
+                    if(t->columns[col_img.index].length() > 1) {
+                        if(col_img.tag==string_ptr_id) {
+                            current = retrive_string(*(Ptr*)t->columns[col_img.index].get(1));
+                        } else {
+                            current = t->get<std::string>(col_img.index, 1);
+                        }
+                    }
                     
                     if(t->columns[col_img.index].length() <= 2) {
                         out += "<input ";
@@ -341,7 +355,12 @@ namespace GDSL {
                         +"cell_post(this,''," + std::to_string(col_img.index) + ",1,'" + ctx.node->name + "')\""
                         +">\n";
                         for(int r = 2; r < t->columns[col_img.index].length(); r++) {
-                            std::string option = t->get<std::string>(col_img.index, r);
+                            std::string option = "";
+                            if(col_img.tag==string_ptr_id) {
+                                option = retrive_string(*(Ptr*)t->columns[col_img.index].get(r));
+                            } else {
+                                option = t->get<std::string>(col_img.index, r);
+                            }
                             list<std::string> opt = split_str(option,'-');
                             std::string val = opt[0];
                             std::string tag = opt[1];
@@ -483,6 +502,8 @@ namespace GDSL {
                         std::string as_string = "";
                         if(r>=t->columns[access_index].length()) {
                             continue;
+                        } else if(col_img.tag==string_ptr_id) {
+                            as_string = retrive_string(*(Ptr*)t->columns[access_index].get(access_sub_index));
                         } else if(value_to_string.hasKey(col_img.tag)) {
                             as_string = value_to_string.get(col_img.tag)(t->columns[access_index].get(access_sub_index));
                         } else {

@@ -32,7 +32,7 @@ function post(body) {
 function cell_post(input, label, col, row, target) {
     fetch(window.location.pathname, {
         method: "POST",
-        body: label + " " + col + " " + row + " " + input.value + " " + target
+        body: label + " " + col + " " + row + " " + target + " " + input.value
     }).then(() => frag(target));
 }
 

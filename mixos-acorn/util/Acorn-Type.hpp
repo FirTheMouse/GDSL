@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ext/g_lib/util/util.hpp"
-#include "../util/Acorn-Object.hpp"
 
 namespace Acorn {
     struct Col {
@@ -20,6 +19,7 @@ namespace Acorn {
         inline void* get(uint32_t index) {return &storage[index * element_size];}
         inline void* operator[](uint32_t index) {return get(index);}
         template<typename T> inline T& get(uint32_t index) {return *(T*)get(index);}
+        inline void* last() {return get(length()-1);}
 
         inline bool hasKey(const std::string& key) {return cells.hasKey(key);}
 
@@ -51,6 +51,22 @@ namespace Acorn {
         void put(const std::string& key, const void* element) {
             cells[key] = length();
             push(element);
+        }
+
+        void removeAt(uint32_t index) {
+            size_t byte_start = index * element_size;
+            for(size_t i = byte_start; i < storage.size() - element_size; i++) {
+                storage[i] = storage[i + element_size];
+            }
+            storage.resize(storage.size() - element_size);
+            for(auto& e : cells.entrySet()) {
+                if(e.value > index) e.value--;
+            }
+        }
+
+        void pop(void* out) {
+            memcpy(out, get(length()-1), element_size);
+            storage.resize(storage.size() - element_size);
         }
     };
 
@@ -477,7 +493,7 @@ namespace Acorn {
         return Ptr{pool,idx,sidx};
     }
 
-    static void read_type(Type t, std::istream& in) {
+    static void read_type(Type& t, std::istream& in) {
         uint32_t col_count   = read_raw<uint32_t>(in);
         uint32_t array_count = read_raw<uint32_t>(in);
 
@@ -496,7 +512,7 @@ namespace Acorn {
         }
     }
 
-    static void save_type(Type t, const std::string& path) {
+    static void save_type(Type& t, const std::string& path) {
         std::ofstream out(path, std::ios::binary);
         if(!out) throw std::runtime_error("Can't write to file: " + path);
         write_type(out, t);
@@ -512,25 +528,32 @@ namespace Acorn {
         return t;
     }
 
-    static void load_type(Type t, const std::string& path) {
+    static void load_type(Type& t, const std::string& path) {
         std::ifstream in(path, std::ios::binary);
         if(!in) throw std::runtime_error("Can't read from file: " + path);
         read_type(t,in);
         in.close();
     }
 
+
+    struct opt_ptr {
+        uint32_t pool = 0;
+        uint32_t sidx = 0;
+        bool live = false;
+    };
+
     class TypePool : public Type {
     public:
         TypePool() {}
 
-        list<Object> objects;
-        list< std::function<void(Object&)> > init_funcs;
+        list<opt_ptr> handles;
+        list< std::function<void(opt_ptr&)> > init_funcs;
         list<int> free_ids;
         uint32_t free_stack_top = 0;
 
-        std::function<Object()> make_func = [](){
-            Object object;
-            return object;
+        std::function<opt_ptr()> make_func = [](){
+            opt_ptr optr;
+            return optr;
         };
 
         int get_next() {
@@ -547,60 +570,54 @@ namespace Acorn {
             }
         }
 
-        Object create() {
+        opt_ptr& create() {
             int next_id = get_next();
-            Object object;
-            if(next_id!=-1)
-            {
-                object = objects.get(next_id);
-                for(int i=0;i<init_funcs.size();i++) {
-                    init_funcs[i](object);
-                }
+            if(next_id != -1) {
+                opt_ptr& optr = handles.get(next_id);
+                for(int i = 0; i < init_funcs.size(); i++) init_funcs[i](optr);
+                optr.live = true;
+                return optr;
+            } else {
+                opt_ptr newptr = make_func();
+                store(newptr);
+                opt_ptr& optr = handles.last();
+                for(int i = 0; i < init_funcs.size(); i++) init_funcs[i](optr);
+                optr.live = true;
+                return optr;
             }
-            else
-            {
-                object = make_func();
-                object.pool = this;
-                store(object);
-                for(int i=0;i<init_funcs.size();i++) {
-                    init_funcs[i](object);
-                }
-            }
-            object.recycled = false;
-            return object;
         }
 
         size_t add_column(size_t size) {
             Col col(size);
-            for(size_t i = 0; i < objects.length(); i++) col.push_default();
+            for(size_t i = 0; i < handles.length(); i++) col.push_default();
             int col_len = columns.length();
             columns.push(col);
             return col_len;
         }
 
         private:
-            void store(Object object)
+            void store(opt_ptr& optr)
             {
-                object.sidx = objects.size();
+                optr.sidx = handles.size();
                 for(int c = 0; c<columns.length(); c++) {
                     columns[c].push_default();
                 }
-                objects.push(object);
+                handles.push(optr);
             }
         public:
 
-        void add_initializers(list<std::function<void(Object)>> inits) {for(auto i : inits) add_initializer(i);}
-        void add_initializer(std::function<void(Object)> init) {init_funcs << init;}
-        void operator+(std::function<void(Object)> init) {add_initializer(init);}
-        void operator+(list<std::function<void(Object)>> inits) {for(auto i : inits) add_initializer(i);}
+        void add_initializers(list<std::function<void(opt_ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
+        void add_initializer(std::function<void(opt_ptr&)> init) {init_funcs << init;}
+        void operator+(std::function<void(opt_ptr&)> init) {add_initializer(init);}
+        void operator+(list<std::function<void(opt_ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
 
-        void recycle(Object object) {
-            if(object.recycled) {
+        void recycle(opt_ptr& optr) {
+            if(!optr.live) {
                 return;
             }
-            object.recycled = true;
+            optr.live = false;
 
-            return_id(object.sidx);
+            return_id(optr.sidx);
         }
     };
 

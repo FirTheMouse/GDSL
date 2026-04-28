@@ -13,13 +13,40 @@ namespace GDSL {
 
         size_t type_col_id = reg_id("type_col");
 
-
+        size_t string_ptr_id = reg_id("string_ptr");
 
         size_t formed_id = add_qualifier("formed");
         size_t scripted_id = add_qualifier("scripted");
         size_t calculator_id = add_qualifier("calculator");
 
         g_ptr<Type> string_daycare = make<Type>(); uint32_t string_daycare_id = 0;
+
+        std::string retrive_string(Ptr& ticket){
+            std::string to_return = "";
+            if(ticket.idx!=0) {
+                _column& get_from = types[ticket.pool]->columns[ticket.idx];
+                for(int h=0;h<get_from.length();h++) {
+                    to_return+=(*(char*)get_from.get(h));
+                }
+            }
+            return to_return;
+        }
+
+        Ptr store_string(const std::string& str){
+            uint32_t str_col = string_daycare->column_count(); 
+            string_daycare->add_column(sizeof(char));
+            for(char ch : str) {string_daycare->push<char>(ch, str_col);}
+            Ptr str_ticket{string_daycare_id,str_col,0};
+            return str_ticket;
+        }
+
+        void set_string(Ptr& ticket, const std::string& str) {
+            if(ticket.idx!=0) {
+                _column& get_from = types[ticket.pool]->columns[ticket.idx];
+                get_from.storage.clear();
+                for(char ch : str) {get_from.push((void*)&ch);}
+            }
+        }
 
         void init() override {
             string_daycare->add_column(); //For null
@@ -63,7 +90,13 @@ namespace GDSL {
                 }
 
                 if(t) {
-                    size_t col = t->note_value(ctx.node->name, v->size, v->type).index;
+                    Ptr null_col{0,0,0};
+                    size_t col = 0;
+                    if(v->type==string_id) {
+                        col = t->note_value(ctx.node->name,sizeof(Ptr),string_ptr_id).index;
+                    } else {
+                        col = t->note_value(ctx.node->name, v->size, v->type).index;
+                    }
 
                     g_ptr<Type> form = nullptr;
                     int formed_at = ctx.sub->node->value->find_qual(formed_id);
@@ -86,13 +119,14 @@ namespace GDSL {
                             if(c->type==onform_id) {
                                 if(form) {
                                     std::string cords = std::to_string(col_idx)+"-"+std::to_string(row_idx);
-                                    size_t f_col = form->new_column<std::string>(c->name,cords,string_id);
+                                    size_t f_col = form->new_column<Ptr>(c->name,store_string(cords),string_ptr_id);
+                                    form->push<Ptr>(store_string(""),f_col,string_ptr_id);
                                     if(c->scope()) {
                                         for(auto c2 : c->scope()->children) {
                                             if(c2->type==colon_id) {
                                                 if(!c2->left()||!c2->right()) continue;
                                                 g_ptr<Value> rv = c2->right()->value;
-                                                form->push<std::string>(value_as_string(rv)+"-"+labels[rv->type]+"-"+c2->left()->name,f_col,string_id);
+                                                form->push<Ptr>(store_string(value_as_string(rv)+"-"+labels[rv->type]+"-"+c2->left()->name),f_col,string_ptr_id);
                                             }
                                         }
                                     }
@@ -101,16 +135,16 @@ namespace GDSL {
                                 }
                             } else if(c->type==onscript_id) {
                                 Ptr null_col{0,0,0};
-                                while(col_idx>=scripts->column_count()) scripts->new_column<Ptr>("",null_col,ptr_id);
+                                while(col_idx>=scripts->column_count()) scripts->new_column<Ptr>("",null_col,string_ptr_id);
                                 while(row_idx>=scripts->row_count(col_idx)) scripts->add_row(col_idx);
-
-                                uint32_t str_col = string_daycare->column_count(); 
-                                string_daycare->add_column(sizeof(char));
-                                for(char ch : c->name) {string_daycare->push<char>(ch, str_col);}
-                                Ptr str_ticket{string_daycare_id,str_col,0};
-                                scripts->set<Ptr>(col_idx,row_idx,str_ticket);
+                            
+                                scripts->set<Ptr>(col_idx,row_idx,store_string(c->name));
                             } else {
-                                t->push(c->value->data,c->value->size,col,c->value->type);
+                                if(c->value->type==string_id) {
+                                    t->push<Ptr>(store_string(c->name),col_idx,string_ptr_id);
+                                } else {
+                                    t->push(c->value->data,c->value->size,col,c->value->type);
+                                }
                             }
                         }
                     }

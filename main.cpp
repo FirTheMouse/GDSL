@@ -7,7 +7,7 @@
 #include "modules/GDSL-GQL.hpp"
 #include "modules/GDSL-Thistle.hpp"
 #include "modules/GDSL-PineNeedle.hpp"
-#include "mixos-acorn/Acorn-Script.hpp"
+#include "mixos-acorn/Acorn-Kernel.hpp"
 
 using namespace GDSL;
 
@@ -27,8 +27,11 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
  
-    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+
+    Acorn::Acorn_Kernel kernel;
+    kernel.run(kernel.process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
     // root = twig->process(readFile("modules/tests/pebble.gld"));

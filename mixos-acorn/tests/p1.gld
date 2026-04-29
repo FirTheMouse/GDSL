@@ -1,0 +1,3 @@
+string code = "string path = load(\"mixos-acorn/tests/p2.gld\"); print(\"LOADED: \",path);";
+print("I'll run: ",code);
+run(code);

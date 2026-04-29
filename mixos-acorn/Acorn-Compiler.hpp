@@ -638,6 +638,59 @@ namespace Acorn {
             };
         }
 
+        uint32_t scope_id = reg_id("scope");
+        uint32_t type_scope_id = reg_id("type_scope");
+
+
+
+        void init_stage_s() {
+            s_handlers[rbrace_id] = [this](Context& ctx){
+                ctx.result.removeAt(ctx.index);
+                int i = ctx.index-1;
+                list<Node> gathered;
+                while(i>=0) {
+                    Node on = ctx.result.get(i);
+                    Node was_on = ctx.root; //Storing the root for cases where we want to notify once children are gathered
+                    while(!on.children().empty()&&on.type()!=lbrace_id) {
+                        was_on = on;
+                        on = on.children().last(); //Descend to the found lbrace
+                    }
+                    if(on.type()==lbrace_id) {
+                        on.type(scope_id); //Turn it into a scope and hand over the contents
+                        gathered.reverse();
+                        for(auto g : gathered) 
+                            on.children() << g;
+                        for(int c=0;c<was_on.children().length();c++) { //Promote to a scope
+                            if(was_on.children()[c].sidx==on.sidx) {
+                                Node newscope = was_on.children().take(c);
+                                was_on.scopes() << newscope;
+                                //if(was_on.sidx!=ctx.root.sidx) ctx.root.scopes() << newscope;
+                                break;
+                            }
+                        }
+                        ctx.index = i;
+                        break;
+                    } else {
+                        gathered << ctx.result.take(i);
+                        i--;
+                    }
+                }
+                if(i < 0) {
+                    ctx.result.push(ctx.node); //Return the rbrace to carry the error
+                    print(red("rbrace:s_handler unmatched closing brace"));
+                }
+            };
+
+            s_handlers[identifier_id] = [this](Context& ctx){
+                if(ctx.index+1>=ctx.result.length()) return;
+
+                Node right = ctx.result[ctx.index+1];
+                if(right.type()==lbrace_id) {
+                    ctx.node.children() << ctx.result.take(ctx.index+1);
+                }
+            };
+        }
+
         void resolve_node_literal(Context& ctx, void* val, uint32_t tag, uint32_t size) {
             standard_sub_process(ctx);
             ctx.node.type(literal_id);
@@ -732,20 +785,19 @@ namespace Acorn {
             if(has_scope) {
                 node.scopes()[0].owner(node);
                 node.scopes()[0].name(node.name().to_std());
-                // if(has_sub_type) {
-                //     node->type = func_decl_id;
-                //     node->scopes[0] = node->in_scope->distribute_node(node->name,node->scope());
-                //     node->value->type_scope = node->scope().getPtr();
-                //     node->value->sub_type = 0;
-                //     node->value = node->in_scope->distribute_value(node->name,node->value);
-                // } else {
-                //     node->type = type_decl_id;
-                //     node->value->copy(make_type(node->name,0));
-                //     node->value->type_scope = node->scope().getPtr();
-                //     node->value = node->in_scope->distribute_value(node->name,node->value);
-
-                //     node->scope()->type = type_scope_id;
-                // }
+                if(has_sub_type) {
+                    node.type(func_decl_id);
+                    node.scopes()[0] = distribute_node(node.in_scope(),node.name().to_std(),node.scopes()[0]);
+                    node.value().type_scope(node.scopes()[0]);
+                    node.value().sub_type(0);
+                    node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value()));
+                } else {
+                    node.type(type_decl_id);
+                    node.value().copy(make_type(node.name().to_std(),0));
+                    node.value().type_scope(node.scopes()[0]);
+                    node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value()));
+                    node.scopes()[0].type(type_scope_id);
+                }
             } else {
                 has_scope = find_node_in_scope(node); //To distinquish func_calls from object identifiers
                 if(has_sub_type) {
@@ -777,6 +829,7 @@ namespace Acorn {
             init_literals();
             init_tokenizer();
             init_stage_a();
+            init_stage_s();
 
             register_type("int",int_id,4);
             register_type("float",float_id,4);
@@ -786,12 +839,44 @@ namespace Acorn {
             t_handlers[identifier_id] = [this](Context& ctx){resolve_identifier(ctx);};
             t_handlers[equals_id] = [this](Context& ctx){standard_sub_process(ctx);};
 
+            t_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
+
             x_handlers[equals_id] = [this](Context& ctx){
                 if(ctx.node.children().length()==2) {
+                    standard_sub_process(ctx);
                     Node left = ctx.node.children()[0];
                     Node right = ctx.node.children()[1];
                     Ptr temptr = right.value().data_ptr();
                     types[value_type_id][data_col].set(left.value().sidx,(void*)&temptr);
+
+
+                    // Ptr rp = *(Ptr*)resolve_ptr(right.value().data_ptr());
+                    // Ptr lp = *(Ptr*)resolve_ptr(left.value().data_ptr());
+                    // types[rp.pool][rp.idx].set(rp.sidx,types[lp.pool][lp.idx][lp.sidx]);
+                }
+            };
+
+            x_handlers[func_call_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
+                standard_travel_pass(ctx.node.scopes()[0]);
+            };
+
+            x_handlers[add_function("print")] = [this](Context& ctx){
+                std::string to_print = "";
+                for(int i=0;i<ctx.node.children().length();i++) {
+                    Node c = ctx.node.children()[i];
+                    process_node(ctx,c);
+                    to_print += value_as_string(c.value());
+                }
+                print(to_print);
+            };
+
+            x_handlers[make_tokenized_keyword("root_name")] = [this](Context& ctx){
+                if(ctx.node.children().empty()) {
+                    ctx.node.value(make_value(this,string_id,sizeof(Ptr)));
+                    ctx.node.value().set((void*)&ctx.root.name_ptr());
+                } else {
+                    ctx.root.name() = ctx.node.children()[0].name();
                 }
             };
         }

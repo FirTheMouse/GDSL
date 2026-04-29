@@ -1,2 +1,7 @@
-int i = 5;
-print("i is: ",i);
+int sayhi() {
+    print("Hi");
+}
+
+sayhi;
+root_name("brea");
+print(root_name);

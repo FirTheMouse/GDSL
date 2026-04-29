@@ -13,19 +13,20 @@ namespace Acorn {
     static Col& resolve(Ptr ptr, Unit* unit);
 
     struct string {
-        string(Col& _col) : col(_col) {}
-        string(Ptr ptr, Unit* unit) : col(resolve(ptr, unit)) {}
-        Col& col;
-        inline char at(uint32_t idx) {return *(char*)col[idx];}
-        inline uint32_t length() {return col.length();}
-        inline void push(char c) { col.push(&c); }
-        inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) col.push(&s[i]);}
+        string(Ptr ptr, Unit* _unit) : col_ptr(ptr), unit(_unit) {}
+        Ptr col_ptr;
+        Unit* unit = nullptr;
+        inline Col& col();
+        inline char at(uint32_t idx) {return *(char*)col()[idx];}
+        inline uint32_t length() {return col().length();}
+        inline void push(char c) { col().push(&c); }
+        inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) col().push(&s[i]);}
         inline void push(const std::string& s) { push(s.data(), s.length()); }
-        inline void operator=(const std::string& s){ col.storage.clear(); push(s);}
-        inline void operator=(string s){ col.storage.clear(); push((const char*)s.col.storage.data(), s.length());}
-        inline void operator=(const char* s) { col.storage.clear(); push(s, strlen(s)); }
-        inline char& operator[](uint32_t idx) { return *(char*)col.get(idx); }
-        std::string to_std() {return std::string((char*)col.storage.data(), length());}
+        inline void operator=(const std::string& s){ col().storage.clear(); push(s);}
+        inline void operator=(string s){ col().storage.clear(); push((const char*)s.col().storage.data(), s.length());}
+        inline void operator=(const char* s) { col().storage.clear(); push(s, strlen(s)); }
+        inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
+        std::string to_std() {return std::string((char*)col().storage.data(), length());}
     };
 
     std::string Ptr_as_string(Ptr p) {
@@ -37,7 +38,7 @@ namespace Acorn {
     }
 
     std::ostream& operator<<(std::ostream& os, Acorn::string& s) {
-        os.write((const char*)s.col.storage.data(), s.length());
+        os.write((const char*)s.col().storage.data(), s.length());
         return os;
     }
 
@@ -176,10 +177,10 @@ namespace Acorn {
         Unit* unit = nullptr;
 
         Node() {}
-        Node(opt_ptr p) { pool = p.pool; sidx = p.sidx; }
-        Node(opt_ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit;}
-        Node(opt_ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit;}
-        Node(Ptr p) { pool = p.pool; sidx = p.sidx; }
+        Node(opt_ptr p) { pool = p.pool; sidx = p.sidx;}
+        Node(opt_ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit; live = p.live;}
+        Node(opt_ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit; live = p.live;}
+        Node(Ptr p) { pool = p.pool; sidx = p.sidx; live = true;}
         Node(Ptr p, Unit& _unit) { pool = p.pool; sidx = p.sidx; unit = &_unit;}
         Node(Ptr p, Unit* _unit) { pool = p.pool; sidx = p.sidx; unit = _unit;}
     
@@ -263,6 +264,7 @@ namespace Acorn {
         bool flag = false;
     
         Context* sub;
+        Unit* unit;
     
         std::string source;
     
@@ -277,6 +279,7 @@ namespace Acorn {
         Unit() {init();}
         map<uint32_t,std::string> labels;
         list<TypePool> types;
+        Node unit_root;
 
         uint32_t undefined_id = 0;
         uint32_t ptr_id = 1;
@@ -625,12 +628,14 @@ namespace Acorn {
         std::string node_info(Node node) {
             std::string to_return = "";
             
-            to_return += labels[node.type()]
+            to_return += blue(Ptr_as_string(node)+" ")
+            + labels[node.type()]
             + (node.sub_type()==0?"":":"+labels[node.sub_type()])
             + (node.name().length()==0?"":" "+green(node.name().to_std())+" ") 
             + (node.value().live?value_info(node.value()):"")
             // + (node->x!=-1.0f?"("+std::to_string((int)node->x)+","+std::to_string((int)node->y)+")":"")
-            + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"") ; 
+            + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
+            + (!node.scopes().empty()?"[S:"+std::to_string(node.scopes().length())+"]":""); 
             //+ (node.in_scope().idx!=0?"{"+node.in_scope().name+"}":"");
             return to_return;
         }
@@ -638,11 +643,11 @@ namespace Acorn {
         // #define MUTE_TABLES 1
         // #define MUTE_MUTED_QUALS 1
     
-        std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false) {
+        std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
             std::string indent(depth * 2, ' ');
             std::string to_return = "";
             
-            to_return += indent + std::to_string(index) + ": " + node_info(node);
+            to_return += indent + sigil + std::to_string(index) + ": " + node_info(node);
             
             // if(!node->quals.empty()) {
             //     to_return += " [";
@@ -679,34 +684,31 @@ namespace Acorn {
             //     to_return +=  "\n" + indent + "  Opt_str: " + node->opt_str;
             // }
     
-            // if(!node->scopes.empty()) {
-            //     to_return +=  "\n" + indent + "   Scopes: " + std::to_string(node->scopes.size());
-            //     int i = 0;
-            //     for(auto& scope : node->scopes) {
-            //         to_return += "\n" + indent; 
-            //         if(scope) {
-            //             if(print_sub_scopes) {
-            //                 to_return += node_to_string(scope, depth + 3,index,print_sub_scopes);
-            //             }
-            //             else {
-            //                 to_return += "    " + scope->name;
-            //             }
-            //         } else {
-            //             to_return += "[NULL]";
-            //         }
-            //     }
-            // }
-            // if(node->owner) {
-            //     to_return +=  "\n" + indent + "  Owner: " + node_info(node->owner);
-            // }
+            if(node.owner().live) {
+                to_return +=  "\n" + indent + "  Owner: " + node_info(node.owner());
+            }
     
             if(!node.children().empty()) {
                 for(int i=0;i<node.children().length();i++) {
                     if(node.children()[i].unit) {
-                        to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes);
+                        to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes,"c");
                     }
                     else {
                         to_return += "\n" + indent + "[NULL]";
+                    }
+                }
+            }
+
+            if(!node.scopes().empty()) {
+                //to_return +=  "\n" + indent + "   Scopes: " + std::to_string(node.scopes().length());
+                int i = 0;
+                for(int s=0;s<node.scopes().length();s++) {
+                    Node scope = node.scopes()[s];
+                    if(print_sub_scopes) {
+                        to_return += "\n " + node_to_string(scope, depth + 1, s, print_sub_scopes,"s");
+                    }
+                    else {
+                        to_return += "    " + node_info(scope);
                     }
                 }
             }
@@ -1035,7 +1037,7 @@ namespace Acorn {
         }
     
         //Returns true if flagged for a return/break
-        bool standard_travel_pass(Node& root, Context* sub = nullptr) {
+        bool standard_travel_pass(Node root, Context* sub = nullptr) {
             node_list children = root.children();
             newline("Travel pass over "+std::to_string(children.length())+" nodes");
             int i = 0;
@@ -1087,10 +1089,19 @@ namespace Acorn {
                 }
                 i++;
             }
-
-            for(int s = 0;s<root.scopes().length();s++) {
-                standard_resolving_pass(root.scopes().get(s));
+            i = 0;
+            while(i < ctx.result.length()) {
+                if(!ctx.result[i].scopes().empty()) {
+                    for(int s = 0;s<ctx.result[i].scopes().length();s++) {
+                        standard_resolving_pass(ctx.result[i].scopes()[s]);
+                    }
+                }
+                i++;
             }
+
+            // for(int s = 0;s<root.scopes().length();s++) {
+            //     standard_resolving_pass(root.scopes()[s]);
+            // }
             endline();
         }
     };
@@ -1164,6 +1175,7 @@ namespace Acorn {
         return unit->types[dataptr.pool][dataptr.idx][dataptr.sidx];
     }
 
+    inline Col& string::col()                             {return unit->types[col_ptr.pool][col_ptr.idx]; }
 
     inline Col& value_list::col()                         {return unit->types[col_ptr.pool][col_ptr.idx]; }
     inline Value value_list::get(uint32_t idx)             {return Value(*(opt_ptr*)col().get(idx),unit);}
@@ -1195,7 +1207,7 @@ namespace Acorn {
     
     inline Ptr&      Node::name_ptr()               {return *(Ptr*)unit->types[unit->node_type_id][unit->name_col][sidx];}
     inline Col&      Node::name_col()               {Ptr& p = name_ptr(); return unit->types[p.pool][p.idx];}
-    inline string    Node::name()                   {return string(name_col());}
+    inline string    Node::name()                   {return string(name_ptr(),unit);}
     inline void      Node::name(std::string s)      {name() = s;}
     
     inline float&    Node::x()                      {return *(float*)unit->types[unit->node_type_id][unit->x_col][sidx];}
@@ -1237,7 +1249,7 @@ namespace Acorn {
     
     inline Ptr&      Node::opt_str_ptr()            {return *(Ptr*)unit->types[unit->node_type_id][unit->opt_str_col][sidx];}
     inline Col&      Node::opt_str_col()            {Ptr& p = opt_str_ptr(); return unit->types[p.pool][p.idx];}
-    inline string    Node::opt_str()                {return string(opt_str_col());}
+    inline string    Node::opt_str()                {return string(opt_str_ptr(),unit);}
     
     inline bool&     Node::mute()                   {return *(bool*)unit->types[unit->node_type_id][unit->mute_col][sidx];}
 
@@ -1259,6 +1271,12 @@ namespace Acorn {
     }
 
     Node make_node(Unit* unit) {return Node(unit->types[unit->node_type_id].create(), unit);}
+    Node make_node(Unit* unit, uint32_t type) {
+        Node n(unit->types[unit->node_type_id].create(), unit);
+        n.type(type);
+        return n;
+    }
+
     Value make_value(Unit* unit) {
         opt_ptr p = unit->types[unit->value_type_id].create();
         return Value(p, unit);

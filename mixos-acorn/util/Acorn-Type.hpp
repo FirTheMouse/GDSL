@@ -92,6 +92,8 @@ namespace Acorn {
     };
 
     struct Ptr {
+        Ptr() {}
+        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
         uint32_t pool = 0; //Pool it's at
         uint32_t idx = 0; //Column OR type if a node/value
         uint32_t sidx = 0; //Row

@@ -64,6 +64,10 @@ namespace Acorn {
             }
         }
 
+        void clear() {
+            storage.clear(); cells.clear();
+        }
+
         void pop(void* out) {
             memcpy(out, get(length()-1), element_size);
             storage.resize(storage.size() - element_size);
@@ -88,9 +92,9 @@ namespace Acorn {
     };
 
     struct Ptr {
-        uint32_t pool; //Pool it's at
-        uint32_t idx; //Column OR type if a node/value
-        uint32_t sidx; //Row
+        uint32_t pool = 0; //Pool it's at
+        uint32_t idx = 0; //Column OR type if a node/value
+        uint32_t sidx = 0; //Row
     };
 
 
@@ -292,7 +296,7 @@ namespace Acorn {
             return address_column(at_id);
         }
 
-        size_t note_value(const std::string& key, uint32_t size, uint32_t tag) {
+        uint32_t note_value(const std::string& key, uint32_t size, uint32_t tag) {
             add_column(size);
             columns.last().label = key;
             columns.last().tag = tag;
@@ -537,6 +541,8 @@ namespace Acorn {
 
 
     struct opt_ptr {
+        opt_ptr() {}
+        opt_ptr(uint32_t _pool, uint32_t _sidx, uint32_t _live) : pool(_pool), sidx(_sidx), live(_live) {}
         uint32_t pool = 0;
         uint32_t sidx = 0;
         bool live = false;

@@ -31,6 +31,7 @@ int main(int argc, char* argv[]) {
     // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     Acorn::Acorn_Kernel kernel;
+    Acorn::init_type_pool();
     kernel.run(kernel.process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();

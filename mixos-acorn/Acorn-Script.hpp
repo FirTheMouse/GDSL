@@ -28,6 +28,7 @@ namespace Acorn {
 
         uint32_t load_id = make_tokenized_keyword("load");
         uint32_t stop_id = make_tokenized_keyword("STOP");
+        uint32_t labels_id = make_tokenized_keyword("labels");
 
         void init() override {
 
@@ -75,7 +76,7 @@ namespace Acorn {
 
             x_handlers[load_id] = [this](Context& ctx){
                 if(unit_root.live) {
-                    ctx.node.value(make_value(this,string_id,sizeof(Ptr))); //Allocate a space to recive a value
+                    ctx.node.value(make_value(string_id,sizeof(Ptr))); //Allocate a space to recive a value
                     unit_root = ctx.node;
                     unit_root.live = false;
                     while(!unit_root.live) {
@@ -101,53 +102,95 @@ namespace Acorn {
                 std::this_thread::sleep_for(std::chrono::nanoseconds(100));
             };  
 
-            sys_handlers[load_id] = [this](Context& ctx){
-                if(!ctx.unit) return;
-                Unit& acorn = *ctx.unit;
-                if(!acorn.unit_root.live) {
-                    std::string path = string(*(Ptr*)acorn.unit_root.children()[0].value().get(),&acorn).to_std();
-                    uint32_t store_to = acorn.types[acorn.data_store_id].note_value(path,sizeof(char),char_id);
-                    for(auto c : readFile(path))
-                        acorn.types[acorn.data_store_id][store_to].push((void*)&c);
-                    Ptr ticket(acorn.data_store_id,store_to,0);
-                    acorn.unit_root.value().set((void*)&ticket);
-                    ctx.source = "sys:115 loaded file "+path+" for a process";
-                    acorn.unit_root.live = true;
+            // sys_handlers[load_id] = [this](Context& ctx){
+            //     if(!ctx.unit) return;
+            //     Unit& acorn = *ctx.unit;
+            //     if(!acorn.unit_root.live) {
+            //         std::string path = string(*(Ptr*)acorn.unit_root.children()[0].value().get(),&acorn).to_std();
+            //         uint32_t store_to = acorn.types[acorn.data_store_id].note_value(path,sizeof(char),char_id);
+            //         for(auto c : readFile(path))
+            //             acorn.types[acorn.data_store_id][store_to].push((void*)&c);
+            //         Ptr ticket(acorn.data_store_id,store_to,0);
+            //         acorn.unit_root.value().set((void*)&ticket);
+            //         ctx.source = "sys:115 loaded file "+path+" for a process";
+            //         acorn.unit_root.live = true;
+            //     }
+            // };
+            // x_handlers[stop_id] = [this](Context& ctx){
+            //     unit_root = ctx.node;
+            // };
+            // sys_handlers[stop_id] = [this](Context& ctx){
+            //     ctx.source = "sys:122 stopping";
+            //     ctx.flag = true;
+            // };
+
+            // x_handlers[make_tokenized_keyword("run")] = [this](Context& ctx){
+            //     if(!ctx.node.children().empty()) {
+            //         process_node(ctx,ctx.node.children()[0]);
+            //         std::string torun = string(*(Ptr*)ctx.node.children()[0].value().get(),this).to_std();
+            //         Acorn_Script acorn;
+            //         acorn.process(torun);
+            //         acorn.unit_root.children() << make_node(&acorn,stop_id);
+            //         g_ptr<Thread> t = make<Thread>();
+            //         t->run_blocking([&acorn]() mutable {
+            //             acorn.run(acorn.unit_root);
+            //         });
+            //         Context actx;
+            //         actx.unit = &acorn;
+            //         while(true) {
+            //             actx.node = acorn.unit_root;
+            //             sys_handlers.run(acorn.unit_root.type())(actx);
+            //             if(!actx.source.empty()) {
+            //                 print(actx.source);
+            //                 actx.source = "";
+            //             }
+            //             if(actx.flag) {
+            //                 t->stop();
+            //                 break;
+            //             }
+            //         }
+            //     }
+            // };
+
+            t_handlers[dot_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+
+                std::string prop = right.name().to_std();
+                right.value(make_value());
+                Value v = right.value();
+                if(left.value().type()==value_id){
+                    if(prop=="type") {v.setup(int_id,4,value_type_col);}
+                    else if(prop=="sub_type") {v.setup(int_id,4,value_sub_type_col);}
+                } else { //Because all nodes are nodes if not carrying a value explicilty
+                    if(prop=="type") {v.setup(int_id,4,node_type_col);}
+                    else if(prop=="sub_type") {v.setup(int_id,4,node_sub_type_col);}
                 }
-            };
-            x_handlers[stop_id] = [this](Context& ctx){
-                unit_root = ctx.node;
-            };
-            sys_handlers[stop_id] = [this](Context& ctx){
-                ctx.source = "sys:122 stopping";
-                ctx.flag = true;
+                ctx.node.value(v); //Stealing it from right
             };
 
-            x_handlers[make_tokenized_keyword("run")] = [this](Context& ctx){
+            x_handlers[dot_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[0];
+                
+                ctx.node.value().set(types[left.pool][ctx.node.value().address()][left.sidx]);
+            };
+
+            r_handlers[labels_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value());
+                ctx.node.value().setup(string_id,sizeof(Ptr));
+                Ptr ticket(data_store_id,types[data_store_id].note_value("labelstorage",sizeof(char),char_id),0);
+                ctx.node.value().set((void*)&ticket);
+            };
+            x_handlers[labels_id] = [this](Context& ctx){
                 if(!ctx.node.children().empty()) {
-                    process_node(ctx,ctx.node.children()[0]);
-                    std::string torun = string(*(Ptr*)ctx.node.children()[0].value().get(),this).to_std();
-                    Acorn_Script acorn;
-                    acorn.process(torun);
-                    acorn.unit_root.children() << make_node(&acorn,stop_id);
-                    g_ptr<Thread> t = make<Thread>();
-                    t->run_blocking([&acorn]() mutable {
-                        acorn.run(acorn.unit_root);
-                    });
-                    Context actx;
-                    actx.unit = &acorn;
-                    while(true) {
-                        actx.node = acorn.unit_root;
-                        sys_handlers.run(acorn.unit_root.type())(actx);
-                        if(!actx.source.empty()) {
-                            print(actx.source);
-                            actx.source = "";
-                        }
-                        if(actx.flag) {
-                            t->stop();
-                            break;
-                        }
-                    }
+                    standard_sub_process(ctx);
+                    string label(*(Ptr*)ctx.node.value().get());
+                    uint32_t p = *(uint32_t*)ctx.node.children()[0].value().get();
+                    label.push(labels[p]); 
                 }
             };
 
@@ -177,14 +220,19 @@ namespace Acorn {
                 place_node_in_scope(root.children()[i],root);
             }
 
+            //print(node_to_string(root,0,0,true));
+
             start_stage(s_handlers);
             standard_direct_pass(root);
             
             start_stage(t_handlers);
             standard_resolving_pass(root);
 
+            start_stage(r_handlers);
+            standard_resolving_pass(root);
+
             // span->print_all();
-            //print(node_to_string(root,0,0,true));
+            print(node_to_string(root,0,0,true));
 
             start_stage(x_handlers);
             standard_travel_pass(root);

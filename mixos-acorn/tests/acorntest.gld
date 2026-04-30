@@ -3,5 +3,4 @@ int sayhi() {
 }
 
 sayhi;
-root_name("brea");
-print(root_name);
+print(labels(int.type));

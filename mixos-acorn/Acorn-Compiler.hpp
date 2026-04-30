@@ -20,7 +20,7 @@ namespace Acorn {
                     for(Value v : keywords.getAll(node.name().to_std())) {
                         if(v.live) {
                             if(v.reg()==-1||v.reg()==context) { //By default is -1
-                                node.value(make_value(this)); //Make a value to copy into
+                                node.value(make_value()); //Make a value to copy into
                                 node.value().copy(v);
                                 node.value().reg(-1); //Reset to -1 for cleanliness
                             }
@@ -43,7 +43,7 @@ namespace Acorn {
             uint32_t id = reg_id(f);
             uint32_t prefix_id = reg_id(f);
             uint32_t suffix_id = reg_id(f);
-            Value val = make_value(this,id,size);
+            Value val = make_value(id,size);
             val.sub_type(id);
             return val;
         }
@@ -67,13 +67,13 @@ namespace Acorn {
         }
 
         void register_type(const std::string& label, uint32_t type, uint32_t size) {
-            Value val = make_value(this,type,size); val.sub_type(type);
+            Value val = make_value(type,size); val.sub_type(type);
             add_type_stamping_handler(type);
             keywords.put(label,val);
         }
 
         Value register_value(const std::string& name, uint32_t size = 0,uint32_t type = 0) {
-            Value v = make_value(this,type,size);
+            Value v = make_value(type,size);
             v.sub_type(reg_id(name));
             return v;
         }
@@ -117,7 +117,7 @@ namespace Acorn {
         size_t add_token(char c, const std::string& f) {
             size_t id = reg_id(f);
             tokenizer_functions[c] = [this,id,c](Context& ctx) {
-                ctx.node = make_node(this);
+                ctx.node = make_node();
                 ctx.node.type(id);
                 ctx.node.name().push(c);
                 ctx.result.push(ctx.node);
@@ -152,7 +152,7 @@ namespace Acorn {
         void add_string_token(char open, size_t open_id, size_t state_id) {
             tokenizer_functions.put(open,[this, open, open_id, state_id](Context& ctx) {
                 ctx.state = state_id;
-                ctx.node = make_node(this);
+                ctx.node = make_node();
                 ctx.node.type(string_id);
                 ctx.result.push(ctx.node);
             });
@@ -244,7 +244,7 @@ namespace Acorn {
         // }
 
         Node tokenize(const std::string& code) {
-            Node root = make_node(this);
+            Node root = make_node();
             root.name("ROOT");
             node_list result = root.children();
             uint32_t state = 0;
@@ -383,14 +383,14 @@ namespace Acorn {
                 char c = ctx.source.at(ctx.index);
                 if(std::isalpha(c)) {
                     ctx.state = in_alpha_id;
-                    ctx.node = make_node(this);
+                    ctx.node = make_node();
                     ctx.node.type(identifier_id);
                     ctx.node.name().push(c);
                     ctx.result.push(ctx.node);
                 }
                 else if(std::isdigit(c)) {
                     ctx.state = in_digit_id;
-                    ctx.node = make_node(this);
+                    ctx.node = make_node();
                     ctx.node.type(int_id);
                     ctx.node.name().push(c);
                     ctx.result.push(ctx.node);
@@ -453,7 +453,7 @@ namespace Acorn {
         }
 
         Node value_to_qual(Value val) {
-            Node to_return = make_node(this);
+            Node to_return = make_node();
             to_return.value(val);
             to_return.type(val.type());
             to_return.sub_type(val.sub_type());
@@ -542,7 +542,7 @@ namespace Acorn {
                 
                 if(left_bp == -1 && right_bp == -1) return;
                 
-                if(ctx.left.unit && left_bp > 0 && !discard_types.has(ctx.left.type())) {
+                if(ctx.left.live && left_bp > 0 && !discard_types.has(ctx.left.type())) {
                     int left_left_bp = left_binding_power.getOrDefault(ctx.left.type(), -1);
                     int left_right_bp = right_binding_power.getOrDefault(ctx.left.type(), -1);
     
@@ -605,7 +605,10 @@ namespace Acorn {
                             was_given_children = true;
                         }
                         // g_ptr<Node> token_on = copy_as_token(on);
-                        on.copy(on.children().take(0));
+
+                        if(!on.children().empty())
+                            on.copy(on.children().take(0));
+
                         if(!was_given_children) {
                             if(on.children().empty()) {
                                 for(auto g : gathered)
@@ -629,7 +632,7 @@ namespace Acorn {
             };
     
             a_handlers[identifier_id] = [this](Context& ctx){
-                if(ctx.left.unit && ctx.left.type() == identifier_id) {
+                if(ctx.left.live && ctx.left.type() == identifier_id) {
                     while(ctx.index < ctx.result.length() && ctx.result.get(ctx.index).type() == identifier_id) {
                         ctx.left.children() << ctx.result.take(ctx.index);
                     }
@@ -694,7 +697,7 @@ namespace Acorn {
         void resolve_node_literal(Context& ctx, void* val, uint32_t tag, uint32_t size) {
             standard_sub_process(ctx);
             ctx.node.type(literal_id);
-            Value value = make_value(this,tag,size);
+            Value value = make_value(tag,size);
             value.set(val);
             ctx.node.value(value);
         }
@@ -705,7 +708,7 @@ namespace Acorn {
             print_handlers[float_id] = [](Context& ctx) {ctx.source = std::to_string(*(float*)ctx.value.get());};
             print_handlers[int_id] = [](Context& ctx) {ctx.source = std::to_string(*(int*)ctx.value.get());};
             print_handlers[bool_id] = [](Context& ctx) {ctx.source = (*(bool*)ctx.value.get()) ? "TRUE" : "FALSE";};
-            print_handlers[string_id] = [this](Context& ctx) {ctx.source = string((*(Ptr*)ctx.value.get()),this).to_std();};
+            print_handlers[string_id] = [this](Context& ctx) {ctx.source = string((*(Ptr*)ctx.value.get())).to_std();};
                 
             t_handlers[float_id] = [this](Context& ctx) {
                 float stof = std::stof(ctx.node.name().to_std());
@@ -732,7 +735,7 @@ namespace Acorn {
 
         void resolve_identifier(Context& ctx) {
             Node node = ctx.node;
-            Value decl_value = make_value(this);
+            Value decl_value = make_value();
             bool found_a_value = find_value_in_scope(node);
             bool is_qualifier = node.value().type()!=0 && node.value().sub_type() != 0; 
             //We count it as a qualifer if it has a fully valid value to stamp
@@ -835,11 +838,14 @@ namespace Acorn {
             register_type("float",float_id,4);
             register_type("bool",bool_id,1);
             register_type("string",string_id,sizeof(Ptr));
+            register_type("Node",node_id,sizeof(opt_ptr));
+            register_type("Value",value_id,sizeof(opt_ptr));
 
             t_handlers[identifier_id] = [this](Context& ctx){resolve_identifier(ctx);};
             t_handlers[equals_id] = [this](Context& ctx){standard_sub_process(ctx);};
 
             t_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
+            r_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
 
             x_handlers[equals_id] = [this](Context& ctx){
                 if(ctx.node.children().length()==2) {
@@ -847,7 +853,7 @@ namespace Acorn {
                     Node left = ctx.node.children()[0];
                     Node right = ctx.node.children()[1];
                     Ptr temptr = right.value().data_ptr();
-                    types[value_type_id][data_col].set(left.value().sidx,(void*)&temptr);
+                    types[value_type_id][value_data_col].set(left.value().sidx,(void*)&temptr);
 
 
                     // Ptr rp = *(Ptr*)resolve_ptr(right.value().data_ptr());
@@ -873,7 +879,7 @@ namespace Acorn {
 
             x_handlers[make_tokenized_keyword("root_name")] = [this](Context& ctx){
                 if(ctx.node.children().empty()) {
-                    ctx.node.value(make_value(this,string_id,sizeof(Ptr)));
+                    ctx.node.value(make_value(string_id,sizeof(Ptr)));
                     ctx.node.value().set((void*)&ctx.root.name_ptr());
                 } else {
                     ctx.root.name() = ctx.node.children()[0].name();

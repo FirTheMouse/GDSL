@@ -1,0 +1,69 @@
+// x0 SCRATCH
+// x1 SCRATCH
+// x2 SCRATCH
+// x3 Immediate values
+// 
+//
+//
+main:
+    stp 29 30 31 -2
+
+    mov  20 0 1     //  x0 TO x20 AS 64bits / Save the source pointer Dirt gave us for the text to X20 to keep it safe
+    mov  21 1 1     //  x0 TO x21 AS 64bits / Save the length as well
+    movz 22 0 1     //  0  TO x22 AS 64bits / Store our index, starting at zero
+    mov  23 2 1     //  x2 TO x23 AS 64bits / Save the lookup table
+
+    movz 24 0 0 //Set the accumulator field to zero to start
+
+    //Process the token stream
+    loop: 
+        ldrb 0 20 0     //(*x20)+0 TO x0 / Grab the first char from the source text
+        ldrb_reg 1 23 0 //(*23)+x0 TO x1 / Retrive the classifer from the lookup table for the char
+
+            cmp 1 31 0        // x1 MINUS x31(0) AS 32bits / Check if the classifer is zero or not
+            b.eq unclassified // Branch on equals to: if the char's classifier is 0 go to the unclassified handeling
+
+            movz 3 1 0       // 1 TO x3 AS 32bits / Move 1 to register 3, for comparison
+            cmp 1 3 0        // x1 MINUS x3 AS 32bits / Check if the classifier is 1 or not
+            b.eq isnum       // Branch on equals to: if the char's clasifier is 1 go to isnum
+
+            movz 3 2 0 // Same as above, but with 2 instead of 1, this pattern repeats below
+            cmp 1 3 0
+            b.eq ispipe 
+
+        b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
+
+        unclassified:
+            movz 24 0 0  //Clear the accumulator
+            readchar     //Print out the unclassified char so we know to handle it
+        b loop_tail
+        
+        isnum:
+            movz 3 48 0      // 48 TO x3 AS 32bits / ASCII offset for 0
+            sub 0 0 3 0      // x0 MINUS x3 TO x0 AS 32bits / Convert ASCII to digit value
+
+            // accumulator = accumulator * 10 + digit, we're accumulating for multi digit numbers like 23
+            movz 3 10 0      // 10 TO x3 AS 32bits / Moving 10 to 3 for use as a multiplier
+            mul 24 24 3 0    // x24 TIMES x3 TO x24 AS 32bits / Shift the accumulator at x24 to the left by 10x
+            add 24 24 0 0    // x24 PLUS x0 TO x24 AS 32bits / Add new digit
+        b loop_tail
+
+        ispipe:
+            mov 0 24 0 //Move the acumulator value down for printing
+            atzero
+            movz 24 0 0  //Clear accumulator for next number
+        b loop_tail
+
+        loop_tail:
+            // Increment pointer and index
+            movz 3 1 0      // 1 TO x3 AS 32bits / Move 1 to register 3, so we can increment with it
+            add 20 20 3 1   // x20 PLUS x3 TO x20 AS 64bits / Increment our pointer by one to get to the next char
+            add 22 22 3 1   // x22 PLUS x3 TO x22 AS 64bits / Increment the index as well
+
+            cmp 22 21 1    // x22 MINUS x21 AS 64bits / Check if index (x22) is less than length (x21)
+    b.lt loop           // Branch on less than: if the index is less than the length, loop again
+
+
+    wub //For security reasons
+    ldp 29 30 31 2
+ret

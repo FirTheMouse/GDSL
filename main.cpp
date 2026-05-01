@@ -8,7 +8,8 @@
 #include "modules/GDSL-Thistle.hpp"
 #include "modules/GDSL-PineNeedle.hpp"
 #include "mixos-acorn/Acorn-Kernel.hpp"
-#include "mixos-acorn/Acorn-Assembler.hpp"
+#include "mixos-acorn/Acorn-Dirt.hpp"
+#include "mixos-acorn/Acorn-JIT.hpp"
 
 using namespace GDSL;
 
@@ -28,16 +29,19 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
  
-    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    Acorn::init_type_pool();
+    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();
     // kernel.run(kernel.process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    Acorn::Acorn_Assembler assembler;
-    Acorn::init_type_pool();
-    assembler.run(assembler.process(readFile("mixos-acorn/tests/acorn.gld")));
+    // Acorn::Acorn_Dirt dirt;
+    // Acorn::init_type_pool();
+    // dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
+
+    // Acorn::JIT_dirt();
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
     // root = twig->process(readFile("modules/tests/pebble.gld"));

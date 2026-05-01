@@ -4,22 +4,54 @@
 
 namespace Acorn {
     struct Col {
-        Col(size_t _size = 1) : element_size(_size) {}
+        Col(uint32_t _size = 1) : element_size(_size) {}
+        uint8_t* storage = nullptr;
         uint32_t element_size;
-        list<uint8_t> storage;
-
-        std::string label;
+        uint32_t size = 0;
+        uint32_t capacity = 0;
         uint32_t tag = 0;
 
+        std::string label;
         map<std::string,uint32_t> cells;
 
-        inline uint32_t length() {return storage.length() / element_size;}
-        inline bool empty() {return storage.length()==0;}
+        inline uint32_t length() {return size/ element_size;}
+        inline bool empty() {return size==0;}
+
+        void reserve(uint32_t new_capacity) {
+            if (new_capacity <= capacity) return;
+            
+            uint8_t* newPtr = new uint8_t[new_capacity];
+            for (size_t i = 0; i < size; ++i) {
+                newPtr[i] = std::move(storage[i]);
+            }
+            
+            delete[] storage;
+            storage = newPtr;
+            capacity = new_capacity;
+        }
+
+        void resize(uint32_t new_size) {
+            if (new_size > capacity) {
+                reserve(new_size);
+            }
+            size = new_size;
+        }
+
+        void push(const void* element) {
+            size_t old_size = size;
+            resize(old_size + element_size);
+            memcpy(&storage[old_size], element, element_size);
+        }
+        void operator<<(const void* element) {push(element);}
+        void push_default() {
+            size_t old_size = size;
+            resize(old_size + element_size);
+            memset(&storage[old_size], 0, element_size);
+        }
         
         inline void* get(uint32_t index) {return &storage[index * element_size];}
         inline void* operator[](uint32_t index) {return get(index);}
-        template<typename T> inline T& get(uint32_t index) {return *(T*)get(index);}
-        inline void* last() {return get(length()-1);}
+        inline void* last() {return get(size-1);}
 
         inline bool hasKey(const std::string& key) {return cells.hasKey(key);}
 
@@ -28,24 +60,11 @@ namespace Acorn {
             return &storage[cells.get(key) * element_size];
         }
         inline void* operator[](const std::string& key) {return get(key);}
-        template<typename T> inline T& get(const std::string& key) {return *(T*)get(key);}
 
         inline void set(size_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
         inline void set(const std::string& key, const void* element) {
             if(!hasKey(key)) {print(red("acorntype:col:set does not have key "+key+"!"));} 
             else {memcpy(&storage[cells.get(key) * element_size], element, element_size);}
-        }
-
-        void push(const void* element) {
-            size_t old_size = storage.size();
-            storage.resize(old_size + element_size);
-            memcpy(&storage[old_size], element, element_size);
-        }
-        void operator<<(const void* element) {push(element);}
-        void push_default() {
-            size_t old_size = storage.size();
-            storage.resize(old_size + element_size);
-            memset(&storage[old_size], 0, element_size);
         }
 
         std::string get_cell_label(uint32_t index) {
@@ -62,22 +81,22 @@ namespace Acorn {
 
         void removeAt(uint32_t index) {
             size_t byte_start = index * element_size;
-            for(size_t i = byte_start; i < storage.size() - element_size; i++) {
+            for(size_t i = byte_start; i < size - element_size; i++) {
                 storage[i] = storage[i + element_size];
             }
-            storage.resize(storage.size() - element_size);
+            resize(size - element_size);
             for(auto& e : cells.entrySet()) {
                 if(e.value > index) e.value--;
             }
         }
 
         void clear() {
-            storage.clear(); cells.clear();
+            size = 0;
         }
 
         void pop(void* out) {
             memcpy(out, get(length()-1), element_size);
-            storage.resize(storage.size() - element_size);
+            resize(size - element_size);
         }
     };
 
@@ -112,8 +131,8 @@ namespace Acorn {
         Type() {}
         ~Type() {}
 
-        list<Ptr> array;
         list<Col> columns;
+        list<Ptr> array;
 
         int save_idx = -1;
         std::string type_name = "bullets";
@@ -458,7 +477,7 @@ namespace Acorn {
     static void write_col(std::ostream& out, Col& col) {
         write_raw<size_t>(out, col.element_size);
         write_raw<uint32_t>(out, (uint32_t)col.length());
-        out.write((const char*)col.storage.data(), col.storage.size());
+        out.write((const char*)col.storage, col.size);
         write_string(out, col.label);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, (uint32_t)col.cells.size());
@@ -488,8 +507,8 @@ namespace Acorn {
     static void read_col(std::istream& in, Col& col) {
         col.element_size = read_raw<size_t>(in);
         uint32_t len = read_raw<uint32_t>(in);
-        col.storage.resize(len * col.element_size);
-        in.read((char*)col.storage.data(), len);
+        col.resize(len * col.element_size);
+        in.read((char*)col.storage, len);
         col.label = read_string(in);
         col.tag = read_raw<uint32_t>(in);
         uint32_t cells_count = read_raw<uint32_t>(in);
@@ -548,26 +567,17 @@ namespace Acorn {
         in.close();
     }
 
-
-    struct opt_ptr {
-        opt_ptr() {}
-        opt_ptr(uint32_t _pool, uint32_t _sidx, uint32_t _live) : pool(_pool), sidx(_sidx), live(_live) {}
-        uint32_t pool = 0;
-        uint32_t sidx = 0;
-        bool live = false;
-    };
-
     class TypePool : public Type {
     public:
         TypePool() {}
 
-        list<opt_ptr> handles;
-        list< std::function<void(opt_ptr&)> > init_funcs;
-        list<int> free_ids;
+        list<Ptr> handles;
         uint32_t free_stack_top = 0;
+        list<int> free_ids;
+        list< std::function<void(Ptr&)> > init_funcs;
 
-        std::function<opt_ptr()> make_func = [](){
-            opt_ptr optr;
+        std::function<Ptr()> make_func = [](){
+            Ptr optr;
             return optr;
         };
 
@@ -585,19 +595,19 @@ namespace Acorn {
             }
         }
 
-        opt_ptr& create() {
+        Ptr& create() {
             int next_id = get_next();
             if(next_id != -1) {
-                opt_ptr& optr = handles.get(next_id);
+                Ptr& optr = handles.get(next_id);
                 for(int i = 0; i < init_funcs.size(); i++) init_funcs[i](optr);
-                optr.live = true;
+                optr.idx = 1; //Mark as live
                 return optr;
             } else {
-                opt_ptr newptr = make_func();
+                Ptr newptr = make_func();
                 store(newptr);
-                opt_ptr& optr = handles.last();
+                Ptr& optr = handles.last();
                 for(int i = 0; i < init_funcs.size(); i++) init_funcs[i](optr);
-                optr.live = true;
+                optr.idx = 1;
                 return optr;
             }
         }
@@ -611,7 +621,7 @@ namespace Acorn {
         }
 
         private:
-            void store(opt_ptr& optr)
+            void store(Ptr& optr)
             {
                 optr.sidx = handles.size();
                 for(int c = 0; c<columns.length(); c++) {
@@ -621,16 +631,16 @@ namespace Acorn {
             }
         public:
 
-        void add_initializers(list<std::function<void(opt_ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
-        void add_initializer(std::function<void(opt_ptr&)> init) {init_funcs << init;}
-        void operator+(std::function<void(opt_ptr&)> init) {add_initializer(init);}
-        void operator+(list<std::function<void(opt_ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
+        void add_initializers(list<std::function<void(Ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
+        void add_initializer(std::function<void(Ptr&)> init) {init_funcs << init;}
+        void operator+(std::function<void(Ptr&)> init) {add_initializer(init);}
+        void operator+(list<std::function<void(Ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
 
-        void recycle(opt_ptr& optr) {
-            if(!optr.live) {
+        void recycle(Ptr& optr) {
+            if(optr.idx==0) { //If already dead
                 return;
             }
-            optr.live = false;
+            optr.idx = 0;
 
             return_id(optr.sidx);
         }

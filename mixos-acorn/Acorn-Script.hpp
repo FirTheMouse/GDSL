@@ -80,11 +80,11 @@ namespace Acorn {
             // print("Hello world");
 
             x_handlers[load_id] = [this](Context& ctx){
-                if(unit_root.live) {
+                if(unit_root.idx==1) {
                     ctx.node.value(make_value(string_id,sizeof(Ptr))); //Allocate a space to recive a value
                     unit_root = ctx.node;
-                    unit_root.live = false;
-                    while(!unit_root.live) {
+                    unit_root.idx = 0;
+                    while(unit_root.idx==0) {
                         std::this_thread::sleep_for(std::chrono::nanoseconds(100));
                     }
                     print("I LIVE!");
@@ -162,17 +162,17 @@ namespace Acorn {
                 fire_quals(ctx,ctx.node.value());
             };
             r_handlers[prefix_node_id] = [this](Context& ctx){
-                if(ctx.value.live) {
+                if(ctx.value.idx==1) {
                     Node n = make_node();
                     ctx.value.set((void*)&n);
-                    ctx.value.type_scope(opt_ptr(node_type_id,0,true)); //The node template
+                    ctx.value.type_scope(Ptr(node_type_id,1,0)); //The node template
                 }
             };
             r_handlers[prefix_value_id] = [this](Context& ctx){
-                if(ctx.value.live) {
+                if(ctx.value.idx==1) {
                     Value v = make_value();
                     ctx.value.set((void*)&v);
-                    ctx.value.type_scope(opt_ptr(node_type_id,1,true)); //The value template
+                    ctx.value.type_scope(Ptr(node_type_id,1,1)); //The value template
                 }
             };
 
@@ -184,7 +184,7 @@ namespace Acorn {
                 std::string prop = right.name().to_std();
                 right.value(make_value());
                 value_table look;
-                if(left.value().type_scope().live) {
+                if(left.value().type_scope().idx==1) {
                     look = left.value().type_scope().value_table();
                 } else {
                     if(left.value().type()==node_id) {
@@ -204,9 +204,9 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 Node left = ctx.node.children()[0];
                 Node right = ctx.node.children()[1];
-                opt_ptr ptr = left;
-                if(left.value().live&&(left.value().type()==node_id||left.value().type()==value_id)) {
-                    ptr = *(opt_ptr*)left.value().get();
+                Ptr ptr = left;
+                if(left.value().idx==1&&(left.value().type()==node_id||left.value().type()==value_id)) {
+                    ptr = *(Ptr*)left.value().get();
                 }
 
                 int addr = ctx.node.value().address();
@@ -292,7 +292,7 @@ namespace Acorn {
             };
 
             r_handlers[in_id] = [this](Context& ctx){
-                if(!ctx.node.children().empty()&&ctx.node.in_scope().live&&ctx.node.in_scope().owner().live) {
+                if(!ctx.node.children().empty()&&ctx.node.in_scope().idx==1&&ctx.node.in_scope().owner().idx==1) {
                     ctx.node.name("in "+ctx.node.children()[0].name().to_std()+" "+labels[ctx.node.in_scope().owner().sub_type()]);
                     if(!ctx.node.scopes().empty()) {
                         ctx.node.scopes()[0].name(ctx.node.name().to_std());
@@ -364,6 +364,7 @@ namespace Acorn {
             //print(node_to_string(root,0,0,true));
 
             dump_unit(true);
+
         }
 
 

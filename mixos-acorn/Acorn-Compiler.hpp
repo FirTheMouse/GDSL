@@ -18,7 +18,7 @@ namespace Acorn {
                 log("Keyword resolving ",node_info(node));
                 if(keywords.hasKey(node.name().to_std())) {
                     for(Value v : keywords.getAll(node.name().to_std())) {
-                        if(v.live) {
+                        if(v.idx==1) {
                             if(v.reg()==-1||v.reg()==context) { //By default is -1
                                 node.value(make_value()); //Make a value to copy into
                                 node.value().copy(v);
@@ -27,7 +27,7 @@ namespace Acorn {
                         }
                     }
                 }
-                if(node.value().live) {
+                if(node.value().idx==1) {
                     context =  node.value().sub_type();
                 }
 
@@ -54,7 +54,7 @@ namespace Acorn {
                     ctx.value.sub_type(ctx.qual.sub_type());
                     ctx.value.type(ctx.qual.type());
                     ctx.value.size(ctx.qual.value().size());
-                    if(ctx.qual.value().type_scope().live)
+                    if(ctx.qual.value().type_scope().idx==1)
                         ctx.value.type_scope(ctx.qual.value().type_scope());
                 }
             };
@@ -178,70 +178,59 @@ namespace Acorn {
         }
 
 
-        // void add_double_string_token(char open, char open2, size_t open_id, size_t open_id2, size_t state_id, size_t type_id, bool break_on_newline = false, map<std::string,Handler>* parts = nullptr) {      
-        //     Handler open_func = [this, open, open2, open_id, open_id2, state_id, type_id](Context& ctx) {
-        //         char c = ctx.source.at(ctx.index+1);
-        //         if(c==open2) {
-        //             ctx.node = make<Node>(type_id);
-        //             g_ptr<Node> slashes = make<Node>(type_id);
-        //             slashes->name = std::string({open,open2});
-        //             slashes->x = at_x; slashes->y = at_y;
-        //             slashes->mute = true;
-        //             ctx.node->quals << slashes;
-        //             ctx.result.push(ctx.node);
-        //             at_x+=1.0f;
-        //             ctx.index++;
-        //             ctx.state = state_id;
-        //         }
-        //     };
-        //     Handler open_else_func = [this, open, open_id, state_id](Context& ctx) {
-        //         char c = ctx.source.at(ctx.index+1);
-        //         ctx.node = make<Node>(open_id,c);
-        //         ctx.node->x = at_x;
-        //         ctx.node->y = at_y;
-        //         ctx.result.push(ctx.node);
-        //     };
-        //     Handler full_package_func = [this, state_id, open_func, open_else_func](Context& ctx) {
-        //         open_func(ctx);
-        //         if(ctx.state!=state_id)
-        //             open_else_func(ctx);
-        //     };
-        //     tokenizer_functions[open] = full_package_func;
-        //     if(parts) {
-        //         parts->put("if",open_func);
-        //         parts->put("else",open_else_func);
-        //         parts->put("full",full_package_func);
-        //     }
+        void add_double_string_token(char open, char open2, size_t open_id, size_t open_id2, size_t state_id, size_t type_id, bool break_on_newline = false, map<std::string,Handler>* parts = nullptr) {      
+            Handler open_func = [this, open, open2, open_id, open_id2, state_id, type_id](Context& ctx) {
+                char c = ctx.source.at(ctx.index+1);
+                if(c==open2) {
+                    ctx.node = make_node(type_id);
+                    ctx.result.push(ctx.node);
+                    at_x+=1.0f;
+                    ctx.index++;
+                    ctx.state = state_id;
+                }
+            };
+            Handler open_else_func = [this, open, open_id, state_id](Context& ctx) {
+                char c = ctx.source.at(ctx.index+1);
+                ctx.node = make_node(open_id);
+                ctx.node.name().push(c);
+                ctx.result.push(ctx.node);
+            };
+            Handler full_package_func = [this, state_id, open_func, open_else_func](Context& ctx) {
+                open_func(ctx);
+                if(ctx.state!=state_id)
+                    open_else_func(ctx);
+            };
+            tokenizer_functions[open] = full_package_func;
+            if(parts) {
+                parts->put("if",open_func);
+                parts->put("else",open_else_func);
+                parts->put("full",full_package_func);
+            }
         
-        //     Handler state_func = [this, open, open2, open_id, open_id2, state_id, type_id, break_on_newline](Context& ctx) {
-        //         char c = ctx.source.at(ctx.index);
-        //         if(c == open&&ctx.source.at(ctx.index+1)==open2) {
-        //             ctx.state=0;
-        //             g_ptr<Node> slashes = make<Node>(type_id);
-        //             slashes->name = std::string({open,open2});
-        //             slashes->x = at_x; slashes->y = at_y;
-        //             slashes->mute = true;
-        //             ctx.result->last()->quals << slashes;
-        //             ctx.index++;
-        //         } else if(c == '\\') {
-        //             if(ctx.index + 1 < ctx.source.length()) {
-        //                 ctx.node->name += ctx.source.at(ctx.index + 1);
-        //                 at_x += 1.0f;
-        //                 ctx.index++;
-        //             }
-        //         } else if(c=='\n') {
-        //             at_y += 1.0f;
-        //             at_x = -1.0f;
-        //             ctx.node->name += c;
-        //             if(break_on_newline)
-        //                 ctx.state = 0;
-        //         }
-        //         else {
-        //             ctx.node->name += c;
-        //         }
-        //     };
-        //     tokenizer_state_functions.put(state_id,state_func);
-        // }
+            Handler state_func = [this, open, open2, open_id, open_id2, state_id, type_id, break_on_newline](Context& ctx) {
+                char c = ctx.source.at(ctx.index);
+                if(c == open&&ctx.source.at(ctx.index+1)==open2) {
+                    ctx.state=0;
+                    ctx.index++;
+                } else if(c == '\\') {
+                    if(ctx.index + 1 < ctx.source.length()) {
+                        ctx.node.name().push(ctx.source.at(ctx.index + 1));
+                        at_x += 1.0f;
+                        ctx.index++;
+                    }
+                } else if(c=='\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                    ctx.node.name().push(c);
+                    if(break_on_newline)
+                        ctx.state = 0;
+                }
+                else {
+                    ctx.node.name().push(c);
+                }
+            };
+            tokenizer_state_functions.put(state_id,state_func);
+        }
 
         Node tokenize(const std::string& code) {
             Node root = make_node();
@@ -329,8 +318,8 @@ namespace Acorn {
 
             add_string_token('"', quote_id, reg_id("IN_STRING"));
             // add_string_token('\'', single_quote_id, reg_id("IN_SHORT_STRING"));
-            // map<std::string,Handler> slash_parts;
-            // add_double_string_token('/', '/', slash_id, slash_id, reg_id("IN_COMMENT"), comment_id, true, &slash_parts);
+            map<std::string,Handler> slash_parts;
+            add_double_string_token('/', '/', slash_id, slash_id, reg_id("IN_COMMENT"), comment_id, true, &slash_parts);
 
             // // tokenizer_state_functions.put(in_comment_id,[this](Context& ctx) {
             // //     char c = ctx.source.at(ctx.index);
@@ -547,7 +536,7 @@ namespace Acorn {
                 
                 if(left_bp == -1 && right_bp == -1) return;
                 
-                if(ctx.left.live && left_bp > 0 && !discard_types.has(ctx.left.type())) {
+                if(ctx.left.idx==1 && left_bp > 0 && !discard_types.has(ctx.left.type())) {
                     int left_left_bp = left_binding_power.getOrDefault(ctx.left.type(), -1);
                     int left_right_bp = right_binding_power.getOrDefault(ctx.left.type(), -1);
     
@@ -642,7 +631,7 @@ namespace Acorn {
             }
     
             a_handlers[identifier_id] = [this](Context& ctx){
-                if(ctx.left.live && ctx.left.type() == identifier_id) {
+                if(ctx.left.idx==1 && ctx.left.type() == identifier_id) {
                     while(ctx.index < ctx.result.length() && ctx.result.get(ctx.index).type() == identifier_id) {
                         ctx.left.children() << ctx.result.take(ctx.index);
                     }
@@ -757,18 +746,21 @@ namespace Acorn {
             Node node = ctx.node;
             Value decl_value = make_value();
             bool found_a_value = find_value_in_scope(node);
-            bool is_qualifier = node.value().type()!=0 && node.value().sub_type() != 0; 
+            bool is_qualifier = node.value().idx==1 && node.value().type()!=0 && node.value().sub_type() != 0; 
             //We count it as a qualifer if it has a fully valid value to stamp
+
+
 
             int root_idx = -1;
             if(is_qualifier) {
-                decl_value.quals() << value_to_qual(node.value());
+                if(ctx.node.value().idx==1)
+                    decl_value.quals() << value_to_qual(node.value());
                 for(int i = 0; i < node.children().length(); i++) {
                     Node c = node.children()[i];
                     find_value_in_scope(c); //Process forward and consume other qualifers
                     if(c.type()!=identifier_id) {break;}
 
-                    if(c.value().live&&c.value().type()!=0) {
+                    if(c.value().idx==1&&c.value().type()!=0) {
                         decl_value.quals() << value_to_qual(c.value());
                     } else {
                         root_idx = i;
@@ -781,7 +773,7 @@ namespace Acorn {
                     for(int i = root_idx+1; i < node.children().length(); i++) {
                         Node c = node.children()[i];
                         find_value_in_scope(c);
-                        if(c.value().live&&c.value().type()!=0) {
+                        if(c.value().idx==1&&c.value().type()!=0) {
                             node.quals() << value_to_qual(c.value());
                         } 
                     }
@@ -801,10 +793,11 @@ namespace Acorn {
             }
 
             node.value(decl_value);
+
             fire_quals(ctx, decl_value);
 
             bool has_scope = !node.scopes().empty();
-            bool has_type_scope = node.value().type_scope().live;
+            bool has_type_scope = node.value().type_scope().idx==1;
             bool has_sub_type = node.value().sub_type() != 0;
             
             if(has_scope) {
@@ -836,7 +829,7 @@ namespace Acorn {
                 } else if(has_scope) {
                     node.type(func_call_id);
                     find_value_in_scope(node); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
-                    if(node.value().type_scope().live)
+                    if(node.value().type_scope().idx==1)
                         node.scopes()[0] = node.value().type_scope(); //Swap to the type scope
                     // if(!node->children.empty()) {
                     //     node->name.append("(");
@@ -860,8 +853,8 @@ namespace Acorn {
             register_type("float",float_id,4);
             register_type("bool",bool_id,1);
             register_type("string",string_id,sizeof(Ptr));
-            register_type("Node",node_id,sizeof(opt_ptr));
-            register_type("Value",value_id,sizeof(opt_ptr));
+            register_type("Node",node_id,sizeof(Ptr));
+            register_type("Value",value_id,sizeof(Ptr));
 
             t_handlers[identifier_id] = [this](Context& ctx){resolve_identifier(ctx);};
             t_handlers[equals_id] = [this](Context& ctx){standard_sub_process(ctx);};

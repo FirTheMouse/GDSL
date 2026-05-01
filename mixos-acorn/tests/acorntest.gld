@@ -1,1 +1,14 @@
-0|1|2;
+"test" {
+    in executing {
+        print("I'm printing test!");
+    }
+}
+
+test;
+
+Node n;
+Node j;
+n.type = 3;
+n.children < j;
+j.type = 6;
+print(n.children[0].type);

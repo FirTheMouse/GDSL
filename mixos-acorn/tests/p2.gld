@@ -1,1 +1,25 @@
 print("Hello world!");
+
+in executing "sage" {
+    if(node.left>0) {
+        Node t = node.children[node.left];
+        label("sage_backups")|t.type|label("executing") => label("handlers")|t.type|label("executing");
+        node.left--;
+        sage(node.left);
+    }
+}
+sage(root.children.length);
+
+root {
+    in executing "looper" {
+        if(node.left>0) {
+            Node t = node.children[node.left];
+            if(t!=node&&t!=sub.node) {
+                sub.node.scopes[0] => label("handlers")|t.type|label("executing");
+            }
+            node.left--;
+            looper(node.left);
+        }
+    }
+    looper(root.children.length);
+}

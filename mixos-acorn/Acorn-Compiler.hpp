@@ -303,6 +303,10 @@ namespace Acorn {
                     return;
                 } else {
                     ctx.node.name().push(c);
+                    if(ctx.index+1==ctx.source.length()) {
+                        ctx.state = 0; 
+                        ctx.node.type(tokenized_keywords.getOrDefault(ctx.node.name().to_std(),ctx.node.type()));
+                    }
                 }
             });
     
@@ -491,8 +495,6 @@ namespace Acorn {
                         // marker->type = decl_id;
                         // marker->mute = true;
                         // ctx.node->value->quals << marker;
-                    } else {
-                        ctx.node.value().copy(type_term.value());
                     }
                 } else if(children.length() == 1) {
                     Node type_term = children[0];
@@ -520,6 +522,9 @@ namespace Acorn {
         size_t caret_id = add_binary_operator('^',"CARET");
         size_t amp_id = add_binary_operator('&',"AMPERSAND");
         size_t dot_id = add_binary_operator('.', "DOT");
+        size_t pipe_id = add_binary_operator('|', "PIPE");
+
+        //size_t pipe_id = add_token('|',"pipe");
 
 
         map<uint32_t,int> left_binding_power;
@@ -584,52 +589,57 @@ namespace Acorn {
                 ctx.index--;
             };
     
-            left_binding_power.put(lparen_id,10);
+            for(int m = 0; m<2; m++) {
+                uint32_t open_id = m==0?rparen_id:rbracket_id;
+                uint32_t close_id = m==0?lparen_id:lbracket_id;
+
+                left_binding_power.put(close_id,10);
     
-            a_handlers[rparen_id] = [this](Context& ctx) {
-                ctx.result.removeAt(ctx.index);
-                int i = ctx.index-1;
-                list<Node> gathered;
-                while(i>=0) {
-                    Node on = ctx.result.get(i);
-                    Node was_on = on; //Storing the root for cases where we want to notify once children are gathered
-                    while(!on.children().empty()&&on.type()!=lparen_id) {
-                        on = on.children().last();
-                    }
-                    if(on.type()==lparen_id) {
-                        gathered.reverse();
-                        bool was_given_children = false;
-                        if(on.children().empty()) {
-                            for(auto g : gathered)
-                                on.children() << g;
-                            was_given_children = true;
+                a_handlers[open_id] = [this,close_id](Context& ctx) {
+                    ctx.result.removeAt(ctx.index);
+                    int i = ctx.index-1;
+                    list<Node> gathered;
+                    while(i>=0) {
+                        Node on = ctx.result.get(i);
+                        Node was_on = on; //Storing the root for cases where we want to notify once children are gathered
+                        while(!on.children().empty()&&on.type()!=close_id) {
+                            on = on.children().last();
                         }
-                        // g_ptr<Node> token_on = copy_as_token(on);
-
-                        if(!on.children().empty())
-                            on.copy(on.children().take(0));
-
-                        if(!was_given_children) {
+                        if(on.type()==close_id) {
+                            gathered.reverse();
+                            bool was_given_children = false;
                             if(on.children().empty()) {
                                 for(auto g : gathered)
                                     on.children() << g;
-                            } else { //This case if for things like int main(int a), where we want the gathered to go under main, not int
-                                for(auto g : gathered)
-                                    on.children().last().children() << g;
+                                was_given_children = true;
                             }
+                            // g_ptr<Node> token_on = copy_as_token(on);
+
+                            if(!on.children().empty())
+                                on.copy(on.children().take(0));
+
+                            if(!was_given_children) {
+                                if(on.children().empty()) {
+                                    for(auto g : gathered)
+                                        on.children() << g;
+                                } else { //This case if for things like int main(int a), where we want the gathered to go under main, not int
+                                    for(auto g : gathered)
+                                        on.children().last().children() << g;
+                                }
+                            }
+                            ctx.index = i;
+                            break;
+                        } else {
+                            gathered << ctx.result.take(i);
+                            i--;
                         }
-                        ctx.index = i;
-                        break;
-                    } else {
-                        gathered << ctx.result.take(i);
-                        i--;
                     }
-                }
-                if(i < 0) {
-                    ctx.result.push(ctx.node); //Return the rparen to carry the error
-                    print(red("rparen:a_handler unmatched closing paren"));
-                }
-            };
+                    if(i < 0) {
+                        ctx.result.push(ctx.node); //Return the rparen to carry the error
+                        print(red("rparen:a_handler unmatched closing paren"));
+                    }
+                };
+            }
     
             a_handlers[identifier_id] = [this](Context& ctx){
                 if(ctx.left.live && ctx.left.type() == identifier_id) {
@@ -645,6 +655,12 @@ namespace Acorn {
         uint32_t type_scope_id = reg_id("type_scope");
 
 
+        void place_node_in_scope(Node node, Node insc) {
+            node.in_scope(insc);
+            for(int i=0;i<node.children().length();i++) {
+                place_node_in_scope(node.children()[i],insc);
+            }
+        }
 
         void init_stage_s() {
             s_handlers[rbrace_id] = [this](Context& ctx){
@@ -667,6 +683,10 @@ namespace Acorn {
                             if(was_on.children()[c].sidx==on.sidx) {
                                 Node newscope = was_on.children().take(c);
                                 was_on.scopes() << newscope;
+                                newscope.owner(was_on);
+                                for(int n=0;n<newscope.children().length();n++){
+                                   place_node_in_scope(newscope.children()[n],newscope);
+                                }
                                 //if(was_on.sidx!=ctx.root.sidx) ctx.root.scopes() << newscope;
                                 break;
                             }
@@ -746,6 +766,8 @@ namespace Acorn {
                 for(int i = 0; i < node.children().length(); i++) {
                     Node c = node.children()[i];
                     find_value_in_scope(c); //Process forward and consume other qualifers
+                    if(c.type()!=identifier_id) {break;}
+
                     if(c.value().live&&c.value().type()!=0) {
                         decl_value.quals() << value_to_qual(c.value());
                     } else {
@@ -852,13 +874,10 @@ namespace Acorn {
                     standard_sub_process(ctx);
                     Node left = ctx.node.children()[0];
                     Node right = ctx.node.children()[1];
-                    Ptr temptr = right.value().data_ptr();
-                    types[value_type_id][value_data_col].set(left.value().sidx,(void*)&temptr);
 
-
-                    // Ptr rp = *(Ptr*)resolve_ptr(right.value().data_ptr());
-                    // Ptr lp = *(Ptr*)resolve_ptr(left.value().data_ptr());
-                    // types[rp.pool][rp.idx].set(rp.sidx,types[lp.pool][lp.idx][lp.sidx]);
+                    Ptr lp = left.value().data_ptr();
+                    Ptr rp = right.value().data_ptr();
+                    types[lp.pool][lp.idx].set(lp.sidx,types[rp.pool][rp.idx][rp.sidx]);
                 }
             };
 

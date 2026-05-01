@@ -48,6 +48,13 @@ namespace Acorn {
             memset(&storage[old_size], 0, element_size);
         }
 
+        std::string get_cell_label(uint32_t index) {
+            for(auto& e : cells.entrySet()) {
+                if(e.value==index) return e.key;
+            }
+            return "";
+        }
+
         void put(const std::string& key, const void* element) {
             cells[key] = length();
             push(element);

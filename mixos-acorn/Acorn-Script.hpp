@@ -30,6 +30,9 @@ namespace Acorn {
         uint32_t stop_id = make_tokenized_keyword("STOP");
         uint32_t labels_id = make_tokenized_keyword("labels");
 
+        uint32_t node_block_id = reg_id("node_block");
+        uint32_t in_id = make_keyword("in");
+
         void init() override {
 
             set_binding_powers(plus_id, 4,6);
@@ -42,12 +45,14 @@ namespace Acorn {
             set_binding_powers(caret_id, 8,4);
             set_binding_powers(amp_id, 4,8);
             set_binding_powers(dot_id, 8,9);
+            set_binding_powers(pipe_id, 9,8);
 
-            t_handlers[end_id] = [this](Context& ctx){
+            Handler discard = [this](Context& ctx){
                 ctx.result.removeAt(ctx.index);
                 ctx.index--;
             };
-            t_handlers[comma_id] = t_handlers[end_id];
+            t_handlers[end_id] = discard;
+            t_handlers[comma_id] = discard;
 
             // Node n = make_node(this);
             // n.name("joe");
@@ -152,30 +157,90 @@ namespace Acorn {
             //     }
             // };
 
-            t_handlers[dot_id] = [this](Context& ctx){
+            r_handlers[var_decl_id] = [this](Context& ctx){
+                ctx.node.value().init_data();
+                fire_quals(ctx,ctx.node.value());
+            };
+            r_handlers[prefix_node_id] = [this](Context& ctx){
+                if(ctx.value.live) {
+                    Node n = make_node();
+                    ctx.value.set((void*)&n);
+                    ctx.value.type_scope(opt_ptr(node_type_id,0,true)); //The node template
+                }
+            };
+            r_handlers[prefix_value_id] = [this](Context& ctx){
+                if(ctx.value.live) {
+                    Value v = make_value();
+                    ctx.value.set((void*)&v);
+                    ctx.value.type_scope(opt_ptr(node_type_id,1,true)); //The value template
+                }
+            };
+
+            r_handlers[dot_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node.children()[0];
                 Node right = ctx.node.children()[1];
 
                 std::string prop = right.name().to_std();
                 right.value(make_value());
-                Value v = right.value();
-                if(left.value().type()==value_id){
-                    if(prop=="type") {v.setup(int_id,4,value_type_col);}
-                    else if(prop=="sub_type") {v.setup(int_id,4,value_sub_type_col);}
-                } else { //Because all nodes are nodes if not carrying a value explicilty
-                    if(prop=="type") {v.setup(int_id,4,node_type_col);}
-                    else if(prop=="sub_type") {v.setup(int_id,4,node_sub_type_col);}
+                value_table look;
+                if(left.value().type_scope().live) {
+                    look = left.value().type_scope().value_table();
+                } else {
+                    if(left.value().type()==node_id) {
+                        look = value_table(Ptr(value_table_store_id,0,0));
+                    } else if(left.value().type()==value_id) {
+                        look = value_table(Ptr(value_table_store_id,1,0));
+                    } else {
+                        print(red("dot:r_handler no clue what value table to use for "+labels[left.value().type()]));
+                        return;
+                    }
                 }
-                ctx.node.value(v); //Stealing it from right
+                right.value().copy(look.get(prop));
+                ctx.node.value(right.value()); //Stealing it from right
             };
 
             x_handlers[dot_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node.children()[0];
-                Node right = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                opt_ptr ptr = left;
+                if(left.value().live&&(left.value().type()==node_id||left.value().type()==value_id)) {
+                    ptr = *(opt_ptr*)left.value().get();
+                }
+
+                int addr = ctx.node.value().address();
+
+                if(!right.children().empty()) {
+                    Ptr p = *(Ptr*)types[ptr.pool][addr][ptr.sidx];
+                    Node rleft = right.children()[0];
+                    if(rleft.value().type()==int_id) {
+                        addr = *(int*)rleft.value().get();
+                    }
+
+                    Ptr targetptr(p.pool,p.idx,addr);
+                    types[ctx.node.value().pool][value_data_col].set(ctx.node.value().sidx,(void*)&targetptr);
+                    if(ctx.root.type()!=equals_id) {
+                        ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
+                    }
+                    return;
+                }
                 
-                ctx.node.value().set(types[left.pool][ctx.node.value().address()][left.sidx]);
+                if(ctx.root.type()==equals_id) {
+                    Ptr targetptr(ptr.pool,addr,ptr.sidx);
+                    types[ctx.node.value().pool][value_data_col].set(ctx.node.value().sidx,(void*)&targetptr);
+                } else {
+                    ctx.node.value().set(types[ptr.pool][addr][ptr.sidx]);
+                }
+            };
+
+            x_handlers[langle_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                Ptr p = left.value().data_ptr();
+                Ptr ptr = *(Ptr*)types[p.pool][p.idx][p.sidx];
+                types[ptr.pool][ptr.idx].push(right.value().get());
             };
 
             r_handlers[labels_id] = [this](Context& ctx){
@@ -194,13 +259,72 @@ namespace Acorn {
                 }
             };
 
-        }
 
-        void place_node_in_scope(Node node, Node insc) {
-            node.in_scope(insc);
-            for(int i=0;i<node.children().length();i++) {
-                place_node_in_scope(node.children()[i],insc);
-            }
+
+
+            s_handlers[string_id] = [this](Context& ctx){
+                if(ctx.index+1>=ctx.result.length()) return;
+
+                Node right = ctx.result[ctx.index+1];
+                if(right.type()==lbrace_id) {
+                    ctx.node.children() << ctx.result.take(ctx.index+1);
+                    ctx.node.type(node_block_id);
+                    ctx.node.children().last().name(ctx.node.name().to_std());
+                }
+            };
+            t_handlers[node_block_id] = [this](Context& ctx){
+                for(auto e : labels.entrySet()) {
+                    if(e.value==ctx.node.name().to_std()) {
+                        ctx.node.sub_type(e.key);
+                        break;
+                    }
+                }
+                if(ctx.node.sub_type()==0) {
+                    print(red("node_block:t_handler unrecognized node type: "+ctx.node.name().to_std()));
+                }
+            };
+            x_handlers[node_block_id] = [this](Context& ctx){
+                ctx.flag = standard_travel_pass(ctx.node.scopes()[0]);
+            };
+
+            x_handlers[make_tokenized_keyword("test")] = [this](Context& ctx){
+                print("THIS SHOULD NOT PRINT");
+            };
+
+            r_handlers[in_id] = [this](Context& ctx){
+                if(!ctx.node.children().empty()&&ctx.node.in_scope().live&&ctx.node.in_scope().owner().live) {
+                    ctx.node.name("in "+ctx.node.children()[0].name().to_std()+" "+labels[ctx.node.in_scope().owner().sub_type()]);
+                    if(!ctx.node.scopes().empty()) {
+                        ctx.node.scopes()[0].name(ctx.node.name().to_std());
+                    }
+                }
+            };
+            x_handlers[in_id] = [this](Context& ctx){
+                Node this_node = ctx.node;
+                uint32_t target_type = ctx.node.in_scope().owner().sub_type();
+                std::string stage_name = ctx.node.children()[0].name().to_std();
+                if(!stages.hasKey(stage_name)) {
+                    print(red("in_id:x_handler unknown stage "+stage_name));
+                    return;
+                }
+                g_ptr<Stage> stage = stages.get(stage_name);
+                (*stage)[target_type] = [this,this_node](Context& ctx) mutable {
+                    g_ptr<Stage> old_stage = active_stage;
+
+                    start_stage(x_handlers);
+                    standard_travel_pass(this_node.scopes()[0],&ctx);
+                    start_stage(old_stage);
+                    
+                };
+
+                uint32_t stage_id = types[handler_type_id][stages_id].cells.get(stage_name);
+                while(types[handler_type_id][target_type].length()<=stage_id) types[handler_type_id].add_row(target_type);
+                Node target_scope = this_node.scopes()[0];
+                types[handler_type_id][target_type].set(stage_id,(void*)&target_scope);
+            };
+
+
+            
         }
 
         virtual Node process(std::string path) override {
@@ -237,7 +361,9 @@ namespace Acorn {
             start_stage(x_handlers);
             standard_travel_pass(root);
 
-            //dump_unit(true);
+            //print(node_to_string(root,0,0,true));
+
+            dump_unit(true);
         }
 
 

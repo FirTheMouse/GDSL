@@ -1,0 +1,5 @@
+main:
+stp 29 30 31 -2
+movz 0 42 1
+ldp 29 30 31 2
+ret

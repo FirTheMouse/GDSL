@@ -4,6 +4,7 @@
 #include <bitset>
 
 namespace Acorn {
+    list<uint32_t> sub_instruction_buffer;
     struct Acorn_Dirt : public virtual Compiler_Unit {
         Acorn_Dirt() {init();}
         
@@ -58,27 +59,48 @@ namespace Acorn {
         //Store to address, rt = read reg, rn = pointer reg
         uint32_t STR(int rt, int rn, int offset, int size = 8) {
             int sz = (size == 8) ? 0b11 : 0b10; // 64-bit vs 32-bit
+            int scaled = offset / size;  // scale the offset
             return (sz << 30) //64-bit vs 32-bit (2 bits because LDR/STR support more sizes than just 32/64)
                 | (0b111001 << 24) //Metadata
                 | (0b00 << 22) //Oppcode
-                | ((offset & 0xFFF) << 10) //Offset from rn to write to (in units of size, 0 would just be the pointer)
+                | ((scaled & 0xFFF) << 10) //Offset from rn to write to (in units of size, 0 would just be the pointer)
                 | ((rn & 0x1F) << 5) //Base (rn), the pointer. This relationship scales isomorphicly
                 | (rt & 0x1F); //Source to read from
+        }
+
+        uint32_t STR_reg(int rt, int rn, int rm, int size = 8) {
+            int sz = (size == 8) ? 0b11 : 0b10;
+            return (sz << 30)
+                | (0b111000001 << 21)
+                | ((rm & 0x1F) << 16)
+                | (0b011010 << 10)
+                | ((rn & 0x1F) << 5)
+                | (rt & 0x1F);
         }
 
         //Load from address, rt = write reg, rn = pointer reg
         uint32_t LDR(int rt, int rn, int offset, int size = 8) {
             int sz = (size == 8) ? 0b11 : 0b10;
+            int scaled = offset / size;  // scale the offset
             return (sz << 30)
                 | (0b111001 << 24)
                 | (0b01 << 22) //Oppcode
-                | ((offset & 0xFFF) << 10) //Offset from rn to read from
+                | ((scaled & 0xFFF) << 10) //Offset from rn to read from
                 | ((rn & 0x1F) << 5) 
                 | (rt & 0x1F); //Destination to write to
         }
 
+        uint32_t LDR_reg(int rt, int rn, int rm, int sf = 1) {
+            return (sf == 1 ? 0b11 : 0b10) << 30
+                | (0b111000011 << 21)
+                | ((rm & 0x1F) << 16)
+                | (0b011010 << 10)  // LSL extend
+                | ((rn & 0x1F) << 5)
+                | (rt & 0x1F);
+        }
+
         //Put an immediate value into a register
-        uint32_t MOVZ(int rd, int imm16, int sf = 0) {
+        static uint32_t MOVZ(int rd, int imm16, int sf = 0) {
             return (sf << 31) // 0=32bit (w registers), 1=64bit (x registers)
                 | (0b10100101 << 23) //The oppcode
                 | (0 << 21) //Section in the register (hw)
@@ -87,7 +109,7 @@ namespace Acorn {
         }
 
         //Put an immediate into a specific part of a register
-        uint32_t MOVK(int rd, int imm16, int shift, int sf = 1) {
+        static uint32_t MOVK(int rd, int imm16, int shift, int sf = 1) {
             return (sf << 31)
                 | (0b11100101 << 23)
                 | ((shift/16) << 21) //Section in the register, MOVK is just MOVZ with hw controls
@@ -274,6 +296,17 @@ namespace Acorn {
             return SUB_sp(bytes);
         }
 
+        uint32_t ADD_sp(int imm, int sf = 1) {
+            return (sf << 31)
+                | (0 << 30)          // op = add (not subtract)
+                | (0 << 29)          // S = don't set flags
+                | (0b10001 << 24)    // class identifier
+                | (0 << 22)          // shift = 0
+                | ((imm & 0xFFF) << 10)
+                | (0b11111 << 5)     // SP as source
+                | 0b11111;           // SP as destination
+        }
+
         //Push to stack (and resize):  rt1 = first index to save, rt2 = second index, rn = base register (SP), imm7 = byte offset 
         uint32_t STP(int rt1, int rt2, int rn, int imm7) {
             return (0b10 << 30)       // 64-bit
@@ -407,17 +440,18 @@ namespace Acorn {
             print("Hello world! ",pool,"|",col,"|",sidx);
         }
         
-        static void syscall_col_push() {
-
-        }
         
-                
         static void syscall_readchar(uint64_t zero) {print((char)zero);}
         static void syscall_atzero(uint64_t zero) {print(zero);}
         static void syscall_atone(uint64_t zero, uint64_t one) {print(one);}
+        static void syscall_append_to_buffer(uint64_t zero) {sub_instruction_buffer << (uint32_t)zero;}
+        static void syscall_emit_movz_imm(uint64_t imm) {sub_instruction_buffer << MOVZ(2, imm & 0xFFFF, 0);}
 
-        void emit_syscall(uint64_t funcaddr) {
-            emit_load_64(LEFT_REG, funcaddr); emit_buffer << BLR(LEFT_REG);
+        static void syscall_jint() {print("jint");}
+        static void syscall_jont() {print("jont");}
+
+        void emit_syscall(Context& ctx, uint64_t funcaddr) {
+            emit_load_64(LEFT_REG, funcaddr); (*ctx.buffer) << BLR(LEFT_REG);
         }
 
         void init() override {
@@ -447,47 +481,60 @@ namespace Acorn {
                 ctx.index--;
             };
 
-            a_handlers[make_tokenized_keyword("movz")] = [this](Context& ctx){ emit_buffer << MOVZ(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("movk")] = [this](Context& ctx){ emit_buffer << MOVK(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("ldr")]  = [this](Context& ctx){ emit_buffer << LDR(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("str")]  = [this](Context& ctx){ emit_buffer << STR(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("add")]  = [this](Context& ctx){ emit_buffer << ADD_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("sub")]  = [this](Context& ctx){ emit_buffer << SUB_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("mul")]  = [this](Context& ctx){ emit_buffer << MUL_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("mov")]  = [this](Context& ctx){ emit_buffer << MOV_reg(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("ret")]  = [this](Context& ctx){ emit_buffer << RET(); };
-            a_handlers[make_tokenized_keyword("cmp")]  = [this](Context& ctx){ emit_buffer << CMP_reg(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("stp")]  = [this](Context& ctx){ emit_buffer << STP(con(ctx),con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("ldp")]  = [this](Context& ctx){ emit_buffer << LDP(con(ctx),con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("ldrb")] = [this](Context& ctx){ emit_buffer << LDRB(con(ctx),con(ctx),con(ctx));};
-            //a_handlers[make_tokenized_keyword("adr")] = [this](Context& ctx){ emit_buffer << LDRB(con(ctx),con(ctx),con(ctx));};
+            a_handlers[make_tokenized_keyword("movz")] = [this](Context& ctx){ (*ctx.buffer) << MOVZ(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("movk")] = [this](Context& ctx){ (*ctx.buffer) << MOVK(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("ldr")]  = [this](Context& ctx){ (*ctx.buffer) << LDR(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("ldr32")]  = [this](Context& ctx){ (*ctx.buffer) << LDR(con(ctx),con(ctx),con(ctx),4); };
+            a_handlers[make_tokenized_keyword("str")]  = [this](Context& ctx){ (*ctx.buffer) << STR(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("str32")]  = [this](Context& ctx){ (*ctx.buffer) << STR(con(ctx),con(ctx),con(ctx),4); };
+            a_handlers[make_tokenized_keyword("add")]  = [this](Context& ctx){ (*ctx.buffer) << ADD_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("sub")]  = [this](Context& ctx){ (*ctx.buffer) << SUB_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("mul")]  = [this](Context& ctx){ (*ctx.buffer) << MUL_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("mov")]  = [this](Context& ctx){ (*ctx.buffer) << MOV_reg(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("ret")]  = [this](Context& ctx){ (*ctx.buffer) << RET(); };
+            a_handlers[make_tokenized_keyword("cmp")]  = [this](Context& ctx){ (*ctx.buffer) << CMP_reg(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("stp")]  = [this](Context& ctx){ (*ctx.buffer) << STP(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("ldp")]  = [this](Context& ctx){ (*ctx.buffer) << LDP(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("ldrb")] = [this](Context& ctx){ (*ctx.buffer) << LDRB(con(ctx),con(ctx),con(ctx));};
+            //a_handlers[make_tokenized_keyword("adr")] = [this](Context& ctx){ (*ctx.buffer) << LDRB(con(ctx),con(ctx),con(ctx));};
 
-            a_handlers[make_tokenized_keyword("ldrb_reg")] = [this](Context& ctx){ emit_buffer << LDRB_reg(con(ctx),con(ctx),con(ctx));};
+            a_handlers[make_tokenized_keyword("ldrb_reg")] = [this](Context& ctx){ (*ctx.buffer) << LDRB_reg(con(ctx),con(ctx),con(ctx));};
+            a_handlers[make_tokenized_keyword("str_reg")]  = [this](Context& ctx){ (*ctx.buffer) << STR_reg(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("ldr_reg")]  = [this](Context& ctx){ (*ctx.buffer) << LDR_reg(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("sub_sp")]  = [this](Context& ctx){ (*ctx.buffer) << SUB_sp(con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("add_sp")] = [this](Context& ctx){ (*ctx.buffer) << ADD_sp(con(ctx),con(ctx)); };
 
-            a_handlers[b_id]                           = [this](Context& ctx){ emit_buffer << B(con(ctx)); };
-            a_handlers[ make_tokenized_keyword("bl")]  = [this](Context& ctx){ emit_buffer << BL(con(ctx)); };
-            a_handlers[make_tokenized_keyword("blr")]  = [this](Context& ctx){ emit_buffer << BLR(con(ctx)); };
-            a_handlers[make_tokenized_keyword("b.eq")] = [this](Context& ctx){ emit_buffer << B_cond(COND_EQ, con(ctx)); };
-            a_handlers[make_tokenized_keyword("b.ne")] = [this](Context& ctx){ emit_buffer << B_cond(COND_NE, con(ctx)); };
-            a_handlers[make_tokenized_keyword("b.gt")] = [this](Context& ctx){ emit_buffer << B_cond(COND_GT, con(ctx)); };
-            a_handlers[make_tokenized_keyword("b.lt")] = [this](Context& ctx){ emit_buffer << B_cond(COND_LT, con(ctx)); };
-            a_handlers[make_tokenized_keyword("b.ge")] = [this](Context& ctx){ emit_buffer << B_cond(COND_GE, con(ctx)); };
-            a_handlers[make_tokenized_keyword("b.le")] = [this](Context& ctx){ emit_buffer << B_cond(COND_LE, con(ctx)); };
+            a_handlers[b_id]                           = [this](Context& ctx){ (*ctx.buffer) << B(con(ctx)); };
+            a_handlers[ make_tokenized_keyword("bl")]  = [this](Context& ctx){ (*ctx.buffer) << BL(con(ctx)); };
+            a_handlers[make_tokenized_keyword("blr")]  = [this](Context& ctx){ (*ctx.buffer) << BLR(con(ctx)); };
+            a_handlers[make_tokenized_keyword("b.eq")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_EQ, con(ctx)); };
+            a_handlers[make_tokenized_keyword("b.ne")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_NE, con(ctx)); };
+            a_handlers[make_tokenized_keyword("b.gt")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_GT, con(ctx)); };
+            a_handlers[make_tokenized_keyword("b.lt")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_LT, con(ctx)); };
+            a_handlers[make_tokenized_keyword("b.ge")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_GE, con(ctx)); };
+            a_handlers[make_tokenized_keyword("b.le")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_LE, con(ctx)); };
 
-            a_handlers[make_tokenized_keyword("readchar")] = [this](Context& ctx){emit_syscall((uint64_t)&syscall_readchar);};
-            a_handlers[make_tokenized_keyword("atzero")] = [this](Context& ctx){emit_syscall((uint64_t)&syscall_atzero);};
-            a_handlers[make_tokenized_keyword("atone")] = [this](Context& ctx){{emit_syscall((uint64_t)&syscall_atone);}};
+            a_handlers[make_tokenized_keyword("emit_movz_imm")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_emit_movz_imm);};
+            a_handlers[make_tokenized_keyword("readchar")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_readchar);};
+            a_handlers[make_tokenized_keyword("atzero")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_atzero);};
+            a_handlers[make_tokenized_keyword("atone")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_atone);};
+            a_handlers[make_tokenized_keyword("jint")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_jint);};
+            a_handlers[make_tokenized_keyword("jont")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_jont);};
+            a_handlers[make_tokenized_keyword("wub")] = [this](Context& ctx){(*ctx.buffer) << MOVZ(0,7,0);}; //For security reasons
 
-            a_handlers[make_tokenized_keyword("col_new")] = [this](Context& ctx){
-                emit_syscall((uint64_t)&syscall_col_new);
-                emit_buffer << BLR(LEFT_REG);
+
+            a_handlers[pipe_id] = [this](Context& ctx){
+                ctx.result.removeAt(ctx.index);
+                Node next = ctx.result.get(ctx.index);
+                next.sub_type(pipe_id);
+                ctx.buffer = &sub_instruction_buffer;
+                process_node(ctx,next);
+                ctx.buffer = &emit_buffer;
+                uint32_t instr = sub_instruction_buffer.pop(); //Grab it
+                emit_buffer << MOVZ(0, instr & 0xFFFF, 0);
+                emit_buffer << MOVK(0, (instr >> 16) & 0xFFFF, 16);
+                emit_syscall(ctx,(uint64_t)&syscall_append_to_buffer);
             };
-            a_handlers[make_tokenized_keyword("col_push")] = [this](Context& ctx){
-                emit_load_64(LEFT_REG, (uint64_t)&syscall_col_push);
-                emit_buffer << BLR(LEFT_REG);
-            };
-
-            a_handlers[make_tokenized_keyword("wub")] = [this](Context& ctx){emit_buffer << MOVZ(0,7,0);}; //For security reasons
         }
 
         virtual Node process(std::string code) override {
@@ -499,7 +546,7 @@ namespace Acorn {
             //print(node_to_string(root,0,0,true));
 
             start_stage(a_handlers);
-            standard_direct_pass(root);
+            standard_direct_pass(root,&emit_buffer);
 
             resolve_patches();
 

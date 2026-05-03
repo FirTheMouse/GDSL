@@ -24,6 +24,7 @@ namespace Acorn {
             Node root = p3.process(readFile("mixos-acorn/tests/acorntest.gld"));
             p3.run(root);
 
+
             return make_node();
         }
     

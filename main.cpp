@@ -29,19 +29,20 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
  
-    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    Acorn::init_type_pool();
-    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // Acorn::init_type_pool();
+    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();
     // kernel.run(kernel.process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    // Acorn::Acorn_Dirt dirt;
-    // Acorn::init_type_pool();
-    // dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
+    Acorn::Acorn_Dirt dirt;
+    Acorn::init_type_pool();
+    dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
 
-    // Acorn::JIT_dirt();
+    Acorn::JIT_dirt();
+    Acorn::JIT_Acorn();
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
     // root = twig->process(readFile("modules/tests/pebble.gld"));

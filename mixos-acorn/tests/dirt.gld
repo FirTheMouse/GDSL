@@ -14,6 +14,15 @@ main:
     mov  23 2 1     //  x2 TO x23 AS 64bits / Save the lookup table
 
     movz 24 0 0 //Set the accumulator field to zero to start
+    movz 25 0 0 //Set the left/right switch to 0
+
+    | stp 29 30 31 -2  //Emit the epilouge for the Acorn
+
+    | movz 1 1 1
+    
+    | mov 22 0 1 //Acorn stores it's Types pointer in 22 at the start
+    | mov 20 22 1 //Moving the types pointer in to setup the left reg
+    | mov 21 22 1 //And right reg
 
     //Process the token stream
     loop: 
@@ -31,11 +40,22 @@ main:
             cmp 1 3 0
             b.eq ispipe 
 
+            movz 3 3 0
+            cmp 1 3 0
+            b.eq isescape 
+
+            movz 3 4 0
+            cmp 1 3 0
+            b.eq isopp 
+
+            movz 3 5 0
+            cmp 1 3 0
+            b.eq isterminator 
+
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
             movz 24 0 0  //Clear the accumulator
-            readchar     //Print out the unclassified char so we know to handle it
         b loop_tail
         
         isnum:
@@ -49,9 +69,73 @@ main:
         b loop_tail
 
         ispipe:
-            mov 0 24 0 //Move the acumulator value down for printing
-            atzero
-            movz 24 0 0  //Clear accumulator for next number
+            mov 0 24 0
+            emit_movz_imm  //A syscall to emit an instruction that movz the value of x24 as an immediate to 2 (to use for offsets)
+                    movz 3 1 0
+                    mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
+                    cmp 0 3 0
+                b.eq onright //Check if we're emmitting on the left (x19) or right (x20) side
+                
+                    | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+                    | mul 2 2 4 0    // Multiply the offset index in 2, which was put in place by the emit_movz_imm, by the element size
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | add 20 20 2 1      // Then add the offset from 2 to get to the element in the storage pointer
+                b ispipe_tail
+
+                onright:
+                    | ldr32 4 21 8
+                    | mul 2 2 4 0
+                    | ldr 21 21 0 
+                    | add 21 21 2 1    //If we're on the right we're using register 21
+                b ispipe_tail
+
+            ispipe_tail:
+                movz 24 0 0    //And then clear 24 to reset the accumulator
+        b loop_tail
+
+        isescape:
+            //Increment to skip a char
+            movz 3 1 0      // 1 TO x3 AS 32bits / Move 1 to register 3, so we can increment with it
+            add 20 20 3 1   // x20 PLUS x3 TO x20 AS 64bits / Increment our pointer by one to get to the next char
+            add 22 22 3 1   // x22 PLUS x3 TO x22 AS 64bits / Increment the index as well
+        b loop_tail 
+
+        isopp:
+            mov 26 0 0 //Move the oppcode charachter to storage
+            movz 25 1 0 //Setting the flag to right
+        b loop_tail
+
+        isterminator:
+            // |x20 = resolved left address
+            // |x21 = resolved right address  
+            // x26 = opcode char
+
+            movz 3 61 0
+            cmp 26 3 0
+            b.eq emit_equals
+
+            movz 3 43 0
+            cmp 26 3 0
+            b.eq emit_plus
+
+            emit_equals:
+                | ldr 3 20 0
+                | str32 3 21 0
+            b emit_done
+
+            emit_plus:
+                | ldr 3 20 0
+                | ldr 4 21 0
+                | add 3 3 4 0
+                | str 3 21 0
+            b emit_done
+
+            emit_done:
+                //Reset the registers
+                | mov 20 22 1 
+                | mov 21 22 1 
+                movz 25 0 0   //Reset side flag to left
+                movz 26 0 0   //Clear opcode register
         b loop_tail
 
         loop_tail:
@@ -61,8 +145,12 @@ main:
             add 22 22 3 1   // x22 PLUS x3 TO x22 AS 64bits / Increment the index as well
 
             cmp 22 21 1    // x22 MINUS x21 AS 64bits / Check if index (x22) is less than length (x21)
+
     b.lt loop           // Branch on less than: if the index is less than the length, loop again
 
+
+    | ldp 29 30 31 2 //Prolouge to return properly from the Acorn
+    | ret            //Emit a return at the end for the Acorn so it terminates
 
     wub //For security reasons
     ldp 29 30 31 2

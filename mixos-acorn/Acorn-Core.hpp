@@ -610,7 +610,7 @@ namespace Acorn {
         bool flag = false;
     
         Context* sub;
-        Unit* unit;
+        list<uint32_t>* buffer;
     
         std::string source;
     
@@ -1019,7 +1019,7 @@ namespace Acorn {
         bool standard_travel_pass(Node root, Context* sub = nullptr);
 
         inline void standard_process(Context& ctx, uint32_t type) {
-            //newline(active_stage->label+": "+node_info(ctx.node));
+            newline(active_stage->label+": "+node_info(ctx.node));
             if(types[handler_type_id][type].length()>0) {
                 uint32_t stage_id = types[handler_type_id][stages_id].cells.get(active_stage->label);
                 Node nhandler = Node(*(Ptr*)types[handler_type_id][type][stage_id]);
@@ -1031,7 +1031,7 @@ namespace Acorn {
             } else {
                 active_stage->run(type)(ctx);
             }
-            //endline();
+            endline();
         }
 
         inline void standard_process(Context& ctx) {
@@ -1149,11 +1149,12 @@ namespace Acorn {
             ctx.flag = sub_ctx.flag;
         }
     
-        void standard_direct_pass(Node root) {
+        void standard_direct_pass(Node root, list<uint32_t>* buffer = nullptr) {
             node_list children = root.children();
             newline("Direct pass over "+std::to_string(children.length())+" nodes");
             int i = 0;
             Context ctx(children,i);
+            ctx.buffer = buffer;
             ctx.root = root;
             while(i < ctx.result.length()) {
                 ctx.node = ctx.result.get(i);
@@ -1164,7 +1165,7 @@ namespace Acorn {
     
             node_list scopes = root.scopes();
             for(int i = 0; i<scopes.length(); i++) {
-                standard_direct_pass(scopes.get(i));
+                standard_direct_pass(scopes.get(i),buffer);
             }
             endline();
         }

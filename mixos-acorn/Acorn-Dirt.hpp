@@ -445,7 +445,12 @@ namespace Acorn {
         static void syscall_atzero(uint64_t zero) {print(zero);}
         static void syscall_atone(uint64_t zero, uint64_t one) {print(one);}
         static void syscall_append_to_buffer(uint64_t zero) {sub_instruction_buffer << (uint32_t)zero;}
-        static void syscall_emit_movz_imm(uint64_t imm) {sub_instruction_buffer << MOVZ(2, imm & 0xFFFF, 0);}
+        static void syscall_emit_movz_imm(uint64_t imm) {
+            sub_instruction_buffer << MOVZ(2, imm & 0xFFFF, 0);
+            if(imm > 0xFFFF) {
+                sub_instruction_buffer << MOVK(2, (imm >> 16) & 0xFFFF, 16);
+            }
+        }
 
         static void syscall_jint() {print("jint");}
         static void syscall_jont() {print("jont");}

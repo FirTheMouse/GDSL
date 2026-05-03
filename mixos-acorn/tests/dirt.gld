@@ -15,6 +15,9 @@ main:
 
     movz 24 0 0 //Set the accumulator field to zero to start
     movz 25 0 0 //Set the left/right switch to 0
+    movz 27 0 0 //Set the pipe counter to 0
+    movz 28 0 0 //Is immedite flag
+
 
     | stp 29 30 31 -2  //Emit the epilouge for the Acorn
 
@@ -55,7 +58,7 @@ main:
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
-            movz 24 0 0  //Clear the accumulator
+            //Do nothing
         b loop_tail
         
         isnum:
@@ -69,12 +72,15 @@ main:
         b loop_tail
 
         ispipe:
-            mov 0 24 0
+            movz 3 1 0 //Increment the pipe counter
+            add 27 27 3 0
+
+            mov 0 24 0 //Move the accumulated number at 24 down to 0 so the syscall can emit it
             emit_movz_imm  //A syscall to emit an instruction that movz the value of x24 as an immediate to 2 (to use for offsets)
                     movz 3 1 0
                     mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
                     cmp 0 3 0
-                b.eq onright //Check if we're emmitting on the left (x19) or right (x20) side
+                b.eq onright //Check if we're emmitting on the left (x20) or right (x21) side
                 
                     | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
                     | mul 2 2 4 0    // Multiply the offset index in 2, which was put in place by the emit_movz_imm, by the element size
@@ -103,6 +109,23 @@ main:
         isopp:
             mov 26 0 0 //Move the oppcode charachter to storage
             movz 25 1 0 //Setting the flag to right
+
+            //Checking for an immediate to the left
+                movz 3 0 0
+                mov 0 27 0
+                cmp 0 3 0
+                b.eq left_is_immediate    //If the pipe counter is 0, left is an immediate
+            b isopp_tail
+
+            left_is_immediate:
+                mov 0 24 0
+                emit_movz_imm    //Moving the immedite down to be accessible by Acorn
+                | mov 20 2 0     //And have Acorn store it at it's left as expected
+                movz 28 1 0
+            b isopp_tail
+
+        isopp_tail:
+            movz 24 0 0 //Clear accumulator
         b loop_tail
 
         isterminator:
@@ -114,13 +137,33 @@ main:
             cmp 26 3 0
             b.eq emit_equals
 
+            movz 3 62 0
+            cmp 26 3 0
+            b.eq emit_rangle
+
             movz 3 43 0
             cmp 26 3 0
             b.eq emit_plus
 
+            b emit_done
+
             emit_equals:
-                | ldr 3 20 0
-                | str32 3 21 0
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_equals
+
+                //If not an immediate
+                    | ldr 3 20 0
+                    | str32 3 21 0
+                b emit_equals_tail
+
+                isimm_equals:
+                    | str32 20 21 0 //If immedite
+                    movz 28 0 0 //Flag off immediate
+                b emit_equals_tail
+
+                emit_equals_tail:
+                    //nothing here
             b emit_done
 
             emit_plus:
@@ -136,6 +179,7 @@ main:
                 | mov 21 22 1 
                 movz 25 0 0   //Reset side flag to left
                 movz 26 0 0   //Clear opcode register
+                movz 27 0 0   //Reset pipe counter
         b loop_tail
 
         loop_tail:

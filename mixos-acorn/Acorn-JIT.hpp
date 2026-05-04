@@ -70,6 +70,11 @@ namespace Acorn {
         //5 = terminator
         char_class[':'] = 5;
 
+        //Top level indexing
+        char_class['P'] = 6;
+        char_class['I'] = 7;
+        char_class['S'] = 8;
+
         typedef int (*JitFunc)(const char*, uint32_t, uint8_t*);
         JitFunc func = (JitFunc)buf;
         std::string source = readFile("mixos-acorn/tests/acorn.gld");
@@ -210,6 +215,41 @@ namespace Acorn {
         return types;
     }
 
+
+    static std::string acorn_types_to_string(AcornCol& types) {
+        std::string result = "";
+        
+        for(int t = 0; t < types.length(); t++) {
+            AcornCol& type = *(AcornCol*)types[t];
+            list<list<std::string>> lines;
+            
+            for(int c = 0; c < type.length(); c++) {
+                AcornCol& col = *(AcornCol*)type[c];
+                list<std::string> subline;
+                subline << ("["+std::to_string(col.element_size)+"]");
+                for(int r = 0; r < col.length(); r++) {
+                    if(col.element_size == 4) {
+                        subline << std::to_string(*(uint32_t*)col[r]);
+                    } else if(col.element_size == 1) {
+                        subline << std::to_string(*(uint8_t*)col[r]);
+                    } else if(col.element_size == 12) {
+                        uint32_t* p = (uint32_t*)col[r];
+                        subline << (std::to_string(p[0])+"|"+
+                                   std::to_string(p[1])+"|"+
+                                   std::to_string(p[2]));
+                    } else {
+                        subline << ("?["+std::to_string(col.element_size)+"]");
+                    }
+                }
+                lines << subline;
+            }
+            result += "Type " + std::to_string(t) + 
+                      " (tag:" + std::to_string(type.tag) + "):\n";
+            result += print_columnar_table(lines) + "\n";
+        }
+        return result;
+    }
+
     static void JIT_Acorn(){
         std::string path = "mixos-acorn/tests/acornoutput.gld";   
         std::ifstream in(path, std::ios::binary);
@@ -254,61 +294,26 @@ namespace Acorn {
 
         print("==EXECUTING==");
 
-        // AcornCol types;
-        // types.element_size = sizeof(AcornCol);
+        AcornCol types;
+        types.element_size = sizeof(AcornCol);
 
-        // for(int i=0;i<5;i++) {
-        //     AcornCol type;
-        //     type.element_size = sizeof(AcornCol);
-        //     for(int c=0;c<5;c++) {
-        //         AcornCol column;
-        //         column.element_size = 4;
-        //         for(int r=0;r<5;r++) {
-        //             column.push_default();
-        //         }
-        //         type.push((void*)&column);
-        //     }
-        //     types.push((void*)&type);
-        // }
-       
-        // print("TYPES INITLIZED");
-        // int five = 5;
-        // print("FIRST: ",types.size," ESIZE: ",types.element_size);
-        // print("SECOND: ",(*(AcornCol*)types[0]).size," ESIZE: ",(*(AcornCol*)types[0]).element_size);
-        // print("THIRD: ",(*(AcornCol*)(*(AcornCol*)types[0])[0]).size," ESIZE: ",(*(AcornCol*)(*(AcornCol*)types[0])[0]).element_size);
-        // (*(AcornCol*)(*(AcornCol*)types[0])[0]).set(0,(void*)&five);
-        // print("SHOULD BE 5: ",*(int*)((*(AcornCol*)(*(AcornCol*)types[0])[0])[0]));
-        // print("TYPES WORKING");
+        for(int i=0;i<5;i++) {
+            AcornCol type;
+            type.element_size = sizeof(AcornCol);
+            for(int c=0;c<5;c++) {
+                AcornCol column;
+                column.element_size = 4;
+                for(int r=0;r<5;r++) {
+                    column.push_default();
+                }
+                type.push((void*)&column);
+            }
+            types.push((void*)&type);
+        }
 
-        // int three = 3;
-        // (*(AcornCol*)(*(AcornCol*)types[0])[1]).set(0,(void*)&three);
-
-        // // (*(AcornCol*)(*(AcornCol*)types[1])[0]).element_size = 6;
-        // // (*(AcornCol*)(*(AcornCol*)types[1])[1]).element_size = 7;
-        // //(*(AcornCol*)(*(AcornCol*)types[2])[0]).element_size = 8;
-
-        // // Level 0: base of types
-        // print("types base: 0x", std::hex, (uint64_t)types.storage, std::dec);
-
-        // // Level 1: type 2's AcornCol
-        // AcornCol* type0 = (AcornCol*)types[0];
-        // print("type 0: 0x", std::hex, (uint64_t)type0, std::dec);
-
-        // // Level 2: col 0 of type 0  
-        // AcornCol* col0 = (AcornCol*)(*type0)[0];
-        // print("type0 col0: 0x", std::hex, (uint64_t)col0, std::dec);
-
-        // // Level 3: row 0 of col 0
-        // void* row0 = (*col0)[0];
-        // print("type0 col0 row0: 0x", std::hex, (uint64_t)row0, std::dec);
-
-        // col0->set(0,(void*)&five);
-        // col0->set(1,(void*)&three);
-
-
-        path = "mixos-acorn/tests/acornsock.gld";
-        std::ifstream in2(path, std::ios::binary);
-        AcornCol types = read_acorn_types(in2);
+        // path = "mixos-acorn/tests/acornsock.gld";
+        // std::ifstream in2(path, std::ios::binary);
+        // AcornCol types = read_acorn_types(in2);
 
 
         typedef int (*JitFunc)(AcornCol);
@@ -321,12 +326,14 @@ namespace Acorn {
         int result = func(types); //Giving the source
 
         print("FINISHED: ",result);
-        print("0|0|0: ",*(uint32_t*)((*(AcornCol*)(*(AcornCol*)types[0])[0])[0])," 1|0|0: ",*(uint32_t*)((*(AcornCol*)(*(AcornCol*)types[1])[0])[0]),"\n",
-              "0|0|1: ",*(uint32_t*)((*(AcornCol*)(*(AcornCol*)types[0])[0])[1])," 1|0|1: ",*(uint32_t*)((*(AcornCol*)(*(AcornCol*)types[1])[0])[1])
-        );
         
         std::ofstream out2(path, std::ios::binary);
         write_acorn_types(out2,types);
+
+        std::string printout = acorn_types_to_string(types);
+        editTextFile("mixos-acorn/tests/printout.txt",[printout](std::string& source){
+            source=printout;
+        });
 
         munmap(buf, byte_size); //Cleanup
     }

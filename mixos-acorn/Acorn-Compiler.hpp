@@ -321,46 +321,6 @@ namespace Acorn {
             map<std::string,Handler> slash_parts;
             add_double_string_token('/', '/', slash_id, slash_id, reg_id("IN_COMMENT"), comment_id, true, &slash_parts);
 
-            // // tokenizer_state_functions.put(in_comment_id,[this](Context& ctx) {
-            // //     char c = ctx.source.at(ctx.index);
-            // //     if(c=='/'&&ctx.source.at(ctx.index+1)=='/') {
-            // //         ctx.state=0;
-            // //         g_ptr<Node> slashes = make<Node>(slash_id,c);
-            // //         slashes->x = at_x; slashes->y = at_y;
-            // //         slashes->mute = true;
-            // //         ctx.result->last()->quals << slashes;
-            // //         ctx.index++;
-            // //     } else if(c=='\n') {
-            // //         at_y += 1.0f;
-            // //         at_x = -1.0f;
-            // //         ctx.node->name += c;
-            // //         ctx.state = 0;
-            // //     }
-            // //     else {
-            // //         ctx.node->name += c;
-            // //     }
-            // // });
-            // // tokenizer_functions['/'] = [this](Context& ctx){
-            // //     char c = ctx.source.at(ctx.index+1);
-            // //     if(c=='/') {
-            // //         ctx.node = make<Node>(comment_id);
-            // //         g_ptr<Node> slashes = make<Node>(comment_id);
-            // //         slashes->name = "//";
-            // //         slashes->x = at_x; slashes->y = at_y;
-            // //         slashes->mute = true;
-            // //         ctx.node->quals << slashes;
-            // //         ctx.result.push(ctx.node);
-            // //         at_x+=1.0f;
-            // //         ctx.index++;
-            // //         ctx.state = in_comment_id;
-            // //     } else {
-            // //         ctx.node = make<Node>(slash_id,c);
-            // //         ctx.node->x = at_x;
-            // //         ctx.node->y = at_y;
-            // //         ctx.result.push(ctx.node);
-            // //     }
-            // // };
-
             tokenizer_functions[' '] = [this](Context& ctx) {
                 //Just skip
             };

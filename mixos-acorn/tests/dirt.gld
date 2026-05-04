@@ -55,6 +55,19 @@ main:
             cmp 1 3 0
             b.eq isterminator 
 
+            movz 3 6 0
+            cmp 1 3 0
+            b.eq isP 
+
+            movz 3 7 0
+            cmp 1 3 0
+            b.eq isI 
+
+            movz 3 8 0
+            cmp 1 3 0
+            b.eq isS 
+
+
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
@@ -97,6 +110,43 @@ main:
 
             ispipe_tail:
                 movz 24 0 0    //And then clear 24 to reset the accumulator
+        b loop_tail
+
+
+        isP:
+            //No op because P is just offset 0
+        b loop_tail
+
+
+        isI:
+                movz 3 1 0
+                mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
+                cmp 0 3 0
+            b.eq isI_onright //Check if we're emmitting on the left (x20) or right (x21) side
+            
+                | movz 2 4 0         //Load in 4 as it's the I offset
+                | add 20 20 2 1      //Offset by that much
+            b loop_tail
+
+            isI_onright:
+                | movz 2 4 0
+                | add 21 21 2 1    //If we're on the right we're using register 21
+        b loop_tail
+
+
+        isS:
+                movz 3 1 0
+                mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
+                cmp 0 3 0
+            b.eq isS_onright //Check if we're emmitting on the left (x20) or right (x21) side
+            
+                | movz 2 8 0         //Load in 8 as it's the S offset
+                | add 20 20 2 1      //Offset by that much
+            b loop_tail
+
+            isS_onright:
+                | movz 2 8 0
+                | add 21 21 2 1    //If we're on the right we're using register 21
         b loop_tail
 
         isescape:

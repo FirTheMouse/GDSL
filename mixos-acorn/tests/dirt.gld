@@ -4,7 +4,28 @@
 // x3 Immediate values
 // 
 //
-//
+// x11 Negator flag
+
+// x20 source pointer
+// x21 length of source
+// x22 current index
+// x23 lookup table
+// x24 Accumulator (for numbers)
+// x25 left/right switch
+// x26 Oppcode char
+// x27 pipe counter
+// x28 is immediate flag
+
+
+// |x2 recived immediates
+// |x20 left
+// |x21 right
+// |x22 types pointer
+// |x23 reg pointer
+// |x24 reg counter
+// |x25 instr pointer
+// |x27 qmark value
+
 main:
     stp 29 30 31 -2
 
@@ -13,6 +34,7 @@ main:
     movz 22 0 1     //  0  TO x22 AS 64bits / Store our index, starting at zero
     mov  23 2 1     //  x2 TO x23 AS 64bits / Save the lookup table
 
+    movz 11 0 0 //Set the negator to 0
     movz 24 0 0 //Set the accumulator field to zero to start
     movz 25 0 0 //Set the left/right switch to 0
     movz 27 0 0 //Set the pipe counter to 0
@@ -20,12 +42,14 @@ main:
 
 
     | stp 29 30 31 -2  //Emit the epilouge for the Acorn
-
-    | movz 1 1 1
     
     | mov 22 0 1 //Acorn stores it's Types pointer in 22 at the start
     | mov 20 22 1 //Moving the types pointer in to setup the left reg
     | mov 21 22 1 //And right reg
+
+    | mov 23 1 1  //Move the reg plate pointer into x23
+    | movz 24 0 0 //Set the reg counter to 0
+    | mov 25 2 1 //Move the instr plate pointer into 25
 
     //Process the token stream
     loop: 
@@ -67,6 +91,47 @@ main:
             cmp 1 3 0
             b.eq isS 
 
+            movz 3 9 0
+            cmp 1 3 0
+            b.eq isDescend 
+            
+            movz 3 10 0
+            cmp 1 3 0
+            b.eq isAscend 
+
+            movz 3 11 0
+            cmp 1 3 0
+            b.eq isReg 
+            
+            movz 3 12 0
+            cmp 1 3 0
+            b.eq isBang 
+
+            movz 3 13 0
+            cmp 1 3 0
+            b.eq isUnderscore 
+            
+            movz 3 14 0
+            cmp 1 3 0
+            b.eq isHash 
+
+            movz 3 15 0
+            cmp 1 3 0
+            b.eq isQmark 
+
+            movz 3 16 0
+            cmp 1 3 0
+            b.eq isJ 
+
+            movz 3 17 0
+            cmp 1 3 0
+            b.eq isC 
+
+
+            movz 3 18 0
+            cmp 1 3 0
+            b.eq isDash
+
 
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
@@ -81,7 +146,53 @@ main:
             // accumulator = accumulator * 10 + digit, we're accumulating for multi digit numbers like 23
             movz 3 10 0      // 10 TO x3 AS 32bits / Moving 10 to 3 for use as a multiplier
             mul 24 24 3 0    // x24 TIMES x3 TO x24 AS 32bits / Shift the accumulator at x24 to the left by 10x
-            add 24 24 0 0    // x24 PLUS x0 TO x24 AS 32bits / Add new digit
+
+            movz 3 1 0
+            mov 1 11 0
+            cmp 1 3 0
+            b.eq is_negative
+
+                add 24 24 0 0    // x24 PLUS x0 TO x24 AS 32bits / Add new digit
+            b loop_tail
+
+            is_negative:
+                sub 24 24 0 0   //Subtract instead because we're accumulating negative digits
+        b loop_tail
+
+        isDash:
+            movz 3 0 0
+            mov 1 24 0
+            cmp 1 3 0
+            b.ne not_negator    //If accumulator isn't 0, skip (because we're a - opp on an immediate)
+
+            mov 1 27 0
+            cmp 1 3 0
+            b.eq is_negator     //If the pipe counter is 0 and accumulator was 0 then we're a negator not an opp
+
+            not_negator:
+                //We're an opperation
+            b isopp
+
+            is_negator:
+               movz 11 1 0  //Set the negator to 1 
+        b loop_tail
+
+        isQmark:
+                movz 3 1 0
+                mov 1 25 0 //Compare against x25, the left/right flag store to check where we should be
+                cmp 1 3 0
+            b.eq isQmark_onright //Check if we're emmitting on the left (x20) or right (x21) side
+
+                | mov 20 27 0 //Reads from 27 (where comparison opperators will write)
+            b isQmark_tail
+
+            isQmark_onright:
+                | mov 21 27 0
+            b isQmark_tail
+
+            isQmark_tail:
+                movz 24 0 0    //And then clear 24 to reset the accumulator
+                movz 11 0 0   //And zero the negator
         b loop_tail
 
         ispipe:
@@ -110,6 +221,7 @@ main:
 
             ispipe_tail:
                 movz 24 0 0    //And then clear 24 to reset the accumulator
+                movz 11 0 0   //And zero the negator
         b loop_tail
 
 
@@ -176,6 +288,171 @@ main:
 
         isopp_tail:
             movz 24 0 0 //Clear accumulator
+            movz 11 0 0   //And zero the negator
+        b loop_tail
+
+
+        isDescend:
+            | movz 3 1 0     //Increment the $ sub index by 1
+            | add 24 24 3 0
+        b isterminator //Goes down to the terminator end, because it's not an opp
+
+        isAscend:
+            | movz 3 1 0      //Decrement the $ sub index by 1
+            | sub 24 24 3 0
+        b isterminator //Goes down to the terminator end, because it's not an opp
+
+
+        isReg:
+            movz 3 1 0 //Increment the pipe counter
+            add 27 27 3 0
+
+            mov 0 24 0 //Move the accumulated number at 24 down to 0 so the syscall can emit it
+            emit_movz_imm  //A syscall to emit an instruction that movz the value of x24 as an immediate to 2 (to use for offsets)
+                    movz 3 1 0
+                    mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
+                    cmp 0 3 0
+                b.eq isReg_onright //Check if we're emmitting on the left (x20) or right (x21) side
+                
+                    | mov 20 23 1        // Move the register pointer into left
+
+                    | ldr32 4 20 8  //Do one regular pipe shift to get to the column
+                    | mul 2 2 4 0 
+                    | ldr 20 20 0 
+                    | add 20 20 2 1
+
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | movz 4 12 0        // Each reg row is 12 bytes (96bits)
+                    | mul 2 24 4 0        // Multiply the passed offset by the reg counter to get to which row we're on
+                    | add 20 20 2 1      // Then add the offset from 2 to get to the element in the storage pointer
+                b isreg_tail
+
+                isReg_onright:
+                    | mov 21 23 1        // Move the register pointer into right
+
+                    | ldr32 4 21 8  //Do one regular pipe shift to get to the column
+                    | mul 2 2 4 0 
+                    | ldr 21 21 0 
+                    | add 21 21 2 1
+
+                    | ldr 21 21 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | movz 4 12 0        // Each reg row is 12 bytes (96bits)
+                    | mul 2 24 4 0        // Multiply the passed offset by the reg counter to get to which row we're on
+                    | add 21 21 2 1      // Then add the offset from 2 to get to the element in the storage pointer
+                b isreg_tail
+
+            isreg_tail:
+                movz 24 0 0    //And then clear 24 to reset the accumulator
+                movz 11 0 0   //And zero the negator
+        b loop_tail
+
+        isBang:
+           movz 3 1 0 //Increment the pipe counter
+            add 27 27 3 0
+
+            mov 0 24 0 //Move the accumulated number at 24 down to 0 so the syscall can emit it
+            emit_movz_imm  //A syscall to emit an instruction that movz the value of x24 as an immediate to 2 (to use for offsets)
+                    movz 3 1 0
+                    mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
+                    cmp 0 3 0
+                b.eq isBang_onright //Check if we're emmitting on the left (x20) or right (x21) side
+                
+                    | mov 20 23 1        // Move the register pointer into left
+
+                    | ldr32 4 20 8  //Do one regular pipe shift to get to the column
+                    | mul 2 2 4 0 
+                    | ldr 20 20 0 
+                    | add 20 20 2 1
+
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                b isbang_tail
+
+                isBang_onright:
+                    | mov 21 23 1        // Move the register pointer into right
+
+                    | ldr32 4 21 8  //Do one regular pipe shift to get to the column
+                    | mul 2 2 4 0 
+                    | ldr 21 21 0 
+                    | add 21 21 2 1
+
+                    | ldr 21 21 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                b isbang_tail
+
+            isbang_tail:
+                movz 24 0 0    //And then clear 24 to reset the accumulator
+                movz 11 0 0   //And zero the negator
+        b loop_tail
+
+        isUnderscore:
+           movz 3 1 0 //Increment the pipe counter
+            add 27 27 3 0
+
+            mov 0 24 0 //Move the accumulated number at 24 down to 0 so the syscall can emit it
+            emit_movz_imm  //A syscall to emit an instruction that movz the value of x24 as an immediate to 2 (to use for offsets)
+                    movz 3 1 0
+                    mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
+                    cmp 0 3 0
+                b.eq isUnderscore_onright //Check if we're emmitting on the left (x20) or right (x21) side
+                
+                    | mov 20 23 1        // Move the register pointer into left
+
+                    | ldr32 4 20 8  //Do one regular pipe shift to get to the column
+                    | mul 2 2 4 0 
+                    | ldr 20 20 0 
+                    | add 20 20 2 1
+
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | movz 4 12 0        // Each reg row is 12 bytes (96bits)
+                    | movz 3 2 0
+                    | add 3 3 24
+                    | mul 2 3 4 0        // Multiply by the reg counter +1 to go to the row below
+                    | add 20 20 2 1      // Then add the offset from 2 to get to the element in the storage pointer
+                b isUnderscore_tail
+
+                isUnderscore_onright:
+                    | mov 21 23 1        // Move the register pointer into right
+
+                    | ldr32 4 21 8  //Do one regular pipe shift to get to the column
+                    | mul 2 2 4 0 
+                    | ldr 21 21 0 
+                    | add 21 21 2 1
+
+                    | ldr 21 21 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | movz 4 12 0        // Each reg row is 12 bytes (96bits)
+                    | movz 3 2 0
+                    | add 3 3 24
+                    | mul 2 3 4 0        // Multiply by the reg counter +1 to go to the row below
+                    | add 21 21 2 1      // Then add the offset from 2 to get to the element in the storage pointer
+                b isUnderscore_tail
+
+            isUnderscore_tail:
+                movz 24 0 0    //And then clear 24 to reset the accumulator
+                movz 11 0 0   //And zero the negator
+        b loop_tail
+
+        isHash:
+
+        b loop_tail
+
+        isJ:
+            | mov 0 0 0 //A no-op for a placeholder
+            mov 0 24 0 //The number value down 
+            append_jump
+            movz 24 0 0 //Reset accumulator
+            movz 11 0 0   //And zero the negator
+        b loop_tail
+
+
+        isC:
+            | movz 3 0 0
+            | mov 1 27 0 //Compare against x27, for true/false
+            | cmp 1 3 0
+            | b.eq 2    //Jump 2 if true
+            | mov 0 0 0 //A no-op for a placeholder
+            mov 0 24 0 //The number value down 
+            append_jump
+            movz 24 0 0 //Reset accumulator
+            movz 11 0 0   //And zero the negator
         b loop_tail
 
         isterminator:
@@ -194,6 +471,14 @@ main:
             movz 3 43 0
             cmp 26 3 0
             b.eq emit_plus
+
+            movz 3 45 0
+            cmp 26 3 0
+            b.eq emit_sub
+
+            movz 3 76 0
+            cmp 26 3 0
+            b.eq emit_l
 
             b emit_done
 
@@ -217,10 +502,72 @@ main:
             b emit_done
 
             emit_plus:
-                | ldr 3 20 0
-                | ldr 4 21 0
-                | add 3 3 4 0
-                | str 3 21 0
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_plus
+
+                //If not an immediate
+                    | ldr 3 20 0
+                    | ldr 4 21 0
+                    | add 3 3 4 0
+                    | str 3 21 0
+                b emit_plus_tail
+
+                isimm_plus:
+                    | ldr 4 21 0
+                    | add 3 20 4 0
+                    | str 3 21 0
+                    movz 28 0 0 //Flag off immediate
+                b emit_plus_tail
+
+                emit_plus_tail:
+                    //nothing here
+            b emit_done
+
+
+            emit_sub:
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_sub
+
+                //If not an immediate
+                    | ldr 3 20 0
+                    | ldr 4 21 0
+                    | sub 3 4 3 0
+                    | str 3 21 0
+                b emit_sub_tail
+
+                isimm_sub:
+                    | ldr 4 21 0
+                    | sub 3 4 20 0
+                    | str 3 21 0
+                    movz 28 0 0 //Flag off immediate
+                b emit_sub_tail
+
+                emit_sub_tail:
+                    //nothing here
+            b emit_done
+
+            emit_l:
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_l
+
+                //If not an immediate
+                    | ldr 3 20 0
+                    | ldr 4 21 0
+                    | cmp 3 4 0
+                    | cset.lt 27
+                b emit_l_tail
+
+                isimm_l:
+                    | ldr 4 21 0
+                    | cmp 20 4 0
+                    | cset.lt 27
+                b emit_l_tail
+
+                emit_l_tail:
+                    //nothing here
             b emit_done
 
             emit_done:
@@ -230,6 +577,7 @@ main:
                 movz 25 0 0   //Reset side flag to left
                 movz 26 0 0   //Clear opcode register
                 movz 27 0 0   //Reset pipe counter
+                resolve_terminator
         b loop_tail
 
         loop_tail:

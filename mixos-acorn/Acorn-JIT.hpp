@@ -64,8 +64,8 @@ namespace Acorn {
         char_class['~'] = 3;
 
         //4 = opperations
-        char_class['='] = 4; char_class['+'] = 4; char_class['-'] = 4; char_class['*'] = 4; char_class['/'] = 4;
-        char_class['>'] = 4;
+        char_class['='] = 4; char_class['+'] = 4; char_class['*'] = 4; char_class['/'] = 4;
+        char_class['L'] = 4;
 
         //5 = terminator
         char_class[':'] = 5;
@@ -74,6 +74,23 @@ namespace Acorn {
         char_class['P'] = 6;
         char_class['I'] = 7;
         char_class['S'] = 8;
+
+        char_class['v'] = 9; //Descend
+        char_class['^'] = 10; //Ascend
+
+        //Reg plate instructions
+        char_class['$'] = 11; //Reg plate row n
+        char_class['!'] = 12; //Reg plate row 0
+        char_class['_'] = 13; //Reg plate row n+1
+        char_class['#'] = 14; //Instr plate
+
+        char_class['?'] = 15; //Qmark, where comparisons and such go
+
+        char_class['J'] = 16; //J, for jumps
+        char_class['C'] = 17; //C, for conditonal jumps
+
+        char_class['-'] = 18; //Dash, for negative numbers
+
 
         typedef int (*JitFunc)(const char*, uint32_t, uint8_t*);
         JitFunc func = (JitFunc)buf;
@@ -216,36 +233,38 @@ namespace Acorn {
     }
 
 
+    static std::string acorn_type_to_string(AcornCol& type) {
+        list<list<std::string>> lines;
+        for(int c = 0; c < type.length(); c++) {
+            AcornCol& col = *(AcornCol*)type[c];
+            list<std::string> subline;
+            subline << ("["+std::to_string(col.element_size)+"]");
+            for(int r = 0; r < col.length(); r++) {
+                if(col.element_size == 4) {
+                    subline << std::to_string(*(uint32_t*)col[r]);
+                } else if(col.element_size == 1) {
+                    subline << std::to_string(*(uint8_t*)col[r]);
+                } else if(col.element_size == 12) {
+                    uint32_t* p = (uint32_t*)col[r];
+                    subline << (std::to_string(p[0])+"|"+
+                               std::to_string(p[1])+"|"+
+                               std::to_string(p[2]));
+                } else {
+                    subline << ("?["+std::to_string(col.element_size)+"]");
+                }
+            }
+            lines << subline;
+        }
+        return print_columnar_table(lines);
+    }
+
     static std::string acorn_types_to_string(AcornCol& types) {
         std::string result = "";
-        
         for(int t = 0; t < types.length(); t++) {
             AcornCol& type = *(AcornCol*)types[t];
-            list<list<std::string>> lines;
-            
-            for(int c = 0; c < type.length(); c++) {
-                AcornCol& col = *(AcornCol*)type[c];
-                list<std::string> subline;
-                subline << ("["+std::to_string(col.element_size)+"]");
-                for(int r = 0; r < col.length(); r++) {
-                    if(col.element_size == 4) {
-                        subline << std::to_string(*(uint32_t*)col[r]);
-                    } else if(col.element_size == 1) {
-                        subline << std::to_string(*(uint8_t*)col[r]);
-                    } else if(col.element_size == 12) {
-                        uint32_t* p = (uint32_t*)col[r];
-                        subline << (std::to_string(p[0])+"|"+
-                                   std::to_string(p[1])+"|"+
-                                   std::to_string(p[2]));
-                    } else {
-                        subline << ("?["+std::to_string(col.element_size)+"]");
-                    }
-                }
-                lines << subline;
-            }
             result += "Type " + std::to_string(t) + 
                       " (tag:" + std::to_string(type.tag) + "):\n";
-            result += print_columnar_table(lines) + "\n";
+            result += acorn_type_to_string(type) + "\n";
         }
         return result;
     }
@@ -297,40 +316,63 @@ namespace Acorn {
         AcornCol types;
         types.element_size = sizeof(AcornCol);
 
-        for(int i=0;i<5;i++) {
-            AcornCol type;
-            type.element_size = sizeof(AcornCol);
-            for(int c=0;c<5;c++) {
-                AcornCol column;
-                column.element_size = 4;
-                for(int r=0;r<5;r++) {
-                    column.push_default();
-                }
-                type.push((void*)&column);
+        AcornCol reg_plate; // $ - the core plate for fast opperations, all Ptrs
+        reg_plate.element_size = sizeof(AcornCol);
+        for(int c=0;c<4;c++) { //32 columns
+            AcornCol column;
+            column.element_size = 12; //96bits, for a Ptr
+            for(int r=0;r<6;r++) { //6 rows
+                column.push_default();
             }
-            types.push((void*)&type);
+            reg_plate.push((void*)&column);
         }
+
+        AcornCol instr_plate; // # - where all the instructions live
+        instr_plate.element_size = sizeof(AcornCol);
+        for(int c=0;c<256;c++) { //256 columns, one for each char
+            AcornCol column;
+            column.element_size = 4; //32bits, for one word on a processer
+            for(int r=0;r<64;r++) { //64 rows
+                column.push_default();
+            }
+            instr_plate.push((void*)&column);
+        }
+
+        AcornCol context_plate; // 0 - the stack and storage spot for reg_plate rows 
+        context_plate.element_size = sizeof(AcornCol);
+        for(int c=0;c<32;c++) { //32 columns
+            AcornCol column;
+            column.element_size = 12; //96bits, for a Ptr
+            for(int r=0;r<12;r++) { //12 rows
+                column.push_default();
+            }
+            context_plate.push((void*)&column);
+        }
+        types.push((void*)&context_plate);
 
         // path = "mixos-acorn/tests/acornsock.gld";
         // std::ifstream in2(path, std::ios::binary);
         // AcornCol types = read_acorn_types(in2);
 
 
-        typedef int (*JitFunc)(AcornCol);
+        typedef int (*JitFunc)(AcornCol, AcornCol, AcornCol);
         JitFunc func = (JitFunc)buf;
 
         //Arbitray ceremony because Arm64, this is why I'm making my own ISA
         uint64_t sp_val;
         asm volatile("mov %0, sp" : "=r"(sp_val));
         (void)sp_val;
-        int result = func(types); //Giving the source
+        int result = func(types,reg_plate,instr_plate); //Giving the source
 
         print("FINISHED: ",result);
         
         std::ofstream out2(path, std::ios::binary);
         write_acorn_types(out2,types);
 
-        std::string printout = acorn_types_to_string(types);
+        std::string printout = "";
+        printout+="Reg plate:\n";
+        printout+=acorn_type_to_string(reg_plate)+"\n\n";
+        printout+=acorn_types_to_string(types);
         editTextFile("mixos-acorn/tests/printout.txt",[printout](std::string& source){
             source=printout;
         });

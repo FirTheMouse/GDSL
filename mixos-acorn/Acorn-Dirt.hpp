@@ -5,6 +5,12 @@
 
 namespace Acorn {
     list<uint32_t> sub_instruction_buffer;
+    struct jump_request {
+        uint32_t instr_idx = 0;
+        uint32_t desired_terminators = 0;
+    };
+    list<jump_request> jump_requests;
+    list<int> terminator_positions;
     struct Acorn_Dirt : public virtual Compiler_Unit {
         Acorn_Dirt() {init();}
         
@@ -198,7 +204,7 @@ namespace Acorn {
         }
 
 
-        uint32_t B(int imm26) {
+        static uint32_t B(int imm26) {
             return (0b000101 << 26)
                 | (imm26 & 0x3FFFFFF);
         }
@@ -452,6 +458,29 @@ namespace Acorn {
             }
         }
 
+        static void syscall_append_jump(uint64_t zero) {
+            jump_request request;
+            request.instr_idx = (uint32_t)sub_instruction_buffer.length()-1;
+            request.desired_terminators = terminator_positions.length() + (uint32_t)zero + 1;
+            jump_requests << request;
+        }
+
+        static void syscall_resolve_terminator() {
+            terminator_positions << sub_instruction_buffer.length(); //So we land just after the terminator
+            for(int r=jump_requests.length()-1;r>=0;r--) {
+                jump_request request = jump_requests[r];
+                print("REQUEST ",r," AT ",request.instr_idx," DT ",terminator_positions.length(),"/",request.desired_terminators);
+                if(terminator_positions.length()>=request.desired_terminators) {
+                    print("SUBL: ",sub_instruction_buffer.length());
+                    print("TERM POS: ",terminator_positions[request.desired_terminators-1]);
+                    int offset = (terminator_positions[request.desired_terminators-1] - request.instr_idx);
+                    sub_instruction_buffer[request.instr_idx] = B(offset);
+                    jump_requests.removeAt(r);
+                    print("RESOLVED TO: ",offset);
+                }
+            }
+        }
+
         static void syscall_jint() {print("jint");}
         static void syscall_jont() {print("jont");}
 
@@ -519,13 +548,21 @@ namespace Acorn {
             a_handlers[make_tokenized_keyword("b.ge")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_GE, con(ctx)); };
             a_handlers[make_tokenized_keyword("b.le")] = [this](Context& ctx){ (*ctx.buffer) << B_cond(COND_LE, con(ctx)); };
 
+
+            a_handlers[make_tokenized_keyword("cset.eq")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_EQ);};
+            a_handlers[make_tokenized_keyword("cset.lt")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_LT);};
+
             a_handlers[make_tokenized_keyword("emit_movz_imm")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_emit_movz_imm);};
+            a_handlers[make_tokenized_keyword("append_jump")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_append_jump);};
+            a_handlers[make_tokenized_keyword("resolve_terminator")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_resolve_terminator);};
             a_handlers[make_tokenized_keyword("readchar")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_readchar);};
             a_handlers[make_tokenized_keyword("atzero")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_atzero);};
             a_handlers[make_tokenized_keyword("atone")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_atone);};
             a_handlers[make_tokenized_keyword("jint")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_jint);};
             a_handlers[make_tokenized_keyword("jont")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_jont);};
             a_handlers[make_tokenized_keyword("wub")] = [this](Context& ctx){(*ctx.buffer) << MOVZ(0,7,0);}; //For security reasons
+
+
 
 
             a_handlers[pipe_id] = [this](Context& ctx){
@@ -555,8 +592,8 @@ namespace Acorn {
 
             resolve_patches();
 
-            print(node_to_string(root,0,0,true));
-            print_emit_buffer();
+            //print(node_to_string(root,0,0,true));
+            //print_emit_buffer();
 
             std::string path = "mixos-acorn/tests/dirtoutput.gld";
             std::ofstream out(path, std::ios::binary);

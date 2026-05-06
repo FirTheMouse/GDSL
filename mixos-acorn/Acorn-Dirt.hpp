@@ -516,7 +516,7 @@ namespace Acorn {
             };
 
             a_handlers[make_tokenized_keyword("movz")] = [this](Context& ctx){ (*ctx.buffer) << MOVZ(con(ctx),con(ctx),con(ctx)); };
-            a_handlers[make_tokenized_keyword("movk")] = [this](Context& ctx){ (*ctx.buffer) << MOVK(con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("movk")] = [this](Context& ctx){ (*ctx.buffer) << MOVK(con(ctx),con(ctx),con(ctx), con(ctx)); };
             a_handlers[make_tokenized_keyword("ldr")]  = [this](Context& ctx){ (*ctx.buffer) << LDR(con(ctx),con(ctx),con(ctx)); };
             a_handlers[make_tokenized_keyword("ldr32")]  = [this](Context& ctx){ (*ctx.buffer) << LDR(con(ctx),con(ctx),con(ctx),4); };
             a_handlers[make_tokenized_keyword("str")]  = [this](Context& ctx){ (*ctx.buffer) << STR(con(ctx),con(ctx),con(ctx)); };

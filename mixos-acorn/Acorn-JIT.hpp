@@ -92,13 +92,13 @@ namespace Acorn {
         char_class['-'] = 18; //Dash, for negative numbers
 
 
-        char_class['>'] = 19; //Rangle, defref right
+        char_class['>'] = 19; //Rangle, defref rigth
         char_class['<'] = 20; //Langle, defref left
 
         char_class['\\'] = 21; //Comment
 
-
-        typedef int (*JitFunc)(const char*, uint32_t, uint8_t*);
+        uint64_t fya64[4]; fya64[0] = 0; fya64[1] = 0; fya64[2] = 0; fya64[3] = 0;
+        typedef int (*JitFunc)(const char*, uint32_t, uint8_t*, uint64_t[4]);
         JitFunc func = (JitFunc)buf;
         std::string source = readFile("mixos-acorn/tests/acorn.gld");
 
@@ -106,7 +106,7 @@ namespace Acorn {
         asm volatile("mov %0, sp" : "=r"(sp_val));
         (void)sp_val;
         
-        int result = func(source.data(), source.length(),char_class); //Giving the source
+        int result = func(source.data(), source.length(),char_class,fya64); //Giving the source
 
         if(result!=7) {
             print(red("WHO REMOVED THE WUB"));
@@ -122,7 +122,7 @@ namespace Acorn {
         for(int i=0;i<sub_instruction_buffer.length();i++) {
             write_raw<uint32_t>(out,sub_instruction_buffer[i]);
             uint32_t instr = sub_instruction_buffer[i];
-            print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
+            //print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
         }
         
         out.close();

@@ -13,7 +13,14 @@
 // x23 lookup table
 // x24 Accumulator (for numbers)
 // x25 left/right switch
-// x26 Oppcode char
+// x26 fya64
+//   0 = oppcode char
+//   4 = left defrefs
+//   8 = right defrefs
+//  12 = Left index
+//  16 = right index
+//  20 = left subindex
+//  24 = right subindex
 // x27 pipe counter
 // x28 is immediate flag
 
@@ -35,12 +42,13 @@ main:
     movz 22 0 1     //  0  TO x22 AS 64bits / Store our index, starting at zero
     mov  23 2 1     //  x2 TO x23 AS 64bits / Save the lookup table
 
+
     movz 11 0 0 //Set the negator to 0
     movz 24 0 0 //Set the accumulator field to zero to start
     movz 25 0 0 //Set the left/right switch to 0
+    mov 26 3 1 // Save the fya64 for overflow
     movz 27 0 0 //Set the pipe counter to 0
     movz 28 0 0 //Is immedite flag
-
 
     | stp 29 30 31 -2  //Emit the epilouge for the Acorn
     
@@ -141,6 +149,14 @@ main:
             cmp 1 3 0
             b.eq isDash
 
+            movz 3 19 0
+            cmp 1 3 0
+            b.eq isRangle
+            
+            movz 3 20 0
+            cmp 1 3 0
+            b.eq isLangle
+
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
@@ -214,6 +230,20 @@ main:
                 movz 11 0 0   //And zero the negator
         b loop_tail
 
+        isRangle:
+            ldr32 4 26 8
+            movz 3 1 0
+            add 4 4 3 0
+            str32 4 26 8
+        b loop_tail
+
+        isLangle:
+            ldr32 4 26 4
+            movz 3 1 0
+            add 4 4 3 0
+            str32 4 26 4
+        b loop_tail
+
         ispipe:
             movz 3 1 0 //Increment the pipe counter
             add 27 27 3 0
@@ -254,14 +284,13 @@ main:
                 mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
                 cmp 0 3 0
             b.eq isI_onright //Check if we're emmitting on the left (x20) or right (x21) side
-            
-                | movz 2 4 0         //Load in 4 as it's the I offset
-                | add 20 20 2 1      //Offset by that much
+                movz 3 1 0 //Add a left index
+                str32 3 26 12
             b loop_tail
 
             isI_onright:
-                | movz 2 4 0
-                | add 21 21 2 1    //If we're on the right we're using register 21
+                movz 3 1 0 //Add a right index
+                str32 3 26 16
         b loop_tail
 
 
@@ -270,14 +299,13 @@ main:
                 mov 0 25 0 //Compare against x25, the left/right flag store to check where we should be
                 cmp 0 3 0
             b.eq isS_onright //Check if we're emmitting on the left (x20) or right (x21) side
-            
-                | movz 2 8 0         //Load in 8 as it's the S offset
-                | add 20 20 2 1      //Offset by that much
+                movz 3 1 0 //Add a left subindex
+                str32 3 26 20
             b loop_tail
 
             isS_onright:
-                | movz 2 8 0
-                | add 21 21 2 1    //If we're on the right we're using register 21
+                movz 3 1 0 //Add a right subindex
+                str32 3 26 24
         b loop_tail
 
         isescape:
@@ -288,7 +316,7 @@ main:
         b loop_tail 
 
         isopp:
-            mov 26 0 0 //Move the oppcode charachter to storage
+            str32 0 26 0 //Store the oppcode char
             movz 25 1 0 //Setting the flag to right
 
             //Checking for an immediate to the left
@@ -479,24 +507,135 @@ main:
             // |x21 = resolved right address  
             // x26 = opcode char
 
+            ldr32 13 26 4
+            ldr32 14 26 8
+            
+                movz 3 0 0
+                cmp 13 3 0
+                b.eq skip_left_defrefs
+
+                loop_left_defrefs:       
+                    | ldr32 5 20 0 
+                    | ldr32 6 20 4   
+                    | ldr32 7 20 8  
+
+                    | mov 20 22 1
+
+                    | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+                    | mul 2 5 4 0    // Multiply the offset index in 5, which was put in place by the emit_movz_imm, by the element size
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | add 20 20 2 1      // Then add the offset from 5 to get to the element in the storage pointer
+
+                    | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+                    | mul 2 6 4 0    // Multiply the offset index in 6, which was put in place by the emit_movz_imm, by the element size
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | add 20 20 2 1      // Then add the offset from 6 to get to the element in the storage pointer
+
+                    | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+                    | mul 2 7 4 0    // Multiply the offset index in 7, which was put in place by the emit_movz_imm, by the element size
+                    | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+                    | add 20 20 2 1      // Then add the offset from 7 to get to the element in the storage pointer
+
+                ldr32 4 26 4
+                movz 3 1 0
+                sub 4 4 3 0 //Subtract from the left defrefs count and loop
+                str32 4 26 4
+                movz 3 0 0
+                cmp 4 3 0
+                b.gt loop_left_defrefs
+            skip_left_defrefs:
+
+                movz 3 0 0
+                cmp 14 3 0
+                b.eq skip_right_defrefs
+
+                loop_right_defrefs:       
+                    | ldr32 5 21 0 
+                    | ldr32 6 21 4   
+                    | ldr32 7 21 8  
+
+                    | mov 21 22 1
+
+                    | ldr32 4 21 8
+                    | mul 2 5 4 0
+                    | ldr 21 21 0
+                    | add 21 21 2 1
+
+                    | ldr32 4 21 8
+                    | mul 2 6 4 0
+                    | ldr 21 21 0
+                    | add 21 21 2 1
+
+                    | ldr32 4 21 8
+                    | mul 2 7 4 0
+                    | ldr 21 21 0
+                    | add 21 21 2 1
+
+                ldr32 4 26 8
+                movz 3 1 0
+                sub 4 4 3 0
+                str32 4 26 8
+                movz 3 0 0
+                cmp 4 3 0
+                b.gt loop_right_defrefs
+            skip_right_defrefs:
+
+                //Left index
+                ldr32 4 26 12
+                movz 3 0 0
+                cmp 4 3 0
+                b.eq skip_left_index
+                    | movz 2 4 0
+                    | add 20 20 2 1
+                skip_left_index:
+
+                //Right index
+                ldr32 4 26 16
+                movz 3 0 0
+                cmp 4 3 0
+                b.eq skip_right_index
+                    | movz 2 4 0
+                    | add 21 21 2 1
+                skip_right_index:
+
+                //Left subindex
+                ldr32 4 26 20
+                movz 3 0 0
+                cmp 4 3 0
+                b.eq skip_left_subindex
+                    | movz 2 8 0
+                    | add 20 20 2 1
+                skip_left_subindex:
+
+                //Right subindex
+                ldr32 4 26 24
+                movz 3 0 0
+                cmp 4 3 0
+                b.eq skip_right_subindex
+                    | movz 2 8 0
+                    | add 21 21 2 1
+                skip_right_subindex:
+
+            ldr32 4 26 0 //Retrive the char
+
             movz 3 61 0
-            cmp 26 3 0
+            cmp 4 3 0
             b.eq emit_equals
 
             movz 3 62 0
-            cmp 26 3 0
+            cmp 4 3 0
             b.eq emit_rangle
 
             movz 3 43 0
-            cmp 26 3 0
+            cmp 4 3 0
             b.eq emit_plus
 
             movz 3 45 0
-            cmp 26 3 0
+            cmp 4 3 0
             b.eq emit_sub
 
             movz 3 76 0
-            cmp 26 3 0
+            cmp 4 3 0
             b.eq emit_l
 
             b emit_done
@@ -594,7 +733,17 @@ main:
                 | mov 20 22 1 
                 | mov 21 22 1 
                 movz 25 0 0   //Reset side flag to left
-                movz 26 0 0   //Clear opcode register
+                movz 3 0 0
+                str32 3 26 0   //Clear opcode register
+                str32 3 26 4    //Clear langle
+                str32 3 26 8   //Clear rangle
+
+                //Clear index and subindex
+                str32 3 26 12
+                str32 3 26 16
+                str32 3 26 20
+                str32 3 26 24
+
                 movz 27 0 0   //Reset pipe counter
                 resolve_terminator
         b loop_tail

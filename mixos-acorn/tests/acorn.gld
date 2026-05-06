@@ -1,6 +1,6 @@
 5 = 0$ :
 2 + 2$I :
-1 - 0$ :
+1 - 0$ : \ subtract 1 here \
 0 L 0$ :
--4 C :
+-4 C :  \ jump to -4c here \
 8 = 1$ :

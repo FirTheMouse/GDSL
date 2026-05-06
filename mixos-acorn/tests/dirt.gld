@@ -5,6 +5,7 @@
 // 
 //
 // x11 Negator flag
+// x12 in comment flag
 
 // x20 source pointer
 // x21 length of source
@@ -55,6 +56,15 @@ main:
     loop: 
         ldrb 0 20 0     //(*x20)+0 TO x0 / Grab the first char from the source text
         ldrb_reg 1 23 0 //(*23)+x0 TO x1 / Retrive the classifer from the lookup table for the char
+
+
+            movz 3 21 0
+            cmp 1 3 0
+            b.eq isComment
+
+            movz 3 1 0
+            cmp 3 12 0
+            b.eq loop_tail //If we're in a comment we just skip over everything
 
             cmp 1 31 0        // x1 MINUS x31(0) AS 32bits / Check if the classifer is zero or not
             b.eq unclassified // Branch on equals to: if the char's classifier is 0 go to the unclassified handeling
@@ -127,16 +137,25 @@ main:
             cmp 1 3 0
             b.eq isC 
 
-
             movz 3 18 0
             cmp 1 3 0
             b.eq isDash
-
 
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
             //Do nothing
+        b loop_tail
+
+        isComment:
+            movz 3 1 0
+            cmp 3 12 0
+            b.eq in_comment
+                movz 12 1 0 //Set comment flag to 1
+            b loop_tail
+
+            in_comment:
+                movz 12 0 0 //Set comment flag to 0
         b loop_tail
         
         isnum:

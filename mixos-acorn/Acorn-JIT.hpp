@@ -92,6 +92,12 @@ namespace Acorn {
         char_class['-'] = 18; //Dash, for negative numbers
 
 
+        char_class['>'] = 19; //Rangle, defref right
+        char_class['<'] = 20; //Langle, defref left
+
+        char_class['\\'] = 21; //Comment
+
+
         typedef int (*JitFunc)(const char*, uint32_t, uint8_t*);
         JitFunc func = (JitFunc)buf;
         std::string source = readFile("mixos-acorn/tests/acorn.gld");

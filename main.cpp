@@ -37,12 +37,17 @@ int main(int argc, char* argv[]) {
     // Acorn::init_type_pool();
     // kernel.run(kernel.process(readFile("mixos-acorn/tests/acorntest.gld")));
 
+
+
     Acorn::Acorn_Dirt dirt;
     Acorn::init_type_pool();
     dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
 
-    Acorn::JIT_dirt();
+    Acorn::burn_instrs();
+    Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"),true);
     Acorn::JIT_Acorn();
+    //Acorn::JIT_Ribbon();
+
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
     // root = twig->process(readFile("modules/tests/pebble.gld"));

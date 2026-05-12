@@ -1,3 +1,24 @@
+BUG LOG
+
+    When setting chars in a string via a loop in this test:
+    2 = 0$ : \ construct a Ptr to iterate with \
+    0 = 0$I :
+    0 = 0$S :
+    4 = 1$ :  \ lands here and iterator ammount \
+
+    54 => 0$ : 
+    1 + 0$S : \ subtract 1 from the Ptr subindex to go down a row \
+    0$S L 1$  : \ keep going until it's equal to 1$ (our iteration ammount) \
+    -4 C :  \ jump back by 4 here \
+    It's always setting 3 chars after the loop end to 0
+SOLVED:
+    Chars are 8 bits, but all the code in Dirt is opperating on 32bits, so they were writting 0 to 3 extra
+    after the end of the target 8 bits
+
+    any opperation after a comparison like 0 E 0$ : is accessing garabage in odd ways like printing the straight adresses
+SOLVED:
+    forgot to reset the immedite flag in the terminator cases for the new oppcodes
+
 Stack test
 5 = 2$I v 
 8 = 2$I ^ 
@@ -54,3 +75,206 @@ First real loop
 0 L 0$ :
 -4 C :  \ jump to -4c here \
 8 = 1$ :
+
+
+First interior defrefrencing
+0 = 0$ :
+1 = 0$I :
+1 = 0$S :
+
+0 => 0$ :
+1 => 0$I :
+2 => 0$S :
+
+0$I <=>> 0$ :
+
+First real progam
+0 = 0$ : \ construct a Ptr to iterate with \
+1 = 0$I :
+6 = 0$S :
+
+2 => 0$ :
+1 - 0$S : \ subtract 1 here \
+-1 L 0$S :
+-4 C :  \ jump to -4c here \
+8 = 1$ :
+0 = 0$S :
+
+Annotated:
+
+2 = 0$ : \ construct a Ptr to iterate with, at this time 2 was the adress for the context plate \
+1 = 0$I :
+6 = 0$S :
+6 => 0$S : \ the jump lands here but it doesn't execute here \
+
+2 => 0$ : \ push 2 to the current place we're pointing \
+1 - 0$S : \ subtract 1 from the Ptr subindex to go down a row \
+-1 L 0$S : \ if -1 is less than the subindex we're on we loop (so we stop after 0) \
+-4 C :  \ jump back by 4 here \
+
+
+
+
+
+
+
+Iteration One
+\ 0$ = free as null \
+\ 1$ = source Ptr \
+\ 2$ = source length \
+\ 3$ = instr Ptr \
+\ 4$ = instr length \
+\ 5$ = output Ptr \
+
+2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
+1 = 3$ : 0 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
+1 = 5$ : 0 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
+\ at 10 = -4 jump back, for each line after 10 jump back one less (so if 11 lines, jump back -5) \
+
+\ iterate over source \
+1$ => 3$I : \ target the column for the char \
+
+0 = 3$S : \ instr iterator lands here and zero instr Ptr subindex \
+
+3$ <=> 5$ : \ extract the instruction out \
+1 + 3$S : \ increment the char instr index and the output index \
+1 + 5$S : 
+3$S L 4$ :
+-5 C :
+
+1 + 1$S :
+1$S L 2$  : \ keep going until it's equal to 1$ (our iteration ammount) \
+-10 C : 
+
+
+
+Iteration Two
+\ 0$ = free as null \
+\ 1$ = source Ptr \
+\ 2$ = source length \
+\ 3$ = instr Ptr \
+\ 4$ = instr length \
+\ 5$ = output Ptr \
+
+2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
+1 = 3$ : 1 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
+1 = 5$ : 2 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
+1 - 2$ : \ temporary for testing \
+
+\ iterate over source \
+1$ => 3$I : \ target the column for the char main loop lands here \
+0 = 3$S : \ zero instr Ptr subindex \
+
+3$ => 0$ :
+0 E 0$ : \ increment the output index and push the instr if not 0 and instr iterator lands here \
+2 C :
+0$ =< 5$ : \ extract the instruction out \
+1 + 5$S :
+
+1 + 3$S : \ increment the char instr index \
+3$S L 4$ :
+-8 C :
+
+1 + 1$S :
+1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
+-13 C :
+
+
+
+
+
+Iteration Three
+\ 0$ = free as null \
+\ 1$ = source Ptr \
+\ 2$ = source length \
+\ 3$ = instr Ptr \
+\ 4$ = instr length \
+\ 5$ = output Ptr \
+
+2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
+1 = 3$ : 1 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
+1 = 5$ : 2 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
+1 - 2$ : \ temporary for testing \
+
+\ +0 / -0 \
+
+\ iterate over source \
+1$ => 3$I : \ target the column for the char main loop lands here \
+0 = 3$S : \ zero instr Ptr subindex \
+
+3$ => 0$ : \ instr iterator lands here \
+1 E 0$ : \ increment the output index and push the instr if not 0 \
+2 C :
+0$ =< 5$ : \ extract the instruction out \
+1 + 5$S :
+1 + 3$S : \ increment the char instr index \
+3$S L 4$ :
+-8 C :
+
+1 + 1$S :
+1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
+-13 C :
+
+
+
+
+Iteraton Four
+\ 0$ = free as null \
+\ 1$ = source Ptr \
+\ 2$ = source length \
+\ 3$ = instr Ptr \
+\ 4$ = instr length \
+\ 5$ = output Ptr \
+
+2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
+1 = 3$ : 1 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
+3 = 5$ : 0 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
+
+\ +0 / -0 \
+
+\ (13) iterate over source \
+    1$ =< 3$I : \ target the column for the char main loop lands here \
+    0 = 3$S : \ zero instr Ptr subindex \
+        3$ =< 0$ : \ instr iterator lands here \
+            0 E 0$ : \ increment the output index and push the instr if not 0 \
+            2 C :
+                3$ <=> 5$ : \ extract the instruction out \
+                1 + 5$S :
+        1 + 3$S : \ increment the char instr index \
+        3$S L 4$ :
+        -8 C :
+    1 + 1$S :
+    1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
+    -13 C :
+
+
+
+    | movz 15 4 0
+            | mov 20 21 1
+            | ldr32 5 20 0 
+            | ldr32 6 20 4   
+            | ldr32 7 20 8  
+
+            | mov 20 22 1
+
+            | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+            | mul 2 5 4 0    // Multiply the offset index in 5, which was put in place by the emit_movz_imm, by the element size
+            | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+            | add 20 20 2 1      // Then add the offset from 5 to get to the element in the storage pointer
+
+            | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+            | mul 2 6 4 0    // Multiply the offset index in 6, which was put in place by the emit_movz_imm, by the element size
+            | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+            | add 20 20 2 1      // Then add the offset from 6 to get to the element in the storage pointer
+
+            | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+            | mul 2 7 4 0    // Multiply the offset index in 7, which was put in place by the emit_movz_imm, by the element size
+            | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
+            | add 20 20 2 1      // Then add the offset from 7 to get to the element in the storage pointer
+
+            | stp 29 30 31 -2
+            | blr 20
+            | ldp 29 30 31 2
+
+            movz 24 0 0   //Reset accumulator
+            movz 11 0 0   //And zero the negator

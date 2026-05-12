@@ -710,7 +710,7 @@ namespace GDSL {
             n_handlers[scan_id] = [this](Context& ctx) {
                 n_take_right(ctx,2);
             };
-          
+
             x_handlers[if_id] = [this](Context& ctx) {
                 process_node(ctx, ctx.node->left());
                 if(ctx.node->left()->value->is_true()) {

@@ -66,6 +66,21 @@ scripted formed type RTT {
 }
 
 
+div name_of_thing {
+    "color" : "red"
+    "width" : "100px"
+    div inside {
+        text "words" {
+
+        }
+        button btn {
+
+        }
+    }
+}
+
+
+
 inlined background_theme {
     "background-color" : "rgb(225, 225, 225)";
 }
@@ -579,7 +594,10 @@ div side_bar {
                         "gap" : "8px";
                             div control_btns(string label, string behaviour) { 
                                 button instance {
-                                    "onclick" : behaviour; "height" : "100%"; "width" : "40px"; text label { text_theme; }
+                                    "onclick" : behaviour; 
+                                    "height" : "100%"; 
+                                    "width" : "40px"; 
+                                    text label { text_theme; }
                                 } 
                             }
 

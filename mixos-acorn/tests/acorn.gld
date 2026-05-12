@@ -1,18 +1,20 @@
-5 = 2$I v 
-8 = 2$I ^ 
-3 = 2$ v
-9 = 0$ :
-6 = 1! :
-3 = 0$I :
-0$I = 1_ :
+\ 0$ = free as null \
+\ 1$ = source Ptr \
+\ 2$ = source length \
+\ 3$ = instr Ptr \
+\ 4$ = instr length \
+\ 5$ = output Ptr \
 
+2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
+1 = 3$ : 1 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
+3 = 5$ : 0 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
 
-0 = 0$ :
-1 = 0$I :
-1 = 0$S :
+\ +0 / -0 \
 
-0 => 0$ :
-1 => 0$I :
-2 => 0$S :
-
-7 =>> 0$ :
+\ (13) iterate over source \
+    1$ =< 3$I : \ target the column for the char main loop lands here \
+    0 = 3$S : \ zero instr Ptr subindex \
+        3$ P :
+    1 + 1$S :
+    1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
+    -6 C :

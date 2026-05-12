@@ -141,7 +141,7 @@ public:
     }
 
     void insertAll(const list<T>& input, size_t index) {
-        for(int i = 0;i<input.size_;i++) {
+        for(int i = input.size_-1;i>=0;i--) {
             insert(input[i],index);
         }
     }

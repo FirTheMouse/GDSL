@@ -469,14 +469,14 @@ namespace Acorn {
             terminator_positions << sub_instruction_buffer.length(); //So we land just after the terminator
             for(int r=jump_requests.length()-1;r>=0;r--) {
                 jump_request request = jump_requests[r];
-                print("REQUEST ",r," AT ",request.instr_idx," DT ",terminator_positions.length(),"/",request.desired_terminators);
+                //print("REQUEST ",r," AT ",request.instr_idx," DT ",terminator_positions.length(),"/",request.desired_terminators);
                 if(terminator_positions.length()>=request.desired_terminators) {
-                    print("SUBL: ",sub_instruction_buffer.length());
-                    print("TERM POS: ",terminator_positions[request.desired_terminators-1]);
+                    // print("SUBL: ",sub_instruction_buffer.length());
+                    // print("TERM POS: ",terminator_positions[request.desired_terminators-1]);
                     int offset = (terminator_positions[request.desired_terminators-1] - request.instr_idx);
                     sub_instruction_buffer[request.instr_idx] = B(offset);
                     jump_requests.removeAt(r);
-                    print("RESOLVED TO: ",offset);
+                    // print("RESOLVED TO: ",offset);
                 }
             }
         }
@@ -511,8 +511,10 @@ namespace Acorn {
 
             a_handlers.default_function = [this](Context& ctx){}; //Do nothing
             a_handlers[comment_id] = [this](Context& ctx){ //Discard comments
-                ctx.result.removeAt(ctx.index);
-                ctx.index--;
+                if(ctx.index!=0) {
+                    ctx.result.removeAt(ctx.index);
+                    ctx.index--;
+                }
             };
 
             a_handlers[make_tokenized_keyword("movz")] = [this](Context& ctx){ (*ctx.buffer) << MOVZ(con(ctx),con(ctx),con(ctx)); };
@@ -551,6 +553,7 @@ namespace Acorn {
 
             a_handlers[make_tokenized_keyword("cset.eq")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_EQ);};
             a_handlers[make_tokenized_keyword("cset.lt")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_LT);};
+            a_handlers[make_tokenized_keyword("cset.ge")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_GE);};
 
             a_handlers[make_tokenized_keyword("emit_movz_imm")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_emit_movz_imm);};
             a_handlers[make_tokenized_keyword("append_jump")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_append_jump);};

@@ -57,8 +57,10 @@ main:
     | mov 21 22 1 //And right reg
 
     | mov 23 1 1  //Move the reg plate pointer into x23
-    | movz 24 0 0 //Set the reg counter to 0
+    | mov 24 3 0 //Set the reg counter to passed in
     | mov 25 2 1 //Move the instr plate pointer into 25
+
+
 
     //Process the token stream
     loop: 

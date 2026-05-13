@@ -85,7 +85,8 @@ namespace Acorn {
         return col;
     }
 
-    static void write_acorn_types(std::ostream& out, AcornCol& types) {
+    static void write_acorn_types(std::ostream& out, AcornCol& types, int regtick) {
+        write_raw<int>(out,regtick);
         write_acorn_col(out, types);
         for(int i = 0; i < types.length(); i++) {
             AcornCol& type = *(AcornCol*)types[i];
@@ -97,7 +98,8 @@ namespace Acorn {
         }
     }
 
-    static AcornCol read_acorn_types(std::istream& in) {
+    static AcornCol read_acorn_types(std::istream& in, int& regtick) {
+        regtick = read_raw<int>(in);
         AcornCol types = read_acorn_col(in);
         for(uint32_t p = 0; p < types.length(); p++) {
             AcornCol type = read_acorn_col(in);

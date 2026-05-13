@@ -388,7 +388,7 @@ namespace Acorn {
             print("==EMIT BUFFER==");
             for(int i=0;i<emit_buffer.length();i++) {
                 uint32_t instr = emit_buffer[i];
-                print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec);
+                print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
             }
         }
 

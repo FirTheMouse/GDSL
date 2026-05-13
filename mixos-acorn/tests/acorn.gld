@@ -13,8 +13,7 @@
 
 \ (13) iterate over source \
     1$ =< 3$I : \ target the column for the char main loop lands here \
-    0 = 3$S : \ zero instr Ptr subindex \
         3$ P :
     1 + 1$S :
     1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
-    -6 C :
+    -5 C :

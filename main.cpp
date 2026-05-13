@@ -41,12 +41,13 @@ int main(int argc, char* argv[]) {
 
     Acorn::Acorn_Dirt dirt;
     Acorn::init_type_pool();
+    //dirt.run(dirt.process("movz 24 0 0 mov 24 3 0"));
     dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
 
     Acorn::burn_instrs();
     Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"),true);
     Acorn::JIT_Acorn();
-    Acorn::JIT_Ribbon();
+    // Acorn::JIT_Ribbon();
 
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();

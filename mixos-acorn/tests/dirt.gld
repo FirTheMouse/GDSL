@@ -155,6 +155,10 @@ main:
             cmp 1 3 0
             b.eq isRbracket
 
+            movz 3 24 0
+            cmp 1 3 0
+            b.eq isTick
+
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
@@ -167,6 +171,13 @@ main:
 
         isRbracket:
             //Nothing yet
+        b loop_tail
+
+        isTick:
+            movz 3 1 0 //Increment the pipe counter to mark this as non-immediete
+            add 27 27 3 0
+            | mov 20 24 0
+            movz 28 1 0 //Then flag on immedite ourselves
         b loop_tail
 
         isComment:
@@ -218,6 +229,8 @@ main:
                movz 11 1 0  //Set the negator to 1 
         b loop_tail
 
+        //This won't work, opp will overwrite it on the left because it will think it's an immediete, fix later
+        //if I decide to actually use this
         isQmark:
                 movz 3 1 0
                 mov 1 25 0 //Compare against x25, the left/right flag store to check where we should be
@@ -330,7 +343,7 @@ main:
                 mov 0 24 0
                 emit_movz_imm    //Moving the immedite down to be accessible by Acorn
                 | mov 20 2 0     //And have Acorn store it at it's left as expected
-                movz 28 1 0
+                movz 28 1 0     //Flag on immedite
             b isopp_tail
 
         isopp_tail:

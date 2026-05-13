@@ -1,10 +1,13 @@
 #pragma once
 
 #include "../mixos-acorn/Acorn-Script.hpp"
+#include "../mixos-acorn/Acorn-Cols.hpp"
 #include <bitset>
 
 namespace Acorn {
     list<uint32_t> sub_instruction_buffer;
+    list<uint32_t> sub_sub_instruction_buffer;
+    static AcornCol* ribbon_col = nullptr;
     struct jump_request {
         uint32_t instr_idx = 0;
         uint32_t desired_terminators = 0;
@@ -451,6 +454,9 @@ namespace Acorn {
         static void syscall_atzero(uint64_t zero) {print(zero);}
         static void syscall_atone(uint64_t zero, uint64_t one) {print(one);}
         static void syscall_append_to_buffer(uint64_t zero) {sub_instruction_buffer << (uint32_t)zero;}
+        static void syscall_append_to_ribbon(uint64_t zero) { //Unused, from an experiment
+            if(ribbon_col) ribbon_col->push((void*)&zero);
+        }
         static void syscall_emit_movz_imm(uint64_t imm) {
             sub_instruction_buffer << MOVZ(2, imm & 0xFFFF, 0);
             if(imm > 0xFFFF) {
@@ -580,6 +586,7 @@ namespace Acorn {
                 emit_buffer << MOVK(0, (instr >> 16) & 0xFFFF, 16);
                 emit_syscall(ctx,(uint64_t)&syscall_append_to_buffer);
             };
+
         }
 
         virtual Node process(std::string code) override {

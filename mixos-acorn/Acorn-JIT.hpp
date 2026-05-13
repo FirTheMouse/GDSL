@@ -4,6 +4,7 @@
 #pragma once
 
 #include "../mixos-acorn/Acorn-Dirt.hpp"
+#include "../mixos-acorn/Acorn-Cols.hpp"
 
 #ifdef __APPLE__ 
     #include <pthread.h>
@@ -99,6 +100,9 @@ namespace Acorn {
 
         char_class['\\'] = 21; //Comment
 
+        char_class['['] = 22; //Lbracket
+        char_class[']'] = 23; //Rbracket
+
         uint64_t fya64[4]; fya64[0] = 0; fya64[1] = 0; fya64[2] = 0; fya64[3] = 0;
         typedef int (*JitFunc)(const char*, uint32_t, uint8_t*, uint64_t[4]);
         JitFunc func = (JitFunc)buf;
@@ -147,171 +151,6 @@ namespace Acorn {
         }
     }
 
-
-    struct AcornCol {
-        AcornCol(uint32_t _size = 1) : element_size(_size) {}
-        uint8_t* storage = nullptr;
-        uint32_t element_size;
-        uint32_t size = 0;
-        uint32_t capacity = 0;
-        uint32_t tag = 0;
-
-        inline uint32_t length() {return size/ element_size;}
-        inline bool empty() {return size==0;}
-
-        void reserve(uint32_t new_capacity) {
-            if (new_capacity <= capacity) return;
-            
-            uint8_t* newPtr = new uint8_t[new_capacity];
-            for (size_t i = 0; i < size; ++i) {
-                newPtr[i] = std::move(storage[i]);
-            }
-            
-            delete[] storage;
-            storage = newPtr;
-            capacity = new_capacity;
-        }
-
-        void resize(uint32_t new_size) {
-            if (new_size > capacity) {
-                reserve(new_size);
-            }
-            size = new_size;
-        }
-
-        void push(const void* element) {
-            size_t old_size = size;
-            resize(old_size + element_size);
-            memcpy(&storage[old_size], element, element_size);
-        }
-        void operator<<(const void* element) {push(element);}
-        void push_default() {
-            size_t old_size = size;
-            resize(old_size + element_size);
-            memset(&storage[old_size], 0, element_size);
-        }
-        
-        inline void* get(uint32_t index) {return &storage[index * element_size];}
-        inline void* operator[](uint32_t index) {return get(index);}
-        inline void* last() {return get(size-1);}
-
-        inline void set(size_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
-
-        void removeAt(uint32_t index) {
-            size_t byte_start = index * element_size;
-            for(size_t i = byte_start; i < size - element_size; i++) {
-                storage[i] = storage[i + element_size];
-            }
-            resize(size - element_size);
-        }
-
-        void clear() {
-            size = 0;
-        }
-
-        void pop(void* out) {
-            memcpy(out, get(length()-1), element_size);
-            resize(size - element_size);
-        }
-    };
-
-    static void write_acorn_col(std::ostream& out, AcornCol& col) {
-        write_raw<uint32_t>(out, col.element_size);
-        write_raw<uint32_t>(out, col.length());
-        out.write((const char*)col.storage, col.size);
-        write_raw<uint32_t>(out, col.tag);
-    }
-    
-    static AcornCol read_acorn_col(std::istream& in) {
-        AcornCol col;
-        col.element_size = read_raw<uint32_t>(in);
-        uint32_t len = read_raw<uint32_t>(in);
-        col.resize(len * col.element_size);
-        in.read((char*)col.storage, col.size);
-        col.tag = read_raw<uint32_t>(in);
-        return col;
-    }
-
-    static void write_acorn_types(std::ostream& out, AcornCol& types) {
-        write_acorn_col(out, types);
-        for(int i = 0; i < types.length(); i++) {
-            AcornCol& type = *(AcornCol*)types[i];
-            write_acorn_col(out, type);
-            for(int c = 0; c < type.length(); c++) {
-                AcornCol& col = *(AcornCol*)type[c];
-                write_acorn_col(out, col);
-            }
-        }
-    }
-
-    static AcornCol read_acorn_types(std::istream& in) {
-        AcornCol types = read_acorn_col(in);
-        for(uint32_t p = 0; p < types.length(); p++) {
-            AcornCol type = read_acorn_col(in);
-            for(uint32_t i = 0; i < type.length(); i++) {
-                AcornCol col = read_acorn_col(in);
-                type.set(i, (void*)&col);
-            }
-            types.set(p, (void*)&type);
-        }
-        return types;
-    }
-
-    static std::string acorn_type_to_string(AcornCol& type) {
-        list<list<std::string>> lines;
-        for(int c = 0; c < type.length(); c++) {
-            AcornCol& col = *(AcornCol*)type[c];
-            list<std::string> subline;
-            if(type.tag==1) { //For col trunctable plates, we skip if a column starts with 0
-                if(*(uint32_t*)col[0]==0) continue;
-                else subline << (std::to_string(c)+":["+std::to_string(col.element_size)+"]");
-            } else {
-                subline << ("["+std::to_string(col.element_size)+"]");
-            }
-            for(int r = 0; r < col.length(); r++) {
-                if(col.tag==char_id) {
-                    char ch = *(char*)col[r];
-                    if(ch=='\n') {
-                        subline << "\\n";
-                    } else {
-                        subline << std::string(1,ch);
-                    }
-                    // subline << std::to_string(*(uint8_t*)col[r]);
-                } else {
-                    if(col.element_size == 4) {
-                        subline << std::to_string(*(uint32_t*)col[r]);
-                    } else if(col.element_size == 1) {
-                        subline << std::to_string(*(uint8_t*)col[r]);
-                    } else if(col.element_size == 12) {
-                        uint32_t* p = (uint32_t*)col[r];
-                        subline << (std::to_string(p[0])+"|"+
-                                std::to_string(p[1])+"|"+
-                                std::to_string(p[2]));
-                    } else {
-                        subline << ("?["+std::to_string(col.element_size)+"]");
-                    }
-                }
-            }
-            lines << subline;
-        }
-        return print_columnar_table(lines);
-    }
-
-    static std::string acorn_types_to_string(AcornCol& types, list<std::string> type_names) {
-        std::string result = "";
-        for(int t = 0; t < types.length(); t++) {
-            AcornCol& type = *(AcornCol*)types[t];
-            if(t<type_names.length()&&!type_names[t].empty()) {
-                result+=type_names[t]+"\n";
-            } else {
-                result += "Type " + std::to_string(t) + 
-                        " (tag:" + std::to_string(type.tag) + "):\n";
-            }
-            result += acorn_type_to_string(type) + "\n";
-        }
-        return result;
-    }
-
     map<char,list<uint32_t>> instrs; 
 
     static void burn_instrs(){
@@ -322,9 +161,31 @@ namespace Acorn {
             if(i%2==1) {
                 parsing_for = l[i].at(0);
             } else {
-                JIT_dirt(l[i]);
-                instrs[parsing_for] = sub_instruction_buffer;
-                sub_instruction_buffer.clear();
+                if(l[i].empty()) continue;
+                list<std::string> subinstrs = split_str(l[i],'[');
+                for(int c=0;c<subinstrs.length();c++) {
+                    if(subinstrs[c].empty()) continue;
+                    JIT_dirt(subinstrs[c]);
+                    if(c%2!=0) {
+                        std::string subinstr = "";
+                        for(int s=0;s<sub_instruction_buffer.length();s++) {
+                            subinstr+=std::to_string(sub_instruction_buffer[s]);
+                            subinstr+=" => 5$ : 1 + 5$S : ";
+                        }
+                        sub_instruction_buffer.clear();
+                        JIT_dirt(subinstr);
+                    }
+                    if(sub_instruction_buffer.empty()) continue;
+
+                    if(instrs.hasKey(parsing_for)) {
+                        instrs.get(parsing_for).pushAll(sub_instruction_buffer);
+                    }
+                    else {
+                        instrs.put(parsing_for, sub_instruction_buffer);
+                    }
+                    sub_instruction_buffer.clear();
+                }
+                // print(parsing_for,": ",instrs[parsing_for].length());
             }
         }
 
@@ -346,7 +207,7 @@ namespace Acorn {
     };
 
     #define IS_SETUP 1
-    uint32_t instr_r = 64;
+    uint32_t instr_r = 1250;
     uint32_t ribbon_r = 2560;
 
     static void JIT_Acorn(){
@@ -362,13 +223,11 @@ namespace Acorn {
         }
         in.close();
 
-
         print("==EXECUTING ACORN==");
 
-        
 
         std::string source = readFile("mixos-acorn/tests/sock.gld");
-       // source = '\x01' + source + '\x02';
+        //source = '\x01' + source + '\x02';
 
         #if IS_SETUP
             AcornCol types;
@@ -414,11 +273,11 @@ namespace Acorn {
             }
             types.push((void*)&instr_plate);
 
-            print("instr_plate.storage: ", (uint64_t)instr_plate.storage);
-            print("instr_plate[97]: ", (uint64_t)instr_plate[97]);
-            AcornCol& col_a = *(AcornCol*)instr_plate[97]; // 'a' handler
-            print("col_a ptr: ", (uint64_t)&col_a);
-            print("col_a storage: ", (uint64_t)col_a.storage);
+            // print("instr_plate.storage: ", (uint64_t)instr_plate.storage);
+            // print("instr_plate[97]: ", (uint64_t)instr_plate[97]);
+            // AcornCol& col_a = *(AcornCol*)instr_plate[97]; // 'a' handler
+            // print("col_a ptr: ", (uint64_t)&col_a);
+            // print("col_a storage: ", (uint64_t)col_a.storage);
 
             AcornCol string_plate; // " - where strings are stored
             string_plate.element_size = sizeof(AcornCol);
@@ -549,21 +408,28 @@ namespace Acorn {
         
         std::ofstream out2(path, std::ios::binary);
         write_acorn_types(out2,types);
+        out2.close();
 
         path = "mixos-acorn/tests/acornribbon.gld"; 
         std::ofstream out3(path, std::ios::binary);
 
         AcornCol& ribbon = *(AcornCol*)(*(AcornCol*)types[3])[0];
-        uint32_t ribbonlen = 0;
+        list<uint32_t> rinstrs;
+
+        for(auto r : instrs[1]) rinstrs << r; //Preamble
         for(int i=0;i<ribbon.length();i++) {
             uint32_t rib_instr = *(uint32_t*)ribbon[i];
-            if(rib_instr==0) {ribbonlen = i; break;}
+            if(rib_instr==0) {break;}
+            rinstrs << rib_instr;
         }
-        print("Ribbon length: ",ribbonlen,"/",ribbon_r);
-        write_raw(out3,ribbonlen);
-        for(int i=0;i<ribbonlen;i++) {
-            write_raw<uint32_t>(out3,*(uint32_t*)ribbon[i]);
+        for(auto r : instrs[2]) rinstrs << r; //Postamble
+        print("Ribbon length: ",rinstrs.length(),"/",ribbon_r);
+        write_raw<uint32_t>(out3,(uint32_t)rinstrs.length());
+        for(int i=0;i<rinstrs.length();i++) {
+            write_raw<uint32_t>(out3,rinstrs[i]);
+            //print(i,": ",rinstrs[i]);
         }
+        out3.close();
 
         std::string printout = "";
         printout+=acorn_types_to_string(types,{"Reg plate","Instr plate","String plate","Ribbon plate"});
@@ -572,6 +438,8 @@ namespace Acorn {
         });
 
         munmap(buf, byte_size); //Cleanup
+
+        print("ACORN COMPLETE");
     }
 
     static void JIT_Ribbon(){
@@ -581,7 +449,8 @@ namespace Acorn {
         list<uint32_t> emit_buffer;
         uint32_t len = read_raw<uint32_t>(in);
         for(int i=0;i<len;i++) {
-            emit_buffer << read_raw<uint32_t>(in);
+            uint32_t instr = read_raw<uint32_t>(in);
+            emit_buffer << instr;
         }
         in.close();
 
@@ -607,6 +476,8 @@ namespace Acorn {
             AcornCol column;
             column.element_size = 4; //32bits, for one word on a processer
             for(int r=0;r<instr_r;r++) { //64 rows
+                // uint32_t ret = 0xD65F03C0;
+                // column.push((void*)&ret);
                 column.push_default();
             }
             instr_plate.push((void*)&column);
@@ -680,6 +551,8 @@ namespace Acorn {
         #endif
 
         mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
+
+        print("==EXECUTING RIBBON==");
 
         typedef int (*JitFunc)(AcornCol, AcornCol, AcornCol);
         JitFunc func = (JitFunc)buf;

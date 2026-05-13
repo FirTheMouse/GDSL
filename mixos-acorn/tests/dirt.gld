@@ -147,10 +147,26 @@ main:
             cmp 1 3 0
             b.eq isLangle
 
+            movz 3 22 0
+            cmp 1 3 0
+            b.eq isLbracket
+
+            movz 3 23 0
+            cmp 1 3 0
+            b.eq isRbracket
+
         b loop_tail //Branch: skip to the loop tail if no classification (or lack therforeof) catches the char
 
         unclassified:
             //Do nothing
+        b loop_tail
+
+        isLbracket:
+            //Nothing yet
+        b loop_tail
+
+        isRbracket:
+            //Nothing yet
         b loop_tail
 
         isComment:

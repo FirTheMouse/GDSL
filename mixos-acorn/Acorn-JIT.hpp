@@ -74,7 +74,12 @@ namespace Acorn {
 
         mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
 
-        if(include_ambles) print("==EXECUTING==");
+        AcornCol emittarget;
+        if(include_ambles) {
+            print("==EXECUTING==");
+            emittarget.element_size = 4; //uint32_t
+            emitcol = &emittarget;
+        }
         //0 = unclassified
         uint8_t char_class[256] = {0};
         //1 = numbers
@@ -126,8 +131,11 @@ namespace Acorn {
 
         char_class['`'] = 24; //Tick
 
-        uint64_t fya64[4]; fya64[0] = 0; fya64[1] = 0; fya64[2] = 0; fya64[3] = 0;
-        typedef int (*JitFunc)(const char*, uint32_t, uint8_t*, uint64_t[4]);
+        uint64_t fya64[11]; 
+        fya64[0] = 0; fya64[1] = 0; fya64[2] = 0; fya64[3] = 0;
+        fya64[4] = 0; fya64[5] = 0; fya64[6] = 0; fya64[7] = 0;
+        fya64[8] = 0; fya64[9] = 0; fya64[10] = 0;
+        typedef int (*JitFunc)(const char*, uint32_t, uint8_t*, uint64_t[11]);
         JitFunc func = (JitFunc)buf;
 
         uint64_t sp_val;
@@ -142,27 +150,38 @@ namespace Acorn {
         munmap(buf, byte_size); //Cleanup
 
         if(include_ambles) {
-            sub_instruction_buffer.insertAll(preamble,0);
-            sub_instruction_buffer.pushAll(postamble);
+            for(int i=preamble.length()-1;i>=0;i--) {
+                (*emitcol).insert((void*)&preamble[i],0);
+            }
+            for(int i=0;i<postamble.length();i++) {
+                (*emitcol).push((void*)&postamble[i]);
+            }
 
             print("==ACORN BUFFER==");
             path = "mixos-acorn/tests/acornoutput.gld";
             std::ofstream out(path, std::ios::binary);
             if(!out) throw std::runtime_error("Can't write to file: " + path);
-            write_raw<uint32_t>(out,sub_instruction_buffer.length());
-            for(int i=0;i<sub_instruction_buffer.length();i++) {
-                write_raw<uint32_t>(out,sub_instruction_buffer[i]);
-                uint32_t instr = sub_instruction_buffer[i];
+            write_raw<uint32_t>(out,(*emitcol).length());
+            for(int i=0;i<(*emitcol).length();i++) {
+                uint32_t instr = *(uint32_t*)((*emitcol)[i]);
+                write_raw<uint32_t>(out,instr);
                 //print(i,": 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
             }
-            sub_instruction_buffer.clear();
             out.close();
         }
     }
 
-    map<char,list<uint32_t>> instrs; 
+    AcornCol instrs; 
 
     static void burn_instrs(){
+        instrs.element_size = sizeof(AcornCol);
+        instrs.tag = 1; //Make col trunctable
+        for(int c=0;c<256;c++) { //256 columns, one for each char
+            AcornCol column;
+            column.element_size = 4; //32bits, for one word on a processer
+            instrs.push((void*)&column);
+        }
+
         std::string isrc = readFile("mixos-acorn/tests/acorninstrs.gld");
         list<std::string> l = split_str(isrc,'{');
         char parsing_for = 'a';
@@ -171,46 +190,16 @@ namespace Acorn {
                 parsing_for = l[i].at(0);
             } else {
                 if(l[i].empty()) continue;
+                emitcol = (AcornCol*)instrs[parsing_for];
                 JIT_dirt(l[i]);
-                if(sub_instruction_buffer.empty()) continue;
-                if(instrs.hasKey(parsing_for)) {
-                    instrs.get(parsing_for).pushAll(sub_instruction_buffer);
-                }
-                else {
-                    instrs.put(parsing_for, sub_instruction_buffer);
-                }
-                sub_instruction_buffer.clear();
             }
         }
 
-        //Preamble and postamble
-        for(int c=0;c<2;c++) {
-            std::string subinstr = "";
-            if(c==0) {
-                sub_instruction_buffer = preamble;
-                parsing_for = 1;
-            } else if(c==1) {
-                sub_instruction_buffer = postamble;
-                parsing_for = 2;
-            }
-            for(int s=0;s<sub_instruction_buffer.length();s++) {
-                subinstr+=std::to_string(sub_instruction_buffer[s]);
-                subinstr+=" => 5$ : 1 + 5$S : ";
-            }
-            sub_instruction_buffer.clear();
-            JIT_dirt(subinstr);
-            if(sub_instruction_buffer.empty()) continue;
-            if(instrs.hasKey(parsing_for)) {
-                instrs.get(parsing_for).pushAll(sub_instruction_buffer);
-            }
-            else {
-                instrs.put(parsing_for, sub_instruction_buffer);
-            }
-            sub_instruction_buffer.clear();
+        for(int c=0;c<256;c++) { //256 columns, one for each char
+            AcornCol& col = *(AcornCol*)instrs[c];
+            uint32_t ret = 0xD65F03C0;
+            col.push((void*)&ret);
         }
-
-        instrs['v'] = descend;
-        instrs['^'] = ascend;
     };
 
 
@@ -234,7 +223,7 @@ namespace Acorn {
 
 
         std::string source = readFile("mixos-acorn/tests/sock.gld");
-        source = '\x01' + source + '\x02';
+        // source = '\x01' + source + '\x02';
 
         path = "mixos-acorn/tests/acornsock.gld";
 
@@ -261,34 +250,7 @@ namespace Acorn {
             }
             types.push((void*)&reg_plate);
 
-            AcornCol instr_plate; // # - where all the instructions live
-            instr_plate.element_size = sizeof(AcornCol);
-            instr_plate.tag = 1; //Make col trunctable
-            for(int c=0;c<256;c++) { //256 columns, one for each char
-                AcornCol column;
-                column.element_size = 4; //32bits, for one word on a processer
-                list<uint32_t> instr; //Lookup and use
-                if(instrs.hasKey(c)) instr = instrs.get(c);
-                size_t instr_len = instr.length();
-                for(int r=0;r<instr_len;r++) { 
-                    column.push((void*)&instr[r]);
-                }
-                uint32_t ret = 0xD65F03C0;
-                column.push((void*)&ret);
-                // int instr_itr = instr_r - instr_len;
-                // for(int r=0;r<instr_itr;r++) { 
-                //     uint32_t ret = 0xD65F03C0;
-                //     column.push((void*)&ret);
-                // }
-                instr_plate.push((void*)&column);
-            }
-            types.push((void*)&instr_plate);
-
-            // print("instr_plate.storage: ", (uint64_t)instr_plate.storage);
-            // print("instr_plate[97]: ", (uint64_t)instr_plate[97]);
-            // AcornCol& col_a = *(AcornCol*)instr_plate[97]; // 'a' handler
-            // print("col_a ptr: ", (uint64_t)&col_a);
-            // print("col_a storage: ", (uint64_t)col_a.storage);
+            types.push((void*)&instrs); //# - where instructions go
 
             AcornCol string_plate; // " - where strings are stored
             string_plate.element_size = sizeof(AcornCol);

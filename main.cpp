@@ -47,7 +47,6 @@ int main(int argc, char* argv[]) {
     Acorn::burn_instrs();
     Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"),true);
     Acorn::JIT_Acorn();
-    // Acorn::JIT_Ribbon();
 
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();

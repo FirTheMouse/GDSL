@@ -21,6 +21,9 @@
 //  16 = right index
 //  20 = left subindex
 //  24 = right subindex
+//  28 = emitcol
+//  36 = old emitcol
+//  44 = scratch
 // x27 pipe counter
 // x28 is immediate flag
 

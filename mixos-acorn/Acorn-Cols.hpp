@@ -43,6 +43,14 @@ namespace Acorn {
             resize(old_size + element_size);
             memset(&storage[old_size], 0, element_size);
         }
+
+        void insert(const void* element, uint32_t index) {
+            push_default();
+            for(uint32_t i = length()-1; i > index; --i) {
+                memcpy(get(i), get(i-1), element_size);
+            }
+            memcpy(get(index), element, element_size);
+        }
         
         inline void* get(uint32_t index) {return &storage[index * element_size];}
         inline void* operator[](uint32_t index) {return get(index);}

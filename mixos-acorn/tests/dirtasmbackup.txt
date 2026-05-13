@@ -452,32 +452,33 @@ namespace Acorn {
         static void syscall_readchar(uint64_t zero) {print((char)zero);}
         static void syscall_atzero(uint64_t zero) {print(zero);}
         static void syscall_atone(uint64_t zero, uint64_t one) {print(one);}
-        static void syscall_append_to_buffer(uint64_t zero) {uint32_t z = zero; (*emitcol).push((void*)&z);}
+        static void syscall_append_to_buffer(uint64_t zero) {sub_instruction_buffer << (uint32_t)zero;}
         static void syscall_emit_movz_imm(uint64_t imm) {
-            uint32_t instr =  MOVZ(2, imm & 0xFFFF, 0);
-            (*emitcol).push((void*)&instr);
+            sub_instruction_buffer << MOVZ(2, imm & 0xFFFF, 0);
             if(imm > 0xFFFF) {
-                uint32_t movk_instr = MOVK(2, (imm >> 16) & 0xFFFF, 16);
-                (*emitcol).push((void*)&movk_instr);
+                sub_instruction_buffer << MOVK(2, (imm >> 16) & 0xFFFF, 16);
             }
         }
 
         static void syscall_append_jump(uint64_t zero) {
             jump_request request;
-            request.instr_idx = (uint32_t)(*emitcol).length()-1;
+            request.instr_idx = (uint32_t)sub_instruction_buffer.length()-1;
             request.desired_terminators = terminator_positions.length() + (uint32_t)zero + 1;
             jump_requests << request;
         }
 
         static void syscall_resolve_terminator() {
-            terminator_positions << (*emitcol).length(); //So we land just after the terminator
+            terminator_positions << sub_instruction_buffer.length(); //So we land just after the terminator
             for(int r=jump_requests.length()-1;r>=0;r--) {
                 jump_request request = jump_requests[r];
+                //print("REQUEST ",r," AT ",request.instr_idx," DT ",terminator_positions.length(),"/",request.desired_terminators);
                 if(terminator_positions.length()>=request.desired_terminators) {
+                    // print("SUBL: ",sub_instruction_buffer.length());
+                    // print("TERM POS: ",terminator_positions[request.desired_terminators-1]);
                     int offset = (terminator_positions[request.desired_terminators-1] - request.instr_idx);
-                    uint32_t instr = B(offset);
-                    (*emitcol).set(request.instr_idx, (void*)&instr);
+                    sub_instruction_buffer[request.instr_idx] = B(offset);
                     jump_requests.removeAt(r);
+                    // print("RESOLVED TO: ",offset);
                 }
             }
         }

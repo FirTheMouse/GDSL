@@ -116,7 +116,7 @@ namespace Acorn {
             AcornCol& col = *(AcornCol*)type[c];
             list<std::string> subline;
             if(type.tag==1) { //For col trunctable plates, we skip if a column starts with 0
-                if(*(uint32_t*)col[0]==0) continue;
+                if(*(uint32_t*)col[0]==0||*(uint32_t*)col[0]==3596551104) continue;
                 else subline << (std::to_string(c)+":["+std::to_string(col.element_size)+"]");
             } else {
                 subline << ("["+std::to_string(col.element_size)+"]");

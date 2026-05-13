@@ -189,25 +189,62 @@ namespace Acorn {
             }
         }
 
-        //Preamble
-        instrs[1] = {  
-            2847898621,
-            2852127734,
-            2853569524,
-            2853569525,
-            2852193271,
-            1384120344,
-            2852258809
-        };
-        //Postamble
-        instrs[2] = { 
-            2831252477,
-            3596551104
-        };
+        //Preamble and postamble
+        for(int c=0;c<2;c++) {
+            std::string subinstr = "";
+            if(c==0) {
+                sub_instruction_buffer =  {  
+                    2847898621,
+                    2852127734,
+                    2853569524,
+                    2853569525,
+                    2852193271,
+                    1384120344,
+                    2852258809
+                };
+                parsing_for = 1;
+            } else if(c==1) {
+                sub_instruction_buffer =  {  
+                    2831252477,
+                    3596551104
+                };
+                parsing_for = 2;
+            }
+            for(int s=0;s<sub_instruction_buffer.length();s++) {
+                subinstr+=std::to_string(sub_instruction_buffer[s]);
+                subinstr+=" => 5$ : 1 + 5$S : ";
+            }
+            sub_instruction_buffer.clear();
+            JIT_dirt(subinstr);
+            if(sub_instruction_buffer.empty()) continue;
+            if(instrs.hasKey(parsing_for)) {
+                instrs.get(parsing_for).pushAll(sub_instruction_buffer);
+            }
+            else {
+                instrs.put(parsing_for, sub_instruction_buffer);
+            }
+            sub_instruction_buffer.clear();
+        }
+
+        // //Preamble
+        // instrs[1] = {  
+        //     2847898621,
+        //     2852127734,
+        //     2853569524,
+        //     2853569525,
+        //     2852193271,
+        //     1384120344,
+        //     2852258809
+        // };
+        // //Postamble
+        // instrs[2] = { 
+        //     2831252477,
+        //     3596551104
+        // };
     };
 
     #define IS_SETUP 1
-    uint32_t instr_r = 1250;
+    uint32_t instr_r = 64;
     uint32_t ribbon_r = 2560;
 
     static void JIT_Acorn(){
@@ -227,7 +264,7 @@ namespace Acorn {
 
 
         std::string source = readFile("mixos-acorn/tests/sock.gld");
-        //source = '\x01' + source + '\x02';
+        source = '\x01' + source + '\x02';
 
         #if IS_SETUP
             AcornCol types;
@@ -235,7 +272,7 @@ namespace Acorn {
 
             AcornCol reg_plate; // $ - the core plate for fast opperations, all Ptrs
             reg_plate.element_size = sizeof(AcornCol);
-            for(int c=0;c<6;c++) { //32 columns
+            for(int c=0;c<32;c++) { //32 columns
                 AcornCol column;
                 column.element_size = 12; //96bits, for a Ptr
                 for(int r=0;r<6;r++) { //6 rows
@@ -264,11 +301,13 @@ namespace Acorn {
                 for(int r=0;r<instr_len;r++) { 
                     column.push((void*)&instr[r]);
                 }
-                int instr_itr = instr_r - instr_len;
-                for(int r=0;r<instr_itr;r++) { //64 rows
-                    uint32_t ret = 0xD65F03C0;
-                    column.push((void*)&ret);
-                }
+                uint32_t ret = 0xD65F03C0;
+                column.push((void*)&ret);
+                // int instr_itr = instr_r - instr_len;
+                // for(int r=0;r<instr_itr;r++) { 
+                //     uint32_t ret = 0xD65F03C0;
+                //     column.push((void*)&ret);
+                // }
                 instr_plate.push((void*)&column);
             }
             types.push((void*)&instr_plate);
@@ -292,6 +331,8 @@ namespace Acorn {
                 string_plate.push((void*)&column);
             }
             types.push((void*)&string_plate);
+
+
 
             AcornCol ribbon_plate; // 3 - ribbon plate for instructions
             ribbon_plate.element_size = sizeof(AcornCol);
@@ -317,6 +358,7 @@ namespace Acorn {
             }
             types.push((void*)&context_plate);
 
+            //Make instrs executable
             for(int c = 0; c < 256; c++) {
                 AcornCol& col = *(AcornCol*)instr_plate[c];
                 if(col.size == 0) continue;
@@ -335,6 +377,27 @@ namespace Acorn {
                 #endif
                 
                 mprotect(exec_buf, byte_size, PROT_READ | PROT_EXEC);
+                
+                delete[] col.storage;
+                col.storage = (uint8_t*)exec_buf;
+            }
+
+            //Make ribbon executable
+            for(int c = 0; c < 1; c++) {
+                AcornCol& col = *(AcornCol*)ribbon_plate[0];                
+                void* exec_buf = mmap(nullptr, col.size,
+                    PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,
+                    -1, 0);
+                
+                memcpy(exec_buf, col.storage, col.size);
+                
+                #ifdef __APPLE__
+                    pthread_jit_write_protect_np(1);
+                    sys_icache_invalidate(exec_buf, col.size);
+                #endif
+                
+                mprotect(exec_buf, col.size, PROT_READ | PROT_EXEC);
                 
                 delete[] col.storage;
                 col.storage = (uint8_t*)exec_buf;
@@ -416,13 +479,13 @@ namespace Acorn {
         AcornCol& ribbon = *(AcornCol*)(*(AcornCol*)types[3])[0];
         list<uint32_t> rinstrs;
 
-        for(auto r : instrs[1]) rinstrs << r; //Preamble
+        //for(auto r : instrs[1]) rinstrs << r; //Preamble
         for(int i=0;i<ribbon.length();i++) {
             uint32_t rib_instr = *(uint32_t*)ribbon[i];
             if(rib_instr==0) {break;}
             rinstrs << rib_instr;
         }
-        for(auto r : instrs[2]) rinstrs << r; //Postamble
+        //for(auto r : instrs[2]) rinstrs << r; //Postamble
         print("Ribbon length: ",rinstrs.length(),"/",ribbon_r);
         write_raw<uint32_t>(out3,(uint32_t)rinstrs.length());
         for(int i=0;i<rinstrs.length();i++) {
@@ -433,7 +496,7 @@ namespace Acorn {
 
         std::string printout = "";
         printout+=acorn_types_to_string(types,{"Reg plate","Instr plate","String plate","Ribbon plate"});
-        editTextFile("mixos-acorn/tests/printout.txt",[printout](std::string& source){
+        editTextFile("mixos-acorn/tests/printout2.txt",[printout](std::string& source){
             source=printout;
         });
 
@@ -459,7 +522,7 @@ namespace Acorn {
 
         AcornCol reg_plate; // $ - the core plate for fast opperations, all Ptrs
         reg_plate.element_size = sizeof(AcornCol);
-        for(int c=0;c<6;c++) { //32 columns
+        for(int c=0;c<32;c++) { //32 columns
             AcornCol column;
             column.element_size = 12; //96bits, for a Ptr
             for(int r=0;r<6;r++) { //6 rows

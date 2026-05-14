@@ -21,9 +21,13 @@
 //  16 = right index
 //  20 = left subindex
 //  24 = right subindex
-//  28 = emitcol
-//  36 = old emitcol
-//  44 = scratch
+//  28 = scratch num (4 bytes)
+//  32 = emitcol
+//  40 = old emitcol
+//  48 = instr plate
+//  56 = old char
+//  60 = current char
+//  64 = scartch
 // x27 pipe counter
 // x28 is immediate flag
 
@@ -58,6 +62,7 @@ main:
         ldrb 0 20 0     //(*x20)+0 TO x0 / Grab the first char from the source text
         ldrb_reg 1 23 0 //(*23)+x0 TO x1 / Retrive the classifer from the lookup table for the char
 
+        str32 0 26 60 //Store the current char for later
 
             movz 3 21 0
             cmp 1 3 0
@@ -152,11 +157,11 @@ main:
 
             movz 3 22 0
             cmp 1 3 0
-            b.eq isLbracket
+            b.eq isLbrace
 
             movz 3 23 0
             cmp 1 3 0
-            b.eq isRbracket
+            b.eq isRbrace
 
             movz 3 24 0
             cmp 1 3 0
@@ -166,14 +171,6 @@ main:
 
         unclassified:
             //Do nothing
-        b loop_tail
-
-        isLbracket:
-            //Nothing yet
-        b loop_tail
-
-        isRbracket:
-            //Nothing yet
         b loop_tail
 
         isTick:
@@ -329,6 +326,9 @@ main:
             movz 3 1 0      // 1 TO x3 AS 32bits / Move 1 to register 3, so we can increment with it
             add 20 20 3 1   // x20 PLUS x3 TO x20 AS 64bits / Increment our pointer by one to get to the next char
             add 22 22 3 1   // x22 PLUS x3 TO x22 AS 64bits / Increment the index as well
+
+            ldrb 0 20 0  //Grab the first char of the new source
+            str32 0 26 60 //And store it
         b loop_tail 
 
         isopp:
@@ -586,6 +586,56 @@ main:
             movz 11 0 0   //And zero the negator
         b loop_tail
 
+
+        isLbrace:
+            ldr 5 26 48 //Load the instr plate from fya64
+            
+            ldr32 2 26 56 //Load the old char
+
+            ldr32 4 5 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
+            mul 2 2 4 0    // Multiply the offset index in 2
+            ldr 5 5 0        // Follow storage ptr (offset 0) to get into the storage pointer
+            add 5 5 2 1      // Then add the offset from 2 to get to the element in the storage pointer
+
+            ldr 6 26 32 //Store the current emitcol as the old one
+            ldr 6 6 0
+            str 6 26 40
+
+            ldr 6 26 32 //Retrive and write through the emitcol to change where it points
+            str 5 6 0 //Now store the new emitcol
+
+            //Clear everything
+
+            movz 24 0 0 //Clear accumulator
+            movz 11 0 0   //And zero the negator
+
+            movz 25 0 0   //Reset side flag to left
+            movz 3 0 0
+            str32 3 26 0   //Clear opcode register
+            str32 3 26 4    //Clear langle
+            str32 3 26 8   //Clear rangle
+
+            //Clear index and subindex
+            str32 3 26 12
+            str32 3 26 16
+            str32 3 26 20
+            str32 3 26 24
+
+            movz 27 0 0   //Reset pipe counter
+            movz 28 0 0 //Flag off immediate
+        b loop_tail
+
+        isRbrace:
+
+            //Append a return to the end of the buffer
+            //movz 0 3596551104 0 
+            //append
+
+            ldr 5 26 40 //Retrive the old emitcol
+            ldr 6 26 32 //Retrive and write through the emitcol to change where it points
+            str 5 6 0 //Restore the old emitcol
+        b loop_tail
+
         isterminator:
             // |x20 = resolved left address
             // |x21 = resolved right address  
@@ -724,6 +774,22 @@ main:
             cmp 4 3 0
             b.eq emit_e
 
+            movz 3 65 0
+            cmp 4 3 0
+            b.eq emit_a
+
+            movz 3 79 0
+            cmp 4 3 0
+            b.eq emit_o
+
+            movz 3 70 0
+            cmp 4 3 0
+            b.eq emit_f
+
+            movz 3 71 0
+            cmp 4 3 0
+            b.eq emit_g
+
             b emit_done
 
             emit_equals:
@@ -738,7 +804,6 @@ main:
 
                 isimm_equals:
                     | str32 20 21 0 //If immedite
-                    movz 28 0 0 //Flag off immediate
                 b emit_equals_tail
 
                 emit_equals_tail:
@@ -761,7 +826,6 @@ main:
                     | ldr32 4 21 0
                     | add 3 20 4 0
                     | str32 3 21 0
-                    movz 28 0 0 //Flag off immediate
                 b emit_plus_tail
 
                 emit_plus_tail:
@@ -785,7 +849,6 @@ main:
                     | ldr32 4 21 0
                     | sub 3 4 20 0
                     | str32 3 21 0
-                    movz 28 0 0 //Flag off immediate
                 b emit_sub_tail
 
                 emit_sub_tail:
@@ -808,7 +871,6 @@ main:
                     | ldr32 4 21 0
                     | cmp 20 4 0
                     | cset.lt 27
-                    movz 28 0 0 //Flag off immediate
                 b emit_l_tail
 
                 emit_l_tail:
@@ -832,7 +894,6 @@ main:
                     | ldr32 4 21 0
                     | cmp 20 4 0
                     | cset.ge 27
-                    movz 28 0 0 //Flag off immediate
                 b emit_u_tail
 
                 emit_u_tail:
@@ -855,10 +916,98 @@ main:
                     | ldr32 4 21 0
                     | cmp 20 4 0
                     | cset.eq 27
-                    movz 28 0 0 //Flag off immediate
                 b emit_e_tail
 
                 emit_e_tail:
+                    //nothing here
+            b emit_done
+
+            emit_a:
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_a
+
+                //If not an immediate
+                    | ldr32 3 20 0
+                    | ldr32 4 21 0
+                    | and 3 3 4 0
+                    | str32 3 21 0
+                b emit_a_tail
+
+                isimm_a:
+                    | ldr32 4 21 0
+                    | and 3 20 4 0
+                    | str32 3 21 0
+                b emit_a_tail
+
+                emit_a_tail:
+                    //nothing here
+            b emit_done
+
+            emit_o:
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_o
+
+                //If not an immediate
+                    | ldr32 3 20 0
+                    | ldr32 4 21 0
+                    | orr 3 3 4 0
+                    | str32 3 21 0
+                b emit_o_tail
+
+                isimm_o:
+                    | ldr32 4 21 0
+                    | orr 3 20 4 0
+                    | str32 3 21 0
+                b emit_o_tail
+
+                emit_o_tail:
+                    //nothing here
+            b emit_done
+
+            emit_f:
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_f
+
+                //If not an immediate
+                    | ldr32 3 20 0
+                    | ldr32 4 21 0
+                    | lsl 3 4 3 0
+                    | str32 3 21 0
+                b emit_f_tail
+
+                isimm_f:
+                    | ldr32 4 21 0
+                    | lsl 3 4 20 0
+                    | str32 3 21 0
+                b emit_f_tail
+
+                emit_f_tail:
+                    //nothing here
+            b emit_done
+
+
+            emit_g:
+                movz 3 1 0
+                cmp 28 3 0
+                b.eq isimm_g
+
+                //If not an immediate
+                    | ldr32 3 20 0
+                    | ldr32 4 21 0
+                    | lsr 3 4 3 0
+                    | str32 3 21 0
+                b emit_g_tail
+
+                isimm_g:
+                    | ldr32 4 21 0
+                    | lsr 3 4 20 0
+                    | str32 3 21 0
+                b emit_g_tail
+
+                emit_g_tail:
                     //nothing here
             b emit_done
 
@@ -879,6 +1028,7 @@ main:
                 str32 3 26 24
 
                 movz 27 0 0   //Reset pipe counter
+                movz 28 0 0 //Flag off immediate
                 resolve_terminator
         b loop_tail
 
@@ -887,6 +1037,10 @@ main:
             movz 3 1 0      // 1 TO x3 AS 32bits / Move 1 to register 3, so we can increment with it
             add 20 20 3 1   // x20 PLUS x3 TO x20 AS 64bits / Increment our pointer by one to get to the next char
             add 22 22 3 1   // x22 PLUS x3 TO x22 AS 64bits / Increment the index as well
+
+            //Swap the curent char to the old char slot
+            ldr32 0 26 60
+            str32 0 26 56
 
             cmp 22 21 1    // x22 MINUS x21 AS 64bits / Check if index (x22) is less than length (x21)
 

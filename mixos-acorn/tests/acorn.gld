@@ -2,18 +2,21 @@
 \ 1$ = source Ptr \
 \ 2$ = source length \
 \ 3$ = instr Ptr \
-\ 4$ = instr length \
+\ 4$ = old char \
 \ 5$ = output Ptr \
 
 2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
 1 = 3$ : 1 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
-3 = 5$ : 0 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
+3 = 5$ : 0 = 5$I : 0 = 5$S : \ (3) ptr to instr out \ 
 
 \ +0 / -0 \
 
 \ (13) iterate over source \
     1$ =< 3$I : \ target the column for the char main loop lands here \
+    1$ =< 5$I : \ target the emission plate \
+    0 = 5$S : \ and reset emisson plate subindex \
         3$ P :
+    1$ =< 4$ :
     1 + 1$S :
     1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
-    -5 C :
+    -8 C :

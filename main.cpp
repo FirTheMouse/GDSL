@@ -1,17 +1,17 @@
-#include "modules/GDSL-Test.hpp"
-#include "modules/Q-HTML.hpp"
-#include "modules/GDSL-C.hpp"
-#include "modules/GDSL-LISP.hpp"
-#include "modules/GDSL-TwigSnap.hpp"
-#include "modules/GDSL-Script.hpp"
-#include "modules/GDSL-GQL.hpp"
-#include "modules/GDSL-Thistle.hpp"
-#include "modules/GDSL-PineNeedle.hpp"
-#include "mixos-acorn/Acorn-Kernel.hpp"
+// #include "modules/GDSL-Test.hpp"
+// #include "modules/Q-HTML.hpp"
+// #include "modules/GDSL-C.hpp"
+// #include "modules/GDSL-LISP.hpp"
+// #include "modules/GDSL-TwigSnap.hpp"
+// #include "modules/GDSL-Script.hpp"
+// #include "modules/GDSL-GQL.hpp"
+// #include "modules/GDSL-Thistle.hpp"
+// #include "modules/GDSL-PineNeedle.hpp"
+// #include "mixos-acorn/Acorn-Kernel.hpp"
 #include "mixos-acorn/Acorn-Dirt.hpp"
 #include "mixos-acorn/Acorn-JIT.hpp"
 
-using namespace GDSL;
+// using namespace GDSL;
 
 int main(int argc, char* argv[]) {
     // if(argc < 2) {
@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
     //GDSL::test_module("modules/tests/ctest.gld");
 
     print("TEST START");
-    g_ptr<Node> root = nullptr;
+    // g_ptr<Node> root = nullptr;
 
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
@@ -37,16 +37,82 @@ int main(int argc, char* argv[]) {
     // Acorn::init_type_pool();
     // kernel.run(kernel.process(readFile("mixos-acorn/tests/acorntest.gld")));
 
+    // Acorn::Acorn_Dirt dirt;
+    // Acorn::init_type_pool();
+    // dirt.run(dirt.process(
+    //     "movz 3 42 0 "   // load 42 into x3
+    //     "and 0 3 3 0 "   // x0 = x3 & x3 (just moves 42 into x0 via AND)
+    //     "ret"
+    // ));
+    // Acorn::JIT_basic();
+    // print("EXPECTED 42");
 
+    // dirt.run(dirt.process(
+    //     "movz 3 2 0 "
+    //     "movz 4 5 0 "
+    //     "lsl 0 3 4 0 " 
+    //     "ret"
+    // ));
+    // Acorn::JIT_basic();
+    // print("EXPECTED 64");
+
+    // dirt.run(dirt.process(
+    //     "movz 3 168 0 "   // x3 = 168
+    //     "movz 4 2 0 "     // x4 = 2
+    //     "lsr 0 3 4 0 "    // x0 = 168 >> 2 = 42
+    //     "ret"
+    // ));
+    // Acorn::JIT_basic();
+    // print("EXPECTED 42");
+
+    // dirt.run(dirt.process(
+    //     "movz 3 42 0 "    // x3 = 42  (0b00101010)
+    //     "movz 4 21 0 "    // x4 = 21  (0b00010101)
+    //     "orr 0 3 4 0 "    // x0 = 42 | 21 = 63
+    //     "ret"
+    // ));
+    // Acorn::JIT_basic();
+    // print("EXPECTED 63");
+
+    // uint32_t instr = Acorn::Acorn_Dirt::MOVZ(2,0,0);
+    // print("movz 2 0 0 : 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
+
+    // instr = Acorn::Acorn_Dirt::MOVK(2,0,16,1);
+    // print("movk 2 0 16 1 : 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
+
+    // instr = Acorn::Acorn_Dirt::MOVZ(2,2,0);
+    // print("movz 2 2 0 : 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
 
     Acorn::Acorn_Dirt dirt;
     Acorn::init_type_pool();
-    //dirt.run(dirt.process("movz 24 0 0 mov 24 3 0"));
     dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
 
-    Acorn::burn_instrs();
-    Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"),true);
+    Acorn::burn_instrs(readFile("mixos-acorn/tests/acorninsx.gld"));
+    Acorn::resolve_instr_file("mixos-acorn/tests/acorninstrs.gld");
+    Acorn::burn_instrs(readFile("mixos-acorn/tests/acorninstrs.gld"));
+    Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"));
     Acorn::JIT_Acorn();
+    Acorn::JIT_Acorn(3);
+
+    //    00000000000|0000000000000000|00000 start with 0
+    //    00000000000|0000000000000000|00010 make 2
+    //    00000000000|0000011111111111|11111 make 65535
+    //    00000000000|0000000000000000|00010 and mask
+    //    00000000000|0000000000000010|00000 left shift by 5
+    //    01010010100|0000000000000000|00010 or mask
+
+    //    01010010100|0000000000000000|10110  suppoused to be mov 2 2 0
+    //    01010010100|0000000000000010|00010
+
+    //    01010010100|0000000000000010|00010
+
+    //    01010010100|0000000000000010|10010  suppoused to be mov 2 4 0
+    //    01010010100|0000000000000100|00010
+
+    //    01010010100|0000000000001010|00010  suppoused to be mov 2 6 0
+    //    01010010100|0000000000000110|00010
+
+    //    01010010100|0000000000000110|00010
 
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();

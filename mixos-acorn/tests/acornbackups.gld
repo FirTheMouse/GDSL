@@ -248,33 +248,105 @@ Iteraton Four
     -13 C :
 
 
+Iteration Five
+\ 0$ = free as null \
+\ 1$ = source Ptr \
+\ 2$ = source length \
+\ 3$ = instr Ptr \
+\ 4$ = instr length \
+\ 5$ = output Ptr \
 
-    | movz 15 4 0
-            | mov 20 21 1
-            | ldr32 5 20 0 
-            | ldr32 6 20 4   
-            | ldr32 7 20 8  
+2 = 1$ : 0 = 1$I : 0 = 1$S : \ (3) Ptr to source  \
+1 = 3$ : 1 = 3$I : 0 = 3$S : \ (3) Ptr to instr 0 \
+3 = 5$ : 0 = 5$I : 0 = 5$S : \ (3) Ptr to output  \
 
-            | mov 20 22 1
+\ +0 / -0 \
 
-            | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
-            | mul 2 5 4 0    // Multiply the offset index in 5, which was put in place by the emit_movz_imm, by the element size
-            | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
-            | add 20 20 2 1      // Then add the offset from 5 to get to the element in the storage pointer
+\ (13) iterate over source \
+    1$ =< 3$I : \ target the column for the char main loop lands here \
+        3$ P :
+    1 + 1$S :
+    1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
+    -5 C :
 
-            | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
-            | mul 2 6 4 0    // Multiply the offset index in 6, which was put in place by the emit_movz_imm, by the element size
-            | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
-            | add 20 20 2 1      // Then add the offset from 6 to get to the element in the storage pointer
 
-            | ldr32 4 20 8   // Load the element size, which is 8 bytes offset (first 8 bytes are the storage pointer)
-            | mul 2 7 4 0    // Multiply the offset index in 7, which was put in place by the emit_movz_imm, by the element size
-            | ldr 20 20 0        // Follow storage ptr (offset 0) to get into the storage pointer
-            | add 20 20 2 1      // Then add the offset from 7 to get to the element in the storage pointer
 
-            | stp 29 30 31 -2
-            | blr 20
-            | ldp 29 30 31 2
 
-            movz 24 0 0   //Reset accumulator
-            movz 11 0 0   //And zero the negator
+The standard way to emit immedites, annotated
+    \ split 9$ into low and high 16 bits \
+    9$ = 10$ :
+    65535 A 10$ :       \ 10$ = low 16 \
+    16 G 9$ :           \ 9$ = high 16 \
+
+    \ build MOVZ \
+    5 F 10$ :           \ shift low16 into position \
+    1384120322 O 10$ :  \ OR into MOVZ base \
+    10$ => 5$ : 1 + 5$S :
+
+    \ build MOVK \
+    5 F 9$ :            \ shift high16 into position \
+    4070572034 O 9$ :   \ OR into MOVK base (reg 2, hw=16) \
+    9$ => 5$ : 1 + 5$S :
+
+
+Without annotation
+
+9$ = 10$ : 65535 A 10$ : 16 G 9$ :  \ split bits \
+5 F 10$ : 1384120322 O 10$ : 10$ => 5$ : 1 + 5$S : \ movz \
+5 F 9$ :  4070572034 O 9$ : 9$ => 5$ : 1 + 5$S   : \ movk \
+
+
+Instructions backup
+    1{1=9$ :}
+    2{2=9$ :}
+    3{3=9$ :}
+    4{4=9$ :}
+    5{5=9$ :}
+    6{6=9$ :}
+    7{7=9$ :}
+
+    :{ 
+        6$ = 6_ :
+        7$ = 7_ :
+        v
+        7$ => 0$ :
+        ^
+    }
+
+    ${
+        \|$\
+
+        \|\
+    }
+
+    !{ 
+        6$ = 6_ :
+        v
+        0 = 0$ : 6$ = 0$I : 0 = 0$S :
+        ^
+    }
+
+    _{
+        6$ = 6_ :
+        v
+        ` = 1$ : 1 + 1$ :
+        0 = 0$ : 6$ = 0$I : 1$ = 0$S :
+        ^
+    }
+
+    ={
+        6$ = 7$ :
+        1 = 8$ :
+    }
+
+    ~{{
+        3 = 5$ : 4$ = 5$I : 0 = 5$ :
+    }
+
+    ~}{
+        \ this is for $ \
+        6$ = 6_ :
+        v
+        0 = 0$ : 6$ = 0$I : ` = 0$S :
+        ^
+    }

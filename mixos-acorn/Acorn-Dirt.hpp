@@ -370,6 +370,47 @@ namespace Acorn {
             emit_return();
         }
 
+        //And
+        uint32_t AND_reg(int rd, int rn, int rm, int sf = 0) {
+            return (sf << 31)
+                | (0b00001010000 << 21)
+                | ((rm & 0x1F) << 16)
+                | (0 << 10)            // shift = 0
+                | ((rn & 0x1F) << 5)
+                | (rd & 0x1F);
+        }
+
+        //Or
+        uint32_t ORR_reg(int rd, int rn, int rm, int sf = 0) {
+            return (sf << 31)
+                | (0b00101010000 << 21)
+                | ((rm & 0x1F) << 16)
+                | (0 << 10)
+                | ((rn & 0x1F) << 5)
+                | (rd & 0x1F);
+        }
+
+        //Shift left
+        static uint32_t LSL_reg(int rd, int rn, int rm, int sf = 0) {
+            return (sf << 31)
+                | (0b0011010110 << 21)
+                | ((rm & 0x1F) << 16)
+                | (0b001000 << 10)     // LSLV opcode
+                | ((rn & 0x1F) << 5)
+                | (rd & 0x1F);
+        }
+        
+        //Shift right
+        static uint32_t LSR_reg(int rd, int rn, int rm, int sf = 0) {
+            return (sf << 31)
+                | (0b0011010110 << 21)
+                | ((rm & 0x1F) << 16)
+                | (0b001001 << 10)     // LSRV opcode
+                | ((rn & 0x1F) << 5)
+                | (rd & 0x1F);
+        }
+
+
         static void jint() {
             print("jint.");
         }
@@ -533,6 +574,10 @@ namespace Acorn {
             a_handlers[make_tokenized_keyword("stp")]  = [this](Context& ctx){ (*ctx.buffer) << STP(con(ctx),con(ctx),con(ctx),con(ctx)); };
             a_handlers[make_tokenized_keyword("ldp")]  = [this](Context& ctx){ (*ctx.buffer) << LDP(con(ctx),con(ctx),con(ctx),con(ctx)); };
             a_handlers[make_tokenized_keyword("ldrb")] = [this](Context& ctx){ (*ctx.buffer) << LDRB(con(ctx),con(ctx),con(ctx));};
+            a_handlers[make_tokenized_keyword("and")] = [this](Context& ctx){ (*ctx.buffer) << AND_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("orr")] = [this](Context& ctx){ (*ctx.buffer) << ORR_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("lsl")] = [this](Context& ctx){ (*ctx.buffer) << LSL_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
+            a_handlers[make_tokenized_keyword("lsr")] = [this](Context& ctx){ (*ctx.buffer) << LSR_reg(con(ctx),con(ctx),con(ctx),con(ctx)); };
             //a_handlers[make_tokenized_keyword("adr")] = [this](Context& ctx){ (*ctx.buffer) << LDRB(con(ctx),con(ctx),con(ctx));};
 
             a_handlers[make_tokenized_keyword("ldrb_reg")] = [this](Context& ctx){ (*ctx.buffer) << LDRB_reg(con(ctx),con(ctx),con(ctx));};
@@ -564,6 +609,7 @@ namespace Acorn {
             a_handlers[make_tokenized_keyword("atone")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_atone);};
             a_handlers[make_tokenized_keyword("jint")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_jint);};
             a_handlers[make_tokenized_keyword("jont")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_jont);};
+            a_handlers[make_tokenized_keyword("append")] = [this](Context& ctx){emit_syscall(ctx,(uint64_t)&syscall_append_to_buffer);};
             a_handlers[make_tokenized_keyword("wub")] = [this](Context& ctx){(*ctx.buffer) << MOVZ(0,7,0);}; //For security reasons
 
 
@@ -608,6 +654,7 @@ namespace Acorn {
                 write_raw<uint32_t>(out,emit_buffer[i]);
             }
             out.close();
+            emit_buffer.clear();
         }
 
     };

@@ -57,6 +57,24 @@ static inline std::string bg(const std::string& text, int r, int g, int b) {
   return "\x1b[48;2;"+std::to_string(r)+";"+std::to_string(g)+";"+std::to_string(b)+"m"+text+"\x1b[0m";
 }
 
+
+std::string to_bin(uint32_t n) {
+  std::string s = "";
+  for(int i = 31; i >= 0; i--) {
+      s += ((n >> i) & 1) ? '1' : '0';
+  }
+  return s;
+}
+
+std::string to_hex(uint32_t n) {
+  const char digits[] = "0123456789ABCDEF";
+  std::string s = "0x";
+  for(int i = 28; i >= 0; i -= 4) {
+      s += digits[(n >> i) & 0b1111];
+  }
+  return s;
+}
+
 static std::string ftime(double t) 
 {
   if(t >= 100000000) {

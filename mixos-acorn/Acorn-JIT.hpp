@@ -252,6 +252,7 @@ namespace Acorn {
         instrs.tag = 1; //Make col trunctable
         for(int c=0;c<256;c++) { //256 columns, one for each char
             AcornCol column;
+            column.tag = 2; //Print as instrs
             column.element_size = 4; //32bits, for one word on a processer
             instrs.push((void*)&column);
         }
@@ -272,7 +273,7 @@ namespace Acorn {
     };
 
     std::string padding = "    ";
-    static std::string instr_as_string(char c) {
+    static std::string instr_as_buffer(char c) {
         std::string to_return = "";
         AcornCol& col = *(AcornCol*)instrs[c];
         for(int i=0;i<col.length();i++) {
@@ -283,24 +284,39 @@ namespace Acorn {
         return to_return;
     }
 
+    static std::string instr_to_string(AcornCol instrplate, char c) {
+        std::string to_return = "";
+        AcornCol& col = *(AcornCol*)instrplate[c];
+        for(int i=0;i<col.length();i++) {
+            uint32_t instr = *(uint32_t*)col[i];
+            if(instr==0) continue;
+            std::string s = disassemble(instr);
+            if(s.find("?")!=std::string::npos) to_return+=std::to_string(i)+": "+to_hex(instr)+" : "+to_bin(instr)+" : "+std::to_string(instr)+"\n";
+            else to_return+=std::to_string(i)+": "+s+"\n";
+        }
+        return to_return;
+    }
+
     static void splice_immediates_into_instr(std::string& instr) {
         list<std::string> s = split_str(instr,'\n');
         for(int i = s.length()-1; i>=0;i--) {
             if(s[i]==(padding+"4072669154 => 5$ : 1 + 5$S :")) {
+                std::string to_insert = "\n";
+                bool can_continue = false;
                 if(s[i-1]==(padding+"1386217442 => 5$ : 1 + 5$S :")) { //Move accumulator
-                    s.removeAt(i); s.removeAt(i-1); //Remove the two canary instrs
-                    std::string to_insert = "\n";
-                    to_insert+=padding+"9$ = 10$ : 65535 A 10$ : 16 G 9$ :\n";
-                    to_insert+=padding+"5 F 10$ : 1384120322 O 10$ : 10$ => 5$ : 1 + 5$S :\n";
-                    to_insert+=padding+"5 F 9$ :  4070572034 O 9$ : 9$ => 5$ : 1 + 5$S   :\n";
-                    s.insert(to_insert,i);
-                } else if(s[i-1]==(padding+"1386217410 => 5$ : 1 + 5$S :")) { //Move left/right flag
-                    std::string to_insert = "\n";
-                    to_insert+=padding+"9$I = 10$ : 65535 A 10$ : 16 G 9$I :\n";
-                    to_insert+=padding+"5 F 10$ : 1384120322 O 10$ : 10$ => 5$ : 1 + 5$S :\n";
-                    to_insert+=padding+"5 F 9$I :  4070572034 O 9$I : 9$I => 5$ : 1 + 5$S   :\n";
-                    s.insert(to_insert,i);
+                    to_insert+=padding+"9$ = 9$S :\n";
+                    can_continue = true;
                 }
+                if(s[i-1]==(padding+"1386217410 => 5$ : 1 + 5$S :")) { //Move left/right flag
+                    to_insert+=padding+"10$ = 9$S :\n";
+                    can_continue = true;
+                }
+                if(!can_continue) continue;
+                s.removeAt(i); s.removeAt(i-1); //Remove the two canary instrs
+                to_insert+=padding+"9$S = 9$I : 65535 A 9$I : 16 G 9$S :\n";
+                to_insert+=padding+"5 F 9$I : 1384120322 O 9$I : 9$I => 5$ : 1 + 5$S :\n";
+                to_insert+=padding+"5 F 9$S : 4070572034 O 9$S : 9$S => 5$ : 1 + 5$S   :\n";
+                s.insert(to_insert,i-1);
             }
         }
         instr.clear(); for(auto l : s) instr+=l+"\n";
@@ -311,7 +327,7 @@ namespace Acorn {
             for(int i=0;i<s.length();i++) {
                 if(s.at(i)=='\\'&&s.at(i+1)=='|') {
                     if(s.at(i+2)=='\\') continue;
-                    std::string instr = instr_as_string(s.at(i+2));
+                    std::string instr = instr_as_buffer(s.at(i+2));
                     splice_immediates_into_instr(instr);
                     for(int j=i+4;j<s.length();j++) {
                         if(s.at(j)=='\\'&&s.at(j+1)=='|') {
@@ -408,7 +424,7 @@ namespace Acorn {
             for(int c=0;c<256;c++) { //256 columns, one for each char
                 AcornCol column;
                 column.element_size = 4; //32bits, instruction size
-                column.tag = 1;
+                column.tag = 2; //To print as instructions
                 column.resize(ribbon_r*4);
                 memset(column.storage, 0, column.size);
                 uint32_t ret = 0xD65F03C0;
@@ -460,6 +476,9 @@ namespace Acorn {
                     instrcol.set(r,stagecol[r]);
                 }
             }
+
+            print("INSTR $");
+            print(instr_to_string(instrplate,'$'));
         }
         
 

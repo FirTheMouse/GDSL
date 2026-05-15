@@ -691,6 +691,12 @@ namespace Acorn {
         }
     }
 
+    std::string pad_str(const std::string& s, uint32_t width) {
+        std::string to_return = s;
+        while(width>to_return.length()) to_return+=" ";
+        return to_return;
+    }
+
     std::string center_pad(const std::string& s, uint32_t width) {
         if(s.length() >= width) return s;
         uint32_t total_pad = width - s.length();
@@ -704,6 +710,90 @@ namespace Acorn {
         uint32_t digits = 0;
         while(n > 0) { n /= 10; digits++; }
         return digits;
+    }
+    
+
+    std::string disassemble(uint32_t instr) {
+        if(instr==0) return "NULL";
+        if(instr==0xD65F03C0) return "ret";
+
+        uint32_t op9 = (instr >> 23) & 0b111111111;
+        uint32_t op7 = (instr >> 24) & 0b11111110;
+
+        if(op9 == 0b010100101) { // MOVZ sf=0
+            int rd    = instr & 0b11111;
+            int imm16 = (instr >> 5) & 0b1111111111111111;
+            return "movz " + std::to_string(rd) + " " + std::to_string(imm16) + " 0";
+        }
+        if(op9 == 0b110100101) { // MOVZ sf=1
+            int rd    = instr & 0b11111;
+            int imm16 = (instr >> 5) & 0b1111111111111111;
+            return "movz " + std::to_string(rd) + " " + std::to_string(imm16) + " 1";
+        }
+
+
+        if((instr & 0b01111111100000000000000000000000) == 0b01110010100000000000000000000000) {
+            int rd    =  instr & 0b11111;
+            int imm16 = (instr >> 5) & 0b1111111111111111;
+            int hw    = (instr >> 21) & 0b11;
+            int sf    = (instr >> 31) & 1;
+            return "movk " + std::to_string(rd) + " " + std::to_string(imm16) + " " + std::to_string(hw*16) + " " + std::to_string(sf);
+        }
+
+        if((instr & 0b01111111001000000000001111100000) == 0b00101010000000000000001111100000) {
+            int rd = instr & 0b11111;
+            int rm = (instr >> 16) & 0b11111;
+            int sf = (instr >> 31) & 1;
+            return "mov " + std::to_string(rd) + " " + std::to_string(rm) + " " + std::to_string(sf);
+        }
+
+        if((instr & 0b01111111111000000000000000000000) == 0b00001011000000000000000000000000) {
+            int rd = instr & 0b11111;
+            int rn = (instr >> 5) & 0b11111;
+            int rm = (instr >> 16) & 0b11111;
+            int sf = (instr >> 31) & 1;
+            return "add " + std::to_string(rd) + " " + std::to_string(rn) + " " + std::to_string(rm) + " " + std::to_string(sf);
+        }
+
+        if((instr & 0b01111111111000000000000000000000) == 0b00011011000000000000000000000000) {
+            int rd = instr & 0b11111;
+            int rn = (instr >> 5) & 0b11111;
+            int rm = (instr >> 16) & 0b11111;
+            int sf = (instr >> 31) & 1;
+            return "mul " + std::to_string(rd) + " " + std::to_string(rn) + " " + std::to_string(rm) + " " + std::to_string(sf);
+        }
+
+        if((instr & 0b11111111110000000000000000000000) == 0b10111001010000000000000000000000) {
+            int rt     = instr & 0b11111;
+            int rn     = (instr >> 5) & 0b11111;
+            int offset = ((instr >> 10) & 0b111111111111) * 4;
+            return "ldr32 " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+        }
+
+        if((instr & 0b11111111110000000000000000000000) == 0b11111001010000000000000000000000) {
+            int rt     = instr & 0b11111;
+            int rn     = (instr >> 5) & 0b11111;
+            int offset = ((instr >> 10) & 0b111111111111) * 8;
+            return "ldr " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+        }
+
+        if((instr & 0b11111111110000000000000000000000) == 0b10111001000000000000000000000000) {
+            int rt     = instr & 0b11111;
+            int rn     = (instr >> 5) & 0b11111;
+            int offset = ((instr >> 10) & 0b111111111111) * 4;
+            return "str32 " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+        }
+
+        if((instr & 0b11111111110000000000000000000000) == 0b11111001000000000000000000000000) {
+            int rt     = instr & 0b11111;
+            int rn     = (instr >> 5) & 0b11111;
+            int offset = ((instr >> 10) & 0b111111111111) * 4;
+            return "str " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+        }
+
+
+
+        return "   ?   ";
     }
 
     std::string print_columnar_table(list<list<std::string>>& lines) {

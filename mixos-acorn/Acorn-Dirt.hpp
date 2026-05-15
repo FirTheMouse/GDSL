@@ -13,6 +13,7 @@ namespace Acorn {
     };
     list<jump_request> jump_requests;
     list<int> terminator_positions;
+
     struct Acorn_Dirt : public virtual Compiler_Unit {
         Acorn_Dirt() {init();}
         

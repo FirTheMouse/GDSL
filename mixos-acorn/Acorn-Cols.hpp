@@ -140,6 +140,12 @@ namespace Acorn {
                         subline << std::string(1,ch);
                     }
                     // subline << std::to_string(*(uint8_t*)col[r]);
+                } else if(col.tag==2) { //Print as instr
+                    uint32_t instr = *(uint32_t*)col[r];
+                    std::string s = disassemble(instr);
+                    if(s.find("?")!=std::string::npos) subline << to_hex(instr)+" : "+to_bin(instr)+" : "+std::to_string(instr);
+                    else subline << s;
+                    //subline << to_hex(instr)+" : "+to_bin(instr)+" : "+pad_str(std::to_string(instr),10)+" : "+disassemble(instr);
                 } else {
                     if(col.element_size == 4) {
                         subline << std::to_string(*(uint32_t*)col[r]);

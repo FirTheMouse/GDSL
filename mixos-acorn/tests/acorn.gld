@@ -11,12 +11,10 @@
 
 \ +0 / -0 \
 
-\ (13) iterate over source \
+\ (6) iterate over source \
     1$ =< 3$I : \ target the column for the char main loop lands here \
-    1$ =< 5$I : \ target the emission plate \
-    0 = 5$S : \ and reset emisson plate subindex \
         3$ P :
     1$ =< 4$ :
     1 + 1$S :
     1$S L 2$  : \ keep going until it's equal to 2$ (our iteration ammount) \
-    -8 C :
+    -6 C :

@@ -277,8 +277,10 @@ namespace Acorn {
         std::string to_return = "";
         AcornCol& col = *(AcornCol*)instrs[c];
         for(int i=0;i<col.length();i++) {
+            uint32_t instr = *(uint32_t*)col[i];
+            if(instr==3596551104) continue; //Don't emit the returns at the end
             to_return+=padding;
-            to_return+=std::to_string(*(uint32_t*)col[i]);
+            to_return+=std::to_string(instr);
             to_return+=" => 5$ : 1 + 5$S :\n";
         }
         return to_return;
@@ -404,21 +406,21 @@ namespace Acorn {
             }
             types.push((void*)&string_plate);
             
-            // AcornCol ribbon_plate; // 3 - Ribbon plate for output
-            // ribbon_plate.tag = 1;
-            // ribbon_plate.element_size = sizeof(AcornCol);
-            // for(int c=0;c<256;c++) { //256 columns, one for each char
-            //     AcornCol column;
-            //     column.element_size = 4; //32bits, instruction size
-            //     column.resize(ribbon_r*4);
-            //     memset(column.storage, 0, column.size);
-            //     uint32_t ret = 0xD65F03C0;
-            //     column.set(0,(void*)&ret);
-            //     ribbon_plate.push((void*)&column);
-            // }
-            // types.push((void*)&ribbon_plate);
+            AcornCol ribbon_plate; // 3 - Ribbon plate for output
+            ribbon_plate.element_size = sizeof(AcornCol);
+            for(int c=0;c<2;c++) { //2 columns
+                AcornCol column;
+                column.element_size = 4; //32bits, instruction size
+                column.tag = 2; //To print as instructions
+                column.resize(ribbon_r*4);
+                memset(column.storage, 0, column.size);
+                uint32_t ret = 0xD65F03C0;
+                column.set(0,(void*)&ret);
+                ribbon_plate.push((void*)&column);
+            }
+            types.push((void*)&ribbon_plate);
 
-            AcornCol instrbuff_plate; // 3 - Instr buffer plate for instructions
+            AcornCol instrbuff_plate; // 4 - Instr buffer plate for instructions
             instrbuff_plate.tag = 1;
             instrbuff_plate.element_size = sizeof(AcornCol);
             for(int c=0;c<256;c++) { //256 columns, one for each char
@@ -448,37 +450,40 @@ namespace Acorn {
             std::ifstream in2(path, std::ios::binary);
             types = read_acorn_types(in2,regtick);
 
-            AcornCol string_plate; // " - where strings are stored
-            string_plate.element_size = sizeof(AcornCol);
-            for(int c=0;c<1;c++) { //1 column, because we've got a lot of rows and this is for tests
-                AcornCol column;
-                column.element_size = 4; //32bits, for one char (padded)
-                column.tag = char_id;
-                for(int r=0;r<source.length();r++) { //as many rows as in source
-                    uint32_t ch = source.at(r);
-                    column.push((void*)&ch);
+
+            if(stage==0) { //If we're executing a ribbon (compiled program)
+
+
+            } else { //If we're burning from one plate to the other (like a stage swap during compilation)
+                AcornCol string_plate; // " - where strings are stored
+                string_plate.element_size = sizeof(AcornCol);
+                for(int c=0;c<1;c++) { //1 column, because we've got a lot of rows and this is for tests
+                    AcornCol column;
+                    column.element_size = 4; //32bits, for one char (padded)
+                    column.tag = char_id;
+                    for(int r=0;r<source.length();r++) { //as many rows as in source
+                        uint32_t ch = source.at(r);
+                        column.push((void*)&ch);
+                    }
+                    string_plate.push((void*)&column);
                 }
-                string_plate.push((void*)&column);
-            }
-            types.set(2,(void*)&string_plate);
+                types.set(2,(void*)&string_plate);
 
-            uint32_t th[3] = {(uint32_t)source.length(), 0, 0};
-            (*(AcornCol*)(*(AcornCol*)types[0])[2]).set(regtick+1, (void*)th);
+                uint32_t th[3] = {(uint32_t)source.length(), 0, 0};
+                (*(AcornCol*)(*(AcornCol*)types[0])[2]).set(regtick+1, (void*)th);
 
-            AcornCol& instrplate = (*(AcornCol*)types[1]);
-            AcornCol& stageplate = (*(AcornCol*)types[stage]);
-            for(int c=0;c<stageplate.length();c++) {
-                AcornCol& instrcol = (*(AcornCol*)instrplate[c]);
-                AcornCol& stagecol = (*(AcornCol*)stageplate[c]);
-                instrcol.clear();
-                instrcol.resize(stagecol.size);
-                for(int r=0;r<stagecol.length();r++) {
-                    instrcol.set(r,stagecol[r]);
+                AcornCol& instrplate = (*(AcornCol*)types[1]);
+                AcornCol& stageplate = (*(AcornCol*)types[stage]);
+                for(int c=0;c<stageplate.length();c++) {
+                    AcornCol& instrcol = (*(AcornCol*)instrplate[c]);
+                    AcornCol& stagecol = (*(AcornCol*)stageplate[c]);
+                    instrcol.clear();
+                    instrcol.resize(stagecol.size);
+                    for(int r=0;r<stagecol.length();r++) {
+                        instrcol.set(r,stagecol[r]);
+                    }
                 }
             }
-
-            print("INSTR $");
-            print(instr_to_string(instrplate,'$'));
         }
         
 
@@ -561,5 +566,112 @@ namespace Acorn {
         munmap(buf, byte_size); //Cleanup
 
         print("ACORN COMPLETE");
+    }
+
+
+    static void JIT_Ribbon(){
+        std::string path = "mixos-acorn/tests/acornsock.gld";
+        std::ifstream in2(path, std::ios::binary);
+        int regtick = 0;
+        AcornCol types = read_acorn_types(in2,regtick);
+
+        #ifdef __APPLE__
+            pthread_jit_write_protect_np(0);
+        #else
+            #define MAP_JIT 0x0800
+        #endif
+
+        AcornCol& execribbon = *(AcornCol*)(*(AcornCol*)types[3])[0]; //Grab the ribbon
+        AcornCol& ribbon = *(AcornCol*)(*(AcornCol*)types[3])[1]; //Grab the ribbon
+
+        //Swap the ribbons
+        ribbon.clear();
+        for(int i=0;i<preamble.length();i++) {
+            ribbon.push((void*)&preamble[i]);
+        }
+        for(int i=0;i<execribbon.length();i++) {
+            if(*(uint32_t*)execribbon[i]==0) continue;
+            ribbon.push(execribbon[i]);
+        }
+        for(int i=0;i<postamble.length();i++) {
+            ribbon.push((void*)&postamble[i]);
+        }
+        memset(execribbon.storage, 0, execribbon.size);
+
+        //Make instrs executable
+        for(int c = 0; c < 256; c++) {
+            AcornCol& col = *(AcornCol*)(*(AcornCol*)types[1])[c];
+            if(col.size == 0) continue;
+            
+            size_t byte_size = col.size;
+            void* exec_buf = mmap(nullptr, byte_size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,
+                -1, 0);
+            
+            memcpy(exec_buf, col.storage, byte_size);
+            
+            #ifdef __APPLE__
+                pthread_jit_write_protect_np(1);
+                sys_icache_invalidate(exec_buf, byte_size);
+            #endif
+            
+            mprotect(exec_buf, byte_size, PROT_READ | PROT_EXEC);
+            
+            delete[] col.storage;
+            col.storage = (uint8_t*)exec_buf;
+        }
+
+        size_t byte_size = ribbon.length() * sizeof(uint32_t);
+        void* buf = mmap(nullptr, byte_size,
+            PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,
+            -1, 0);
+
+        if(buf == MAP_FAILED) {
+            print("mmap failed: ", strerror(errno));
+            return;
+        }
+
+        //Copy the instructions
+        uint32_t* ptr = (uint32_t*)buf;
+        for(int i=0;i<ribbon.length();i++) {
+            ptr[i] = *(uint32_t*)ribbon[i];
+        }
+
+        #ifdef __APPLE__
+            pthread_jit_write_protect_np(1); // re-enable write protection before executing
+            sys_icache_invalidate(buf, byte_size); // flush instruction cache
+        #endif
+
+        mprotect(buf, byte_size, PROT_READ | PROT_EXEC);
+
+        print("==EXECUTING RIBBON==");
+
+        std::string printout = "";
+        printout+=acorn_types_to_string(types,{"Reg plate","Instr plate","String plate","Ribbon plate"});
+        editTextFile("mixos-acorn/tests/printout.txt",[printout](std::string& source){
+            source=printout;
+        });
+
+        typedef int (*JitFunc)(AcornCol, AcornCol, AcornCol, int);
+        JitFunc func = (JitFunc)buf;
+        print("buf base: ",(uint64_t)buf);
+
+        //Arbitray ceremony because Arm64, this is why I'm making my own ISA
+        uint64_t sp_val;
+        asm volatile("mov %0, sp" : "=r"(sp_val));
+        (void)sp_val;
+        int result = func(types,*(AcornCol*)types[0],*(AcornCol*)types[1],regtick); //Giving the source
+
+        print("FINISHED: ",result);
+        
+        printout = "";
+        printout+=acorn_types_to_string(types,{"Reg plate","Instr plate","String plate","Ribbon plate"});
+        editTextFile("mixos-acorn/tests/printout.txt",[printout](std::string& source){
+            source=printout;
+        });
+
+        munmap(buf, byte_size); //Cleanup
     }
 }

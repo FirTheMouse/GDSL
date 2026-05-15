@@ -369,7 +369,7 @@ main:
         isReg:
             movz 3 1 0 //Increment the pipe counter
             add 27 27 3 0
-
+            | movz 15 6 0 //Canary marker
             mov 0 24 0 //Move the accumulated number at 24 down to 0 so the syscall can emit it
             emit_movz_imm  //A syscall to emit an instruction that movz the value of x24 as an immediate to 2 (to use for offsets)
                     movz 3 1 0
@@ -640,6 +640,8 @@ main:
             // |x20 = resolved left address
             // |x21 = resolved right address  
             // x26 = opcode char
+
+            | movz 15 5 0 //Canary marker
             
                 movz 3 0 0
                 ldr32 13 26 4

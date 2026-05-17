@@ -164,6 +164,7 @@ namespace Acorn {
         char_class['='] = 4; char_class['+'] = 4; char_class['*'] = 4; char_class['/'] = 4;
         char_class['L'] = 4; //Less than
         char_class['E'] = 4; //Equals
+        char_class['N'] = 4; //Not Equals
         char_class['A'] = 4; //And 65
         char_class['O'] = 4; //Or 79
         char_class['F'] = 4; //Left shift 70
@@ -203,6 +204,8 @@ namespace Acorn {
         char_class['}'] = 23; //Rbrace
 
         char_class['`'] = 24; //Tick
+
+        char_class['M'] = 25; //Mark
 
         uint64_t fya64[11]; 
         fya64[0] = 0; fya64[1] = 0; fya64[2] = 0; fya64[3] = 0;
@@ -272,20 +275,6 @@ namespace Acorn {
         });
     };
 
-    std::string padding = "    ";
-    static std::string instr_as_buffer(char c) {
-        std::string to_return = "";
-        AcornCol& col = *(AcornCol*)instrs[c];
-        for(int i=0;i<col.length();i++) {
-            uint32_t instr = *(uint32_t*)col[i];
-            if(instr==3596551104) continue; //Don't emit the returns at the end
-            to_return+=padding;
-            to_return+=std::to_string(instr);
-            to_return+=" => 5$ : 1 + 5$S :\n";
-        }
-        return to_return;
-    }
-
     static std::string instr_to_string(AcornCol instrplate, char c) {
         std::string to_return = "";
         AcornCol& col = *(AcornCol*)instrplate[c];
@@ -295,6 +284,26 @@ namespace Acorn {
             std::string s = disassemble(instr);
             if(s.find("?")!=std::string::npos) to_return+=std::to_string(i)+": "+to_hex(instr)+" : "+to_bin(instr)+" : "+std::to_string(instr)+"\n";
             else to_return+=std::to_string(i)+": "+s+"\n";
+        }
+        return to_return;
+    }
+
+
+    std::string padding = "    ";
+    static map<char,std::string> instr_as_buffer(char c) {
+        map<char,std::string> to_return;
+        AcornCol& col = *(AcornCol*)instrs[c];
+        char sub_c = ' ';
+        for(int i=0;i<col.length();i++) {
+            uint32_t instr = *(uint32_t*)col[i];
+            if(instr==3596551104) continue; //Don't emit the returns at the end
+            if(instr == 167772160) {
+                uint32_t movz_instr = *(uint32_t*)col[i+1];
+                sub_c = (movz_instr >> 5) & 0xFFFF;
+                i++; //skip over the next instruction as well
+            } else {
+                to_return[sub_c]+=padding+std::to_string(instr)+" => 5$ : 1 + 5$S :\n";
+            }
         }
         return to_return;
     }
@@ -329,15 +338,30 @@ namespace Acorn {
             for(int i=0;i<s.length();i++) {
                 if(s.at(i)=='\\'&&s.at(i+1)=='|') {
                     if(s.at(i+2)=='\\') continue;
-                    std::string instr = instr_as_buffer(s.at(i+2));
+                    map<char,std::string> bufferinstrs = instr_as_buffer(s.at(i+2));
+                    std::string instr = bufferinstrs[' ']+bufferinstrs[s.at(i+3)];
                     splice_immediates_into_instr(instr);
-                    for(int j=i+4;j<s.length();j++) {
+                    for(int j=i+5;j<s.length();j++) {
                         if(s.at(j)=='\\'&&s.at(j+1)=='|') {
-                            s.erase(i+4,(j-1)-(i+4));
+                            s.erase(i+5,(j-1)-(i+5));
                             break;
                         }
                     }
-                    s.insert(i+4,"\n"+instr+padding);
+                    s.insert(i+5,"\n"+instr+padding);
+                } else if(s.at(i)=='\\'&&s.at(i+1)=='C') {
+                    if(s.at(i+2)=='\\') continue;
+                    map<char,std::string> bufferinstrs = instr_as_buffer(s.at(i+2));
+                    std::string instr = bufferinstrs[' ']+bufferinstrs[s.at(i+3)];
+                    splice_immediates_into_instr(instr);
+                    int jump_by = 0;
+                    for(auto s : instr) {if(s==':'||s=='v'||s=='^'){jump_by++;}}
+                    for(int j=i+5;j<s.length();j++) {
+                        if(s.at(j)=='\\'&&s.at(j+1)=='|') {
+                            s.erase(i+5,(j-1)-(i+5));
+                            break;
+                        }
+                    }
+                    s.insert(i+5," "+std::to_string(jump_by)+" C :");
                 }
             }
         });

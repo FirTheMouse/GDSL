@@ -24,14 +24,24 @@ namespace Acorn {
             }
         }
 
-        Stage& sys_handlers = reg_stage("system");
-
-        uint32_t load_id = make_tokenized_keyword("load");
-        uint32_t stop_id = make_tokenized_keyword("STOP");
         uint32_t labels_id = make_tokenized_keyword("labels");
 
         uint32_t node_block_id = reg_id("node_block");
+        uint32_t invoke_stage_id = make_keyword("invoke_stage");
         uint32_t in_id = make_keyword("in");
+        uint32_t precompile_id = make_tokenized_keyword("precompile");
+        uint32_t end_precompile_id = make_tokenized_keyword("end_precompile");
+
+        uint32_t ctx_node_id = make_tokenized_keyword("node");
+        uint32_t ctx_result_id = make_tokenized_keyword("result");
+        uint32_t ctx_source_id = make_tokenized_keyword("source");
+
+        uint32_t while_id = make_tokenized_keyword("while");
+        uint32_t for_id = make_tokenized_keyword("for");
+        uint32_t if_id = make_tokenized_keyword("if");
+        uint32_t else_id = make_tokenized_keyword("else");
+
+        node_list daycare;
 
         void init() override {
 
@@ -54,108 +64,30 @@ namespace Acorn {
             t_handlers[end_id] = discard;
             t_handlers[comma_id] = discard;
 
-            // Node n = make_node(this);
-            // n.name("joe");
-            // n.type(test_id);
-            // Node v = make_node(this);
-            // v.name("Vee");
-            // n.children() << v;
-            // Node j = make_node(this);
-            // j.name("Jay");
-            // n.scopes() << j;
-
-
-            // a_handlers[test_id] = [this](Context& ctx){
-            //     print(ctx.node.name());
-            //     print(ctx.node.children()[0].name());
-            //     print(ctx.node.scopes()[0].name());
-            // };
-
-            // Context ctx;
-            // ctx.node = n;
-
-            // start_stage(a_handlers);
-            // standard_process(ctx);
-
-            // print("Hello world");
-
-            x_handlers[load_id] = [this](Context& ctx){
-                if(unit_root.idx==1) {
-                    ctx.node.value(make_value(string_id,sizeof(Ptr))); //Allocate a space to recive a value
-                    unit_root = ctx.node;
-                    unit_root.idx = 0;
-                    while(unit_root.idx==0) {
-                        std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-                    }
-                    print("I LIVE!");
-                }
-
-
-                // if(!ctx.node.children().empty()) {
-                //     process_node(ctx,ctx.node.children()[0]);
-                //     ctx.node.value(make_value(this,string_id,sizeof(Ptr)));
-                //     std::string path = string(*(Ptr*)ctx.node.children()[0].value().get(),this).to_std();
-                //     uint32_t store_to = types[data_store_id].note_value(path,sizeof(char),char_id);
-                //     for(auto c : readFile(path))
-                //         types[data_store_id][store_to].push((void*)&c);
-                //     Ptr ticket(data_store_id,store_to,0);
-                //     ctx.node.value().set((void*)&ticket);
-                // }
+            a_handlers[make_tokenized_keyword("register")] = [this](Context& ctx){
+                make_keyword(ctx.result.take(ctx.index+1).name().to_std());
+            };
+            a_handlers[make_tokenized_keyword("newstage")] = [this](Context& ctx){
+                reg_stage(ctx.result.take(ctx.index+1).name().to_std());
             };
 
-            sys_handlers.default_function = [this](Context& ctx){
-                std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-            };  
+            a_handlers[precompile_id] = [this](Context& ctx){
+                ctx.result.removeAt(ctx.index); //remove this node
+                for(int i=ctx.index;i<ctx.result.length();i++) {
+                    if(ctx.result[i].name().to_std()=="end_precompile") {
+                        ctx.result.removeAt(i); //and remove the end
+                        daycare = ctx.node.children();
+                        while(ctx.root.children().length()>i) daycare << ctx.root.children().take(i);
+                        break;
+                    }
+                }
+            };
 
-            // sys_handlers[load_id] = [this](Context& ctx){
-            //     if(!ctx.unit) return;
-            //     Unit& acorn = *ctx.unit;
-            //     if(!acorn.unit_root.live) {
-            //         std::string path = string(*(Ptr*)acorn.unit_root.children()[0].value().get(),&acorn).to_std();
-            //         uint32_t store_to = acorn.types[acorn.data_store_id].note_value(path,sizeof(char),char_id);
-            //         for(auto c : readFile(path))
-            //             acorn.types[acorn.data_store_id][store_to].push((void*)&c);
-            //         Ptr ticket(acorn.data_store_id,store_to,0);
-            //         acorn.unit_root.value().set((void*)&ticket);
-            //         ctx.source = "sys:115 loaded file "+path+" for a process";
-            //         acorn.unit_root.live = true;
-            //     }
-            // };
-            // x_handlers[stop_id] = [this](Context& ctx){
-            //     unit_root = ctx.node;
-            // };
-            // sys_handlers[stop_id] = [this](Context& ctx){
-            //     ctx.source = "sys:122 stopping";
-            //     ctx.flag = true;
-            // };
-
-            // x_handlers[make_tokenized_keyword("run")] = [this](Context& ctx){
-            //     if(!ctx.node.children().empty()) {
-            //         process_node(ctx,ctx.node.children()[0]);
-            //         std::string torun = string(*(Ptr*)ctx.node.children()[0].value().get(),this).to_std();
-            //         Acorn_Script acorn;
-            //         acorn.process(torun);
-            //         acorn.unit_root.children() << make_node(&acorn,stop_id);
-            //         g_ptr<Thread> t = make<Thread>();
-            //         t->run_blocking([&acorn]() mutable {
-            //             acorn.run(acorn.unit_root);
-            //         });
-            //         Context actx;
-            //         actx.unit = &acorn;
-            //         while(true) {
-            //             actx.node = acorn.unit_root;
-            //             sys_handlers.run(acorn.unit_root.type())(actx);
-            //             if(!actx.source.empty()) {
-            //                 print(actx.source);
-            //                 actx.source = "";
-            //             }
-            //             if(actx.flag) {
-            //                 t->stop();
-            //                 break;
-            //             }
-            //         }
-            //     }
-            // };
+            x_handlers[make_tokenized_keyword("as_data")] = [this](Context& ctx){
+                Value rv = ctx.node.children()[0].value();
+                ctx.node.value(make_value(ptr_id,sizeof(Ptr)));
+                ctx.node.value().set((void*)&rv.data_ptr());
+            };
 
             r_handlers[var_decl_id] = [this](Context& ctx){
                 ctx.node.value().init_data();
@@ -181,6 +113,22 @@ namespace Acorn {
                 Node left = ctx.node.children()[0];
                 Node right = ctx.node.children()[1];
 
+                if(left.value().type()==col_id) { //Lists and such get handled on their own
+                    if(right.name().to_std()=="get") { //If we're getting then right will be of the type we're getting
+                        if(left.value().sub_type()==node_id) {
+                            right.value(make_value(node_id,sizeof(Ptr)));
+                            right.value().init_data();
+                            right.value().type_scope(Ptr(node_type_id,1,0)); //The node template
+                        } else if(left.value().sub_type()==value_id) {
+                            right.value(make_value(value_id,sizeof(Ptr)));
+                            right.value().init_data();
+                            right.value().type_scope(Ptr(node_type_id,1,1)); //The value template
+                        }
+                    }
+                    ctx.node.value(right.value()); //Stealing it from right
+                    return;
+                }
+
                 std::string prop = right.name().to_std();
                 right.value(make_value());
                 value_table look;
@@ -205,23 +153,34 @@ namespace Acorn {
                 Node left = ctx.node.children()[0];
                 Node right = ctx.node.children()[1];
                 Ptr ptr = left;
-                if(left.value().idx==1&&(left.value().type()==node_id||left.value().type()==value_id)) {
+                if(left.value().idx==1&&(left.value().type()==node_id||left.value().type()==value_id||left.value().type()==col_id)) {
                     ptr = *(Ptr*)left.value().get();
                 }
 
                 int addr = ctx.node.value().address();
 
-                if(!right.children().empty()) {
-                    Ptr p = *(Ptr*)types[ptr.pool][addr][ptr.sidx];
-                    Node rleft = right.children()[0];
-                    if(rleft.value().type()==int_id) {
-                        addr = *(int*)rleft.value().get();
-                    }
-
-                    Ptr targetptr(p.pool,p.idx,addr);
-                    types[ctx.node.value().pool][value_data_col].set(ctx.node.value().sidx,(void*)&targetptr);
-                    if(ctx.root.type()!=equals_id) {
-                        ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
+                if(left.value().type()==col_id) {
+                    std::string opp = right.name().to_std();
+                    if(opp=="push") {
+                        Node rleft = right.children()[0];
+                        types[ptr.pool][ptr.idx].push(rleft.value().get());
+                    } else if(opp=="get") {
+                        Node rleft = right.children()[0];
+                        if(rleft.value().type()==int_id) {
+                            addr = *(int*)rleft.value().get();
+                        }
+                        Ptr targetptr(ptr.pool,ptr.idx,addr);
+                        if(ctx.root.type()==equals_id) {
+                            ctx.node.value().data_col().set(ctx.node.value().sidx,(void*)&targetptr);
+                        } else {
+                            ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
+                        }
+                    } else if(opp=="length") {
+                        ctx.node.value().type(int_id);
+                        ctx.node.value().data_col().clear();
+                        ctx.node.value().data_col().element_size = 4;
+                        int len = types[ptr.pool][ptr.idx].length();
+                        ctx.node.value().data_col().push((void*)&len);
                     }
                     return;
                 }
@@ -234,13 +193,35 @@ namespace Acorn {
                 }
             };
 
-            x_handlers[langle_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                Node left = ctx.node.children()[0];
-                Node right = ctx.node.children()[1];
-                Ptr p = left.value().data_ptr();
-                Ptr ptr = *(Ptr*)types[p.pool][p.idx][p.sidx];
-                types[ptr.pool][ptr.idx].push(right.value().get());
+            r_handlers[ctx_node_id] = [this](Context& ctx){
+                ctx.node.value(make_value(node_id,sizeof(Ptr)));
+                ctx.node.value().init_data();
+                ctx.node.value().type_scope(Ptr(node_type_id,1,0)); //The node template
+            };
+            x_handlers[ctx_node_id] = [this](Context& ctx){
+                ctx.node.value().set((void*)&ctx.sub->node);
+            };
+
+
+            r_handlers[ctx_result_id] = [this](Context& ctx){
+                ctx.node.value(make_value(col_id,sizeof(Ptr),0,node_id));
+                ctx.node.value().init_data();
+            };
+            x_handlers[ctx_result_id] = [this](Context& ctx){
+                ctx.node.value().set((void*)&ctx.sub->result);
+            };
+
+
+            r_handlers[ctx_source_id] = [this](Context& ctx){
+                ctx.node.value(make_value(string_id,sizeof(Ptr)));
+                ctx.node.value().init_data();
+            };
+            x_handlers[ctx_source_id] = [this](Context& ctx){
+                if(ctx.root.type()==equals_id) {
+                    ctx.sub->source = ctx.root.children()[1].name().to_std();
+                } else {
+                    ctx.node.value().set((void*)&ctx.sub->source);
+                }
             };
 
             r_handlers[labels_id] = [this](Context& ctx){
@@ -323,8 +304,63 @@ namespace Acorn {
                 types[handler_type_id][target_type].set(stage_id,(void*)&target_scope);
             };
 
+            x_handlers[invoke_stage_id] = [this](Context& ctx){
+                std::string stage_name = ctx.node.name().to_std();
+                if(!stages.hasKey(stage_name)) {
+                    if(!stages.hasKey(stage_name+"ing")) {
+                        print(red("invoke_stage_id:x_handler unknown stage "+stage_name));
+                        return;
+                    } else {
+                        stage_name+="ing";
+                    }
+                }
+                g_ptr<Stage> stage = stages.get(stage_name);
+                Node left = ctx.node.children()[0];
+                ctx.node = left;
+                stage->run(left.type())(ctx);
+            };
 
-            
+            x_handlers[if_id] = [this](Context& ctx) {
+                process_node(ctx, ctx.node.children()[0]);
+                if(*(bool*)ctx.node.children()[0].value().get()) {
+                    ctx.flag = standard_travel_pass(ctx.node.scopes()[0],ctx.sub);
+                }
+                else if(ctx.node.scopes().length()>1) {
+                    ctx.flag = standard_travel_pass(ctx.node.scopes()[1],ctx.sub);
+                }
+            };
+            t_handlers[else_id] = [this](Context& ctx) {
+                if(ctx.index>0) {
+                    if(ctx.left.type()==if_id) {
+                        ctx.node.scopes()[0].owner(ctx.left);
+                        ctx.left.scopes() << ctx.node.scopes()[0];
+                        ctx.result.removeAt(ctx.index);
+                        ctx.index--;
+                    }
+                }
+            };
+            x_handlers[while_id] = [this](Context& ctx) {
+                while(true) {
+                    process_node(ctx, ctx.node.children()[0]);
+                    if(!(*(bool*)ctx.node.children()[0].value().get()))break;
+                    if(standard_travel_pass(ctx.node.scopes()[0],ctx.sub)) {
+                        ctx.flag = true;
+                        break;
+                    } 
+                }
+            };         
+            x_handlers[for_id] = [this](Context& ctx) {
+                process_node(ctx, ctx.node.children()[0]);
+                while(true) {
+                    process_node(ctx, ctx.node.children()[1]);
+                    if(!(*(bool*)ctx.node.children()[1].value().get()))break;
+                    if(standard_travel_pass(ctx.node.scopes()[0],ctx.sub)) {
+                        ctx.flag = true;
+                        break;
+                    } 
+                    process_node(ctx, ctx.node.children()[2]);
+                }
+            };  
         }
 
         virtual Node process(std::string path) override {
@@ -333,16 +369,29 @@ namespace Acorn {
 
             return root;
         }
-    
-        virtual void run(Node root) override {
+
+        void lemmatize_stages() {
+            for(auto e : stages.entrySet()) {
+                std::string label = e.key;
+                if(e.key.length()>3 && e.key.substr(e.key.length()-3)=="ing") {
+                    label = e.key.substr(0,e.key.length()-3);
+                }
+                if(!keywords.hasKey(label)) { //to stop double registraion
+                    add_alias(label,invoke_stage_id);
+                }
+            }
+        }
+
+        void compile(Node root) {
             start_stage(a_handlers);
             standard_direct_pass(root);
 
+            lemmatize_stages();
             a_pass_resolve_keywords(root.children());
-
             for(int i=0;i<root.children().length();i++) {
                 place_node_in_scope(root.children()[i],root);
             }
+
 
             //print(node_to_string(root,0,0,true));
 
@@ -354,6 +403,18 @@ namespace Acorn {
 
             start_stage(r_handlers);
             standard_resolving_pass(root);
+        }
+    
+        virtual void run(Node root) override {
+            compile(root);
+            if(!daycare.empty()) {
+                print(node_to_string(root,0,0,true));
+                start_stage(x_handlers);
+                standard_travel_pass(root);
+
+                root.children(daycare);
+                compile(root);
+            }
 
             // span->print_all();
             print(node_to_string(root,0,0,true));

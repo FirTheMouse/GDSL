@@ -599,6 +599,7 @@ namespace Acorn {
 
 
             a_handlers[make_tokenized_keyword("cset.eq")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_EQ);};
+            a_handlers[make_tokenized_keyword("cset.ne")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_NE);};
             a_handlers[make_tokenized_keyword("cset.lt")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_LT);};
             a_handlers[make_tokenized_keyword("cset.ge")] = [this](Context& ctx){ (*ctx.buffer) << CSET(con(ctx),COND_GE);};
 

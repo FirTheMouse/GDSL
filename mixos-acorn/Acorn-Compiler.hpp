@@ -383,8 +383,12 @@ namespace Acorn {
             } else {
                 node.value_table().put(label, val);
             }
-            for(int s = 0;s<node.scopes().length();s++) {
-                val = distribute_value(node.scopes().get(s),label,val);
+            for(int c = 0;c<node.children().length();c++) {
+                if(!node.children()[c].scopes().empty()) {
+                    for(int s = 0;s<node.children()[c].scopes().length();s++) {
+                        val = distribute_value(node.children()[c].scopes().get(s),label,val);
+                    }
+                }
             }
             return val;
         }
@@ -399,8 +403,13 @@ namespace Acorn {
             } else {
                 node.node_table().put(label, carry);
             }
-            for(int s = 0;s<node.scopes().length();s++) {
-                carry = distribute_node(node.scopes().get(s),label,carry);
+
+            for(int c = 0;c<node.children().length();c++) {
+                if(!node.children()[c].scopes().empty()) {
+                    for(int s = 0;s<node.children()[c].scopes().length();s++) {
+                        carry = distribute_node(node.children()[c].scopes().get(s),label,carry);
+                    }
+                }
             }
             return carry;
         }
@@ -653,7 +662,7 @@ namespace Acorn {
                 }
             };
 
-            s_handlers[identifier_id] = [this](Context& ctx){
+            s_handlers.default_function = [this](Context& ctx){
                 if(ctx.index+1>=ctx.result.length()) return;
 
                 Node right = ctx.result[ctx.index+1];
@@ -821,6 +830,7 @@ namespace Acorn {
 
             t_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
             r_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
+            x_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
 
             x_handlers[equals_id] = [this](Context& ctx){
                 if(ctx.node.children().length()==2) {
@@ -832,6 +842,46 @@ namespace Acorn {
                     Ptr rp = right.value().data_ptr();
                     types[lp.pool][lp.idx].set(lp.sidx,types[rp.pool][rp.idx][rp.sidx]);
                 }
+            };
+
+
+            r_handlers[langle_id] = [this](Context& ctx){
+                ctx.node.value(make_value(bool_id,1));
+            };
+            x_handlers[langle_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                bool result =      
+                    *(int*)ctx.node.children()[0].value().get()
+                    <
+                    *(int*)ctx.node.children()[1].value().get()
+                ;
+                ctx.node.value().set((void*)&result);
+            };
+
+            r_handlers[rangle_id] = [this](Context& ctx){
+                ctx.node.value(make_value(bool_id,1));
+            };
+            x_handlers[rangle_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                bool result =      
+                    *(int*)ctx.node.children()[0].value().get()
+                    >
+                    *(int*)ctx.node.children()[1].value().get()
+                ;
+                ctx.node.value().set((void*)&result);
+            };
+
+            r_handlers[plus_id] = [this](Context& ctx){
+                ctx.node.value(make_value(int_id,4));
+            };
+            x_handlers[plus_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                int result =      
+                    *(int*)ctx.node.children()[0].value().get()
+                    +
+                    *(int*)ctx.node.children()[1].value().get()
+                ;
+                ctx.node.value().set((void*)&result);
             };
 
             x_handlers[func_call_id] = [this](Context& ctx) {
@@ -857,6 +907,8 @@ namespace Acorn {
                     ctx.root.name() = ctx.node.children()[0].name();
                 }
             };
+
+
         }
     };
 }

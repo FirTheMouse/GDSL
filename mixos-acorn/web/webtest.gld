@@ -1,0 +1,26 @@
+precompile;
+    newstage htmlemiting;
+
+    register text;
+    "text" {
+        in htmlemiting {
+            source = "nothing";
+            print(source);
+        }
+    }
+
+end_precompile;
+
+
+htmlemit text;
+
+int fd = socket;
+bind(fd,8080);
+listen(fd);
+while(3<4) {
+    int cfd = accept(fd);
+    string req = read(cfd);
+    respond(cfd,req);
+}
+
+

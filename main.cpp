@@ -1,15 +1,16 @@
-// #include "modules/GDSL-Test.hpp"
-// #include "modules/Q-HTML.hpp"
-// #include "modules/GDSL-C.hpp"
-// #include "modules/GDSL-LISP.hpp"
-// #include "modules/GDSL-TwigSnap.hpp"
-// #include "modules/GDSL-Script.hpp"
-// #include "modules/GDSL-GQL.hpp"
-// #include "modules/GDSL-Thistle.hpp"
-// #include "modules/GDSL-PineNeedle.hpp"
-// #include "mixos-acorn/Acorn-Kernel.hpp"
+#include "modules/GDSL-Test.hpp"
+#include "modules/Q-HTML.hpp"
+#include "modules/GDSL-C.hpp"
+#include "modules/GDSL-LISP.hpp"
+#include "modules/GDSL-TwigSnap.hpp"
+#include "modules/GDSL-Script.hpp"
+#include "modules/GDSL-GQL.hpp"
+#include "modules/GDSL-Thistle.hpp"
+#include "modules/GDSL-PineNeedle.hpp"
+#include "mixos-acorn/Acorn-Kernel.hpp"
 #include "mixos-acorn/Acorn-Dirt.hpp"
 #include "mixos-acorn/Acorn-JIT.hpp"
+#include "mixos-acorn/web/Webcorn-Core.hpp"
 
 // using namespace GDSL;
 
@@ -32,6 +33,10 @@ int main(int argc, char* argv[]) {
     // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
     // Acorn::init_type_pool();
     // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+
+    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    Acorn::init_type_pool();
+    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();
@@ -83,17 +88,17 @@ int main(int argc, char* argv[]) {
     // instr = Acorn::Acorn_Dirt::MOVZ(2,2,0);
     // print("movz 2 2 0 : 0x",std::hex,instr," | ",std::bitset<32>(instr),std::dec," | ",instr);
 
-    Acorn::Acorn_Dirt dirt;
-    Acorn::init_type_pool();
-    dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
+    // Acorn::Acorn_Dirt dirt;
+    // Acorn::init_type_pool();
+    // dirt.run(dirt.process(readFile("mixos-acorn/tests/dirt.gld")));
 
-    Acorn::burn_instrs(readFile("mixos-acorn/tests/acorninsx.gld"));
-    Acorn::resolve_instr_file("mixos-acorn/tests/acorninstrs.gld");
-    Acorn::burn_instrs(readFile("mixos-acorn/tests/acorninstrs.gld"));
-    Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"));
-    Acorn::JIT_Acorn();
-    Acorn::JIT_Ribbon();
-    // Acorn::JIT_Acorn(3);
+    // Acorn::burn_instrs(readFile("mixos-acorn/tests/acorninsx.gld"));
+    // Acorn::resolve_instr_file("mixos-acorn/tests/acorninstrs.gld");
+    // Acorn::burn_instrs(readFile("mixos-acorn/tests/acorninstrs.gld"));
+    // Acorn::JIT_dirt(readFile("mixos-acorn/tests/acorn.gld"));
+    // Acorn::JIT_Acorn();
+    // Acorn::JIT_Ribbon();
+    // // Acorn::JIT_Acorn(3);
 
 
     // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();

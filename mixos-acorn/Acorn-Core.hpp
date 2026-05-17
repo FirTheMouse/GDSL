@@ -58,6 +58,7 @@ namespace Acorn {
     size_t list_id = reg_id("list");
     size_t map_id = reg_id("map");
     size_t weakptr_id = reg_id("weakptr");
+    size_t col_id = reg_id("col");
     
     size_t identifier_id = reg_id("IDENTIFIER");
     size_t object_id = reg_id("OBJECT");
@@ -584,9 +585,9 @@ namespace Acorn {
         Ptr p = types[value_type_id].create();
         return Value(p);
     }
-    Value make_value(uint32_t type, uint32_t size, uint32_t addr = 0) {
+    Value make_value(uint32_t type, uint32_t size, uint32_t addr = 0, uint32_t subtype = 0) {
         Value v = make_value();
-        v.size(size); v.type(type); v.address(addr);
+        v.size(size); v.type(type); v.address(addr); v.sub_type(subtype);
         return v;
     }
 
@@ -667,7 +668,7 @@ namespace Acorn {
             return Ptr_as_string(*(Ptr*)data);
         } else if(tag==ptr_id||tag==node_id||tag==value_id) {
             return Ptr_as_string(*(Ptr*)data);
-        } else if(tag==list_id) {
+        } else if(tag==list_id||tag==col_id) {
             Ptr ptr = *(Ptr*)data;
             std::string s = Ptr_as_string(ptr)+"> [";
             Col& col = resolve_to_col(ptr);
@@ -979,7 +980,11 @@ namespace Acorn {
         if(!node.children().empty()) {
             for(int i=0;i<node.children().length();i++) {
                 if(node.children()[i].idx!=0) {
-                    to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes,"c");
+                    if(node.children()[i].sidx==node.sidx) {
+                        to_return+="\n "+indent+red("  self refrence");
+                    } else {
+                        to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes,"c");
+                    }
                 }
                 else {
                     to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i]);
@@ -1030,7 +1035,8 @@ namespace Acorn {
         ntemp.value_table_col().label = "node template";
         look = ntemp.value_table();
         look.put("type",make_value(int_id,4,node_type_col));
-        look.put("children",make_value(node_id,sizeof(Ptr),node_children_col));
+        look.put("name",make_value(string_id,sizeof(Ptr),node_name_col));
+        look.put("children",make_value(col_id,sizeof(Ptr),node_children_col,node_id));
         look.put("value",make_value(value_id,sizeof(Ptr),node_value_col));
 
         Node vtemp(types[node_type_id].create()); //The value template
@@ -1038,7 +1044,24 @@ namespace Acorn {
         vtemp.value_table_col().label = "value template";
         look = vtemp.value_table();
         look.put("type",make_value(int_id,4,value_type_col));
+        look.put("size",make_value(int_id,4,size_col));
+        look.put("data",make_value(ptr_id,sizeof(Ptr),value_data_col));
     }
+
+    Node scan_for_node(const std::string& label, Node from) {
+        for(int i=0;i<from.children().length();i++) {
+            if(from.children()[i].name().to_std()==label) {
+                return from.children()[i];
+            }
+        }
+        for(int i=0;i<from.scopes().length();i++) {
+            Node found = scan_for_node(label,from.scopes()[i]);
+            if(found.pool!=0) {
+                return found;
+            }
+        }
+        return Ptr(0,0,0);
+}
         
     struct Unit : public q_object {
         Unit() {init();}
@@ -1108,19 +1131,21 @@ namespace Acorn {
     
         bool standard_travel_pass(Node root, Context* sub = nullptr);
 
+                    // if(types[handler_type_id][type].length()>0) {
+            //     uint32_t stage_id = types[handler_type_id][stages_id].cells.get(active_stage->label);
+            //     Node nhandler = Node(*(Ptr*)types[handler_type_id][type][stage_id]);
+            //     if(nhandler.idx!=0) {
+            //         standard_travel_pass(nhandler,&ctx);
+            //     } else {
+            //         active_stage->run(type)(ctx);
+            //     }
+            // } else {
+            //     active_stage->run(type)(ctx);
+            // }
+
         inline void standard_process(Context& ctx, uint32_t type) {
             newline(active_stage->label+": "+node_info(ctx.node));
-            if(types[handler_type_id][type].length()>0) {
-                uint32_t stage_id = types[handler_type_id][stages_id].cells.get(active_stage->label);
-                Node nhandler = Node(*(Ptr*)types[handler_type_id][type][stage_id]);
-                if(nhandler.idx!=0) {
-                    standard_travel_pass(nhandler,&ctx);
-                } else {
-                    active_stage->run(type)(ctx);
-                }
-            } else {
-                active_stage->run(type)(ctx);
-            }
+            active_stage->run(type)(ctx);
             endline();
         }
 

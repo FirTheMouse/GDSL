@@ -278,6 +278,7 @@ namespace Acorn {
 
 
     struct string {
+        string() {}
         string(Ptr ptr) : col_ptr(ptr) {}
         Ptr col_ptr;
         inline Col& col() {return types[col_ptr.pool][col_ptr.idx]; }
@@ -585,19 +586,35 @@ namespace Acorn {
         Ptr p = types[value_type_id].create();
         return Value(p);
     }
-    Value make_value(uint32_t type, uint32_t size, uint32_t addr = 0, uint32_t subtype = 0) {
+    Value make_value(uint32_t type, uint32_t size, uint32_t addr = 0, uint32_t subtype = 0, uint32_t subsize = 0) {
         Value v = make_value();
-        v.size(size); v.type(type); v.address(addr); v.sub_type(subtype);
+        v.size(size); v.type(type); v.address(addr); v.sub_type(subtype); v.sub_size(subsize);
         return v;
     }
 
 
-    
+    Ptr last_source_ptr = {0,0,0};
+
     struct Context {
-        Context() : index(_ctx_dummy_index) {}
-        Context(int& _index) : index(_index) {}
-        Context(node_list _result, int& _index) : result(_result), index(_index) {}
-    
+        inline void allocate_source() {
+            if(last_source_ptr.pool==0) {
+                last_source_ptr = Ptr{name_store_id,types[name_store_id].note_value("sourcestore",1,char_id),0};
+            } else {
+                string(last_source_ptr).col().clear();
+            }
+            source.col_ptr = last_source_ptr;
+        }
+
+        Context() : index(_ctx_dummy_index) {
+            allocate_source();
+        }
+        Context(int& _index) : index(_index) {
+            allocate_source();
+        }
+        Context(node_list _result, int& _index) : result(_result), index(_index) {
+            allocate_source();
+        }
+        
         Node node;
         Node qual;
         Node left;
@@ -613,7 +630,7 @@ namespace Acorn {
         Context* sub;
         list<uint32_t>* buffer;
     
-        std::string source;
+        string source;
     
         Context duplicate() {
             return Context(result, index);
@@ -1036,8 +1053,10 @@ namespace Acorn {
         look = ntemp.value_table();
         look.put("type",make_value(int_id,4,node_type_col));
         look.put("name",make_value(string_id,sizeof(Ptr),node_name_col));
-        look.put("children",make_value(col_id,sizeof(Ptr),node_children_col,node_id));
+        look.put("children",make_value(col_id,sizeof(Ptr),node_children_col,node_id,sizeof(Ptr)));
         look.put("value",make_value(value_id,sizeof(Ptr),node_value_col));
+        look.put("scopes",make_value(col_id,sizeof(Ptr),node_scopes_col,node_id,sizeof(Ptr)));
+        look.put("quals",make_value(col_id,sizeof(Ptr),node_quals_col,node_id,sizeof(Ptr)));
 
         Node vtemp(types[node_type_id].create()); //The value template
         vtemp.name("Value template");
@@ -1046,6 +1065,7 @@ namespace Acorn {
         look.put("type",make_value(int_id,4,value_type_col));
         look.put("size",make_value(int_id,4,size_col));
         look.put("data",make_value(ptr_id,sizeof(Ptr),value_data_col));
+        look.put("quals",make_value(col_id,sizeof(Ptr),value_quals_col,node_id,sizeof(Ptr)));
     }
 
     Node scan_for_node(const std::string& label, Node from) {
@@ -1086,7 +1106,7 @@ namespace Acorn {
         std::string value_as_string(Value v) {
             Context ctx; ctx.value = v;
             print_handlers.run(v.type())(ctx);
-            return ctx.source;
+            return ctx.source.to_std();
         }
     
         Stage& a_handlers = reg_stage("assembling");
@@ -1191,6 +1211,7 @@ namespace Acorn {
             Context sub_ctx(children,i);
             sub_ctx.root = ctx.node;
             sub_ctx.sub = ctx.sub;
+            sub_ctx.source.col_ptr = ctx.source.col_ptr;
             while(i < sub_ctx.result.length()) {
                 if(i==0) {
                     process_node(sub_ctx, sub_ctx.result.get(i));

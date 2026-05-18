@@ -141,6 +141,7 @@ namespace Acorn {
         size_t lbrace_id = add_token('{', "LBRACE");
         size_t rbrace_id = add_token('}', "RBRACE");
         size_t slash_id = add_token('/',"SLASH");
+        size_t hash_id = add_token('#',"HASH");
 
         size_t in_alpha_id = reg_id("IN_ALPHA");
         size_t in_digit_id = reg_id("IN_DIGIT");
@@ -162,15 +163,21 @@ namespace Acorn {
                 if(c == open) {
                     ctx.state = 0;
                 } else if(c == '\\') {
-                    if(ctx.index + 1 < ctx.source.length()) {
-                        ctx.node.name().push(ctx.source.at(ctx.index + 1));
-                        at_x += 1.0f;
-                        ctx.index++;
+                    char next = ctx.source.at(ctx.index + 1);
+                    switch(next) {
+                        case 'n':  ctx.node.name().push('\n'); break;
+                        case 't':  ctx.node.name().push('\t'); break;
+                        case 'r':  ctx.node.name().push('\r'); break;
+                        case '"':  ctx.node.name().push('"');  break;
+                        case '\\': ctx.node.name().push('\\'); break;
+                        default:   ctx.node.name().push(next); break;
                     }
+                    at_x += 1.0f;
+                    ctx.index++;
                 } else if(c == '\n') {
                     at_y += 1.0f;
                     at_x = -1.0f;
-                    ctx.node.name().push(c);
+                    // ctx.node.name().push(c);
                 } else {
                     ctx.node.name().push(c);
                 }
@@ -384,9 +391,13 @@ namespace Acorn {
                 node.value_table().put(label, val);
             }
             for(int c = 0;c<node.children().length();c++) {
-                if(!node.children()[c].scopes().empty()) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
                     for(int s = 0;s<node.children()[c].scopes().length();s++) {
-                        val = distribute_value(node.children()[c].scopes().get(s),label,val);
+                        Node scope = child.scopes().get(s);
+                        if(scope.owner().sidx==child.sidx) {
+                            val = distribute_value(scope,label,val);
+                        }
                     }
                 }
             }
@@ -405,9 +416,13 @@ namespace Acorn {
             }
 
             for(int c = 0;c<node.children().length();c++) {
-                if(!node.children()[c].scopes().empty()) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
                     for(int s = 0;s<node.children()[c].scopes().length();s++) {
-                        carry = distribute_node(node.children()[c].scopes().get(s),label,carry);
+                        Node scope = child.scopes().get(s);
+                        if(scope.owner().sidx==child.sidx) {
+                            carry = distribute_node(scope,label,carry);
+                        }
                     }
                 }
             }
@@ -685,8 +700,9 @@ namespace Acorn {
             print_handlers[ptr_id] = [](Context& ctx) {ctx.source = Ptr_as_string(ctx.value.data_ptr());};
             print_handlers[float_id] = [](Context& ctx) {ctx.source = std::to_string(*(float*)ctx.value.get());};
             print_handlers[int_id] = [](Context& ctx) {ctx.source = std::to_string(*(int*)ctx.value.get());};
+            print_handlers[char_id] = [](Context& ctx) {ctx.source = std::string(1,*(char*)ctx.value.get());};
             print_handlers[bool_id] = [](Context& ctx) {ctx.source = (*(bool*)ctx.value.get()) ? "TRUE" : "FALSE";};
-            print_handlers[string_id] = [this](Context& ctx) {ctx.source = string((*(Ptr*)ctx.value.get())).to_std();};
+            print_handlers[string_id] = [this](Context& ctx) {ctx.source = string((*(Ptr*)ctx.value.get()));};
                 
             t_handlers[float_id] = [this](Context& ctx) {
                 float stof = std::stof(ctx.node.name().to_std());
@@ -701,6 +717,11 @@ namespace Acorn {
             t_handlers[bool_id] = [this](Context& ctx) {
                 bool stob = ctx.node.name().to_std() == "true" ? true : false;
                 resolve_node_literal(ctx,(void*)&stob,bool_id,1);
+            }; 
+
+            t_handlers[char_id] = [this](Context& ctx) {
+                char stob = ctx.node.name()[0];
+                resolve_node_literal(ctx,(void*)&stob,char_id,1);
             }; 
     
             t_handlers[string_id] = [this](Context& ctx) {
@@ -834,7 +855,7 @@ namespace Acorn {
 
             x_handlers[equals_id] = [this](Context& ctx){
                 if(ctx.node.children().length()==2) {
-                    standard_sub_process(ctx);
+                    backwards_sub_process(ctx);
                     Node left = ctx.node.children()[0];
                     Node right = ctx.node.children()[1];
 
@@ -846,6 +867,7 @@ namespace Acorn {
 
 
             r_handlers[langle_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 ctx.node.value(make_value(bool_id,1));
             };
             x_handlers[langle_id] = [this](Context& ctx){
@@ -859,6 +881,7 @@ namespace Acorn {
             };
 
             r_handlers[rangle_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 ctx.node.value(make_value(bool_id,1));
             };
             x_handlers[rangle_id] = [this](Context& ctx){
@@ -872,6 +895,7 @@ namespace Acorn {
             };
 
             r_handlers[plus_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 ctx.node.value(make_value(int_id,4));
             };
             x_handlers[plus_id] = [this](Context& ctx){
@@ -884,15 +908,83 @@ namespace Acorn {
                 ctx.node.value().set((void*)&result);
             };
 
+            r_handlers[dash_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(int_id,4));
+            };
+            x_handlers[dash_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                int result =      
+                    *(int*)ctx.node.children()[0].value().get()
+                    -
+                    *(int*)ctx.node.children()[1].value().get()
+                ;
+                ctx.node.value().set((void*)&result);
+            };
+
+            r_handlers[star_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(int_id,4));
+            };
+            x_handlers[star_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                int result =      
+                    *(int*)ctx.node.children()[0].value().get()
+                    *
+                    *(int*)ctx.node.children()[1].value().get()
+                ;
+                ctx.node.value().set((void*)&result);
+            };
+
+            r_handlers[slash_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(int_id,4));
+            };
+            x_handlers[slash_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                int result =      
+                    *(int*)ctx.node.children()[0].value().get()
+                    /
+                    *(int*)ctx.node.children()[1].value().get()
+                ;
+                ctx.node.value().set((void*)&result);
+            };
+
+            r_handlers[to_unary_id(dash_id)] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(int_id,4));
+            };
+            x_handlers[to_unary_id(dash_id)] = [this](Context& ctx){
+                int neg = -(*(int*)ctx.node.children()[0].value().get());
+                ctx.node.value().set((void*)&neg);
+            };
+
+            r_handlers[func_call_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
+                if(!ctx.node.scopes().empty()) {
+                    for(int i = 0; i < ctx.node.children().length(); i++) {
+                        Node arg = ctx.node.children()[i];
+                        Node param = ctx.node.scopes()[0].owner().children()[i];
+                        Node assignment = make_node(equals_id);
+                        assignment.children().push(param);
+                        assignment.children().push(arg);
+                        ctx.node.children().col().set(i,(void*)&assignment);
+                    }
+                }
+            };
             x_handlers[func_call_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-                standard_travel_pass(ctx.node.scopes()[0]);
+                standard_travel_pass(ctx.node.scopes()[0],ctx.sub);
             };
 
             x_handlers[add_function("print")] = [this](Context& ctx){
                 std::string to_print = "";
                 for(int i=0;i<ctx.node.children().length();i++) {
                     Node c = ctx.node.children()[i];
+                    if(c.name().to_std()=="ROOTS") {
+                        print(node_to_string(ctx.root));
+                        continue;
+                    }
                     process_node(ctx,c);
                     to_print += value_as_string(c.value());
                 }

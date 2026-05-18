@@ -1,14 +1,19 @@
 "test" {
     in executing {
-        print("I'm printing test!");
+        print(source);
     }
 }
 
+ctxsource("Hello world");
+test;
+
+ctxsource("Goodbye world");
 test;
 
 Node n;
 Node j;
 n.type = 3;
-n.children < j;
+n.children.push(j);
+j.name = "Joe";
 j.type = 6;
-print(n.children[0].type);
+print("Child: ",n.children.get(0).type);

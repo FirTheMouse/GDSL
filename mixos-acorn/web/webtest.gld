@@ -1,26 +1,92 @@
-precompile;
+##
+
+    Node emitter;
+
+    int emit_as_html(Node n) {
+        source.append(n.name);
+    }
+
+    int emit_contents {
+        if(node.scopes.length>0) {
+            Node scope = node.scopes.get(0);
+            for(int i=0;i<scope.children.length;i=i+1) {
+                Node child = scope.children.get(i);
+                htmlemit child;
+            }
+        }
+    }
+
+
     newstage htmlemiting;
 
     register text;
     "text" {
+        in naming {
+            node.name = result.take(index+1).name;
+        }
         in htmlemiting {
-            source = "nothing";
-            print(source);
+            source(subsource);
+            source.append("<p>");
+            emit_as_html(node);
+            source.append("</p>");
+            emit_contents;
         }
     }
 
-end_precompile;
+    register emit_block;
+    "emit_block" {
+        in executing {
+            source.append("<html><body>");
+            emit_contents;
+            source.append("<body></html>");
+        }
+    }
 
+    "print" {
+        in htmlemiting {
+            source(subsource);
+            source.append("PRINT");
+        }
+    }
 
-htmlemit text;
+    register aboveasbelow;
+    "aboveasbelow" {
+        in executing {
+            result.get(index-1).value.data(result.get(index+1));
+        }
+    }
+
+##
 
 int fd = socket;
 bind(fd,8080);
 listen(fd);
-while(3<4) {
+while(0<1) {
     int cfd = accept(fd);
     string req = read(cfd);
-    respond(cfd,req);
+    ctxsource(""); //Initilize
+    Node handle;
+    aboveasbelow;
+    emit_block {
+        text "wub" {}
+    }
+    string response = "";
+        response.append("HTTP/1.1 200 OK\r\n");
+        response.append("Content-Type: text/html\r\n");
+        response.append("Content-Length: ");
+        response.append(to_string(ctxsource.length));
+        response.append("\r\n\r\n");
+        response.append(ctxsource);
+        print("RESPONSE: ",response);
+    write(cfd,response);  
+
+    Node page = handle.scopes.get(0);
+    for(int i=0;i<page.children.length;i=i+1) {
+        page.children.get(i).name.append("not wub");
+    }
+
+    response.clear;  
+    ctxsource.clear;
 }
 
 

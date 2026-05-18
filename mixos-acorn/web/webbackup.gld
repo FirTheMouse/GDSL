@@ -1,0 +1,29 @@
+int fd = socket;
+bind(fd,8080);
+listen(fd);
+while(3<4) {
+    int cfd = accept(fd);
+    string req = read(cfd);
+    respond(cfd,req);
+}
+
+
+
+int fd = socket;
+bind(fd,8080);
+listen(fd);
+while(0<1) {
+    int cfd = accept(fd);
+    string req = read(cfd);
+    respond(cfd,req);
+
+    ctxsource(""); //Initilize
+    emit_block {
+        text "wub" {
+            print("Hey");
+            print("Ho");
+            print("No");
+        }
+    }
+    write(cfd,ctxsource);
+}

@@ -45,6 +45,7 @@ namespace Acorn {
         uint32_t else_id = make_tokenized_keyword("else");
 
         uint32_t to_string_id = make_tokenized_keyword("to_string");
+        uint32_t to_type_id = make_tokenized_keyword("to_type");
 
         void init() override {
 
@@ -305,6 +306,80 @@ namespace Acorn {
                 }
             };
 
+
+
+            r_handlers[dot_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                uint32_t ltype = left.value().type();
+                if(layouts.hasKey(ltype)) {
+                    _layout& layout = layouts.get(ltype);
+                    std::string prop = right.name().to_std();
+                    if(layout.label_to_index.hasKey(prop)) {
+                        uint32_t index = layout.label_to_index.get(prop);
+                        if(layout.tags[index]==func_call_id) {
+                            if(layout.subtags[index]==0&&left.value().sub_type()!=0) { //For access to a subtype like when we have node.children and need to know that children.get returns a node
+                                ctx.node.value(make_value(left.value().sub_type(), left.value().sub_size()));
+                                //right.scopes().push(left.value().type_scope()); There could be a use case for this in the future
+                            } else { //When we already know what we are, like x.length where length is always an int
+                                ctx.node.value(make_value(layout.subtags[index], layout.subsizes[index]));
+                                if(is_live(layout.ptrs[index])) {
+                                    right.scopes().push(layout.ptrs[index]);
+                                    right.type(func_call_id);
+                                } else {
+                                    right.type(temp_get_id+index);
+                                }
+                            }
+                        } else {
+                            ctx.node.value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index], layout.ptrs[index]));
+                        }
+                    }
+                    right.value(ctx.node.value());
+                }
+            };
+
+            x_handlers[dot_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                Value value = ctx.node.value();
+                if(value.address()!=0) {
+                    Ptr ptr = *(Ptr*)left.value().get();
+                    ptr.sidx = value.address();
+                    if(ctx.root.type()==equals_id&&is_live(ctx.left)) {
+                        types[value.pool][value.idx].set(value_data_offset,(void*)&ptr); //Setting the data_ptr itself
+                    } else {
+                        value.set(types[ptr.pool][ptr.idx][ptr.sidx]); //Setting what the data_ptr points to
+                    }
+                }
+            };
+            x_handlers[temp_get_id] = [this](Context& ctx){
+                Ptr ptr = *(Ptr*)ctx.left.value().get();
+                Value lval = ctx.node.children()[0].value();
+                Value value = ctx.node.value();
+                if(lval.type()==int_id) {
+                    ptr.sidx = *(int*)lval.get();
+                } else if(lval.type()==string_id) {
+                    //Implment later
+                }
+                if(ctx.root.type()==equals_id&&is_live(ctx.left)) {
+                    types[value.pool][value.idx].set(value_data_offset,(void*)&ptr); //Setting the data_ptr itself
+                } else {
+                    value.set(types[ptr.pool][ptr.idx][ptr.sidx]); //Setting what the data_ptr points to
+                }
+            };
+            x_handlers[temp_length_id] = [this](Context& ctx){
+                Ptr ptr = *(Ptr*)ctx.left.value().get();
+                uint32_t len = types[ptr.pool][ptr.idx].length();
+                ctx.node.value().set((void*)&len); //Setting what the data_ptr points to
+            };
+            x_handlers[temp_push_id] = [this](Context& ctx){
+                Ptr ptr = *(Ptr*)ctx.left.value().get();
+                types[ptr.pool][ptr.idx].push(ctx.node.children()[0].value().get());
+            };
+            
+
             r_handlers[ctx_node_id] = [this](Context& ctx){
                 ctx.node.value(make_value(node_id,sizeof(Ptr)));
                 ctx.node.value().init_data();
@@ -405,6 +480,23 @@ namespace Acorn {
                     string label(*(Ptr*)ctx.node.value().get());
                     uint32_t p = *(uint32_t*)ctx.node.children()[0].value().get();
                     label.push(labels[p]); 
+                }
+            };
+
+            r_handlers[to_type_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(int_id,4));
+                ctx.node.value().init_data();
+            };
+            x_handlers[to_type_id] = [this](Context& ctx){
+                //Add caching for this later
+                standard_sub_process(ctx);
+                std::string search_for = string(*(Ptr*)ctx.node.children()[0].value().get()).to_std();
+                for(auto e : labels.entrySet()) {
+                    if(e.value == search_for) {
+                        ctx.node.value().set((void*)&e.key);
+                        return;
+                    }
                 }
             };
 

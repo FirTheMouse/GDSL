@@ -13,6 +13,34 @@ namespace Acorn {
     map<uint32_t,std::string> labels;
     list<TypePool> types;
 
+    struct _layout {
+        list<uint32_t> offsets;
+        list<uint32_t> tags;
+        list<uint32_t> sizes;
+        list<std::string> labels;
+        map<std::string,uint32_t> label_to_index;
+
+        list<uint32_t> subtags;
+        list<uint32_t> subsizes;
+        list<Ptr> ptrs;
+
+        uint32_t total_size = 0;
+        uint32_t add_prop(uint32_t tag, uint32_t size, const std::string& label, uint32_t subtag = 0, uint32_t subsize = 0, Ptr ptr = {0,0,0}) {
+            offsets << total_size;
+            tags << tag;
+            sizes << size;
+            labels << label;
+            subtags << subtag;
+            subsizes << subsize;
+            ptrs << ptr;
+            uint32_t old_size = total_size;
+            label_to_index.put(label,offsets.length());
+            total_size += size;
+            return old_size;
+        }
+    };
+    map<uint32_t,_layout> layouts;
+
     uint32_t undefined_id = 0;
     uint32_t stages_id = 1;
     uint32_t ptr_id = 2;
@@ -110,6 +138,13 @@ namespace Acorn {
     size_t node_opt_str_col = 0;
     size_t mute_col = 0;
 
+    size_t node_type_offset = 0;
+    size_t node_sub_type_offset = 0;
+    size_t node_name_offset = 0;
+
+    uint32_t value_data_offset = 0;
+
+
     uint32_t value_type_col = 0;
     uint32_t value_sub_type_col = 0;
     uint32_t value_data_col = 0;
@@ -139,67 +174,87 @@ namespace Acorn {
     uint32_t data_store_id = make_store_type();
     uint32_t sub_value_store_id = make_store_type();
 
-    uint32_t init_node_type() {
-        uint32_t at = make_object_type();
-        TypePool& t = types[at];
-        node_type_col = t.note_value("type",4,int_id);
-        node_sub_type_col = t.note_value("sub_type",4,int_id);
-        node_name_col = t.note_value("name",sizeof(Ptr),string_id);
-        x_col = t.note_value("x",4,float_id);
-        y_col = t.note_value("y",4,float_id);
-        z_col = t.note_value("z",4,float_id);
-        node_value_col = t.note_value("value",sizeof(Ptr),ptr_id);
-        node_children_col = t.note_value("children",sizeof(Ptr),list_id);
-        node_quals_col = t.note_value("quals",sizeof(Ptr),list_id);
-        node_node_table_col = t.note_value("node_table",sizeof(Ptr),map_id);
-        node_value_table_col = t.note_value("value_table",sizeof(Ptr),map_id);
-        node_scopes_col = t.note_value("scopes",sizeof(Ptr),list_id);
-        parent_col = t.note_value("parent",sizeof(Ptr),ptr_id);
-        owner_col = t.note_value("owner",sizeof(Ptr),ptr_id);
-        in_scope_col = t.note_value("in_scope",sizeof(Ptr),ptr_id);
-        is_scope_col = t.note_value("is_scope",1,bool_id);
-        node_opt_str_col = t.note_value("opt_str",sizeof(Ptr),string_id);
-        mute_col = t.note_value("mute",1,bool_id);
+    uint32_t temp_get_id = reg_id("temp_get");
+    uint32_t temp_length_id = reg_id("temp_length");
+    uint32_t temp_push_id = reg_id("temp_push");
 
-        t.init_funcs << [at](Ptr& optr) {
-            TypePool& t = types[at];
-            optr.pool = at;
-            Ptr nameptr{name_store_id, (uint32_t)types[name_store_id].note_value("",sizeof(char),char_id), 0};
-            t.set(node_name_col, optr.sidx, (void*)&nameptr);
+    _layout& add_template(uint32_t for_type) {
+        _layout temp;
+        temp.add_prop(func_call_id,0,"get",undefined_id,0);
+        temp.add_prop(func_call_id,0,"length",int_id,4);
+        temp.add_prop(func_call_id,0,"push",undefined_id,0);
+        layouts[for_type] = temp;
+        return layouts.get(for_type);
+    }
+
+    uint32_t init_node_type() {
+        uint32_t at = add_type();
+        TypePool& t = types[at];
+
+        _layout& ntemp = add_template(node_id); //Node template
+        node_type_offset = ntemp.add_prop(int_id,4,"type");
+        node_sub_type_offset = ntemp.add_prop(int_id,4,"sub_type");
+        node_name_offset = ntemp.add_prop(string_id,sizeof(Ptr),"name",char_id,1);
+
+
+        // node_type_col = t.note_value("type",4,int_id);
+        // node_sub_type_col = t.note_value("sub_type",4,int_id);
+        // node_name_col = t.note_value("name",sizeof(Ptr),string_id);
+        // x_col = t.note_value("x",4,float_id);
+        // y_col = t.note_value("y",4,float_id);
+        // z_col = t.note_value("z",4,float_id);
+        // node_value_col = t.note_value("value",sizeof(Ptr),ptr_id);
+        // node_children_col = t.note_value("children",sizeof(Ptr),list_id);
+        // node_quals_col = t.note_value("quals",sizeof(Ptr),list_id);
+        // node_node_table_col = t.note_value("node_table",sizeof(Ptr),map_id);
+        // node_value_table_col = t.note_value("value_table",sizeof(Ptr),map_id);
+        // node_scopes_col = t.note_value("scopes",sizeof(Ptr),list_id);
+        // parent_col = t.note_value("parent",sizeof(Ptr),ptr_id);
+        // owner_col = t.note_value("owner",sizeof(Ptr),ptr_id);
+        // in_scope_col = t.note_value("in_scope",sizeof(Ptr),ptr_id);
+        // is_scope_col = t.note_value("is_scope",1,bool_id);
+        // node_opt_str_col = t.note_value("opt_str",sizeof(Ptr),string_id);
+        // mute_col = t.note_value("mute",1,bool_id);
+
+        // t.init_funcs << [at](Ptr& optr) {
+        //     TypePool& t = types[at];
+        //     optr.pool = at;
+        //     Ptr nameptr{name_store_id, (uint32_t)types[name_store_id].note_value("",sizeof(char),char_id), 0};
+        //     t.set(node_name_col, optr.sidx, (void*)&nameptr);
         
-            Ptr childrenptr{children_store_id, (uint32_t)types[children_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
-            t.set(node_children_col, optr.sidx, (void*)&childrenptr);
+        //     Ptr childrenptr{children_store_id, (uint32_t)types[children_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
+        //     t.set(node_children_col, optr.sidx, (void*)&childrenptr);
         
-            Ptr qualsptr{quals_store_id, (uint32_t)types[quals_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
-            t.set(node_quals_col, optr.sidx, (void*)&qualsptr);
+        //     Ptr qualsptr{quals_store_id, (uint32_t)types[quals_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
+        //     t.set(node_quals_col, optr.sidx, (void*)&qualsptr);
         
-            Ptr scopesptr{scopes_store_id, (uint32_t)types[scopes_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
-            t.set(node_scopes_col, optr.sidx, (void*)&scopesptr);
+        //     Ptr scopesptr{scopes_store_id, (uint32_t)types[scopes_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
+        //     t.set(node_scopes_col, optr.sidx, (void*)&scopesptr);
         
-            Ptr nodetableptr{node_table_store_id, (uint32_t)types[node_table_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
-            t.set(node_node_table_col, optr.sidx, (void*)&nodetableptr);
+        //     Ptr nodetableptr{node_table_store_id, (uint32_t)types[node_table_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
+        //     t.set(node_node_table_col, optr.sidx, (void*)&nodetableptr);
         
-            Ptr valuetableptr{value_table_store_id, (uint32_t)types[value_table_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
-            t.set(node_value_table_col, optr.sidx, (void*)&valuetableptr);
+        //     Ptr valuetableptr{value_table_store_id, (uint32_t)types[value_table_store_id].note_value("",sizeof(Ptr),ptr_id), 0};
+        //     t.set(node_value_table_col, optr.sidx, (void*)&valuetableptr);
         
-            Ptr optstrptr{opt_str_store_id, (uint32_t)types[opt_str_store_id].add_column(sizeof(char)), 0};
-            t.set(node_opt_str_col, optr.sidx, (void*)&optstrptr);
+        //     Ptr optstrptr{opt_str_store_id, (uint32_t)types[opt_str_store_id].add_column(sizeof(char)), 0};
+        //     t.set(node_opt_str_col, optr.sidx, (void*)&optstrptr);
             
-            Ptr deadptr; deadptr.idx = 0;
-            t.set(parent_col, optr.sidx, (void*)&deadptr);
-            t.set(owner_col, optr.sidx, (void*)&deadptr);
-            t.set(in_scope_col, optr.sidx, (void*)&deadptr);
-            t.set(node_value_col, optr.sidx, (void*)&deadptr);
+        //     Ptr deadptr; deadptr.idx = 0;
+        //     t.set(parent_col, optr.sidx, (void*)&deadptr);
+        //     t.set(owner_col, optr.sidx, (void*)&deadptr);
+        //     t.set(in_scope_col, optr.sidx, (void*)&deadptr);
+        //     t.set(node_value_col, optr.sidx, (void*)&deadptr);
     
-            bool f = false;
-            t.set(is_scope_col, optr.sidx, (void*)&f);
-            t.set(mute_col, optr.sidx, (void*)&f);
+        //     bool f = false;
+        //     t.set(is_scope_col, optr.sidx, (void*)&f);
+        //     t.set(mute_col, optr.sidx, (void*)&f);
     
-            float zero = 0.0f;
-            t.set(x_col, optr.sidx, (void*)&zero);
-            t.set(y_col, optr.sidx, (void*)&zero);
-            t.set(z_col, optr.sidx, (void*)&zero);
-        };
+        //     float zero = 0.0f;
+        //     t.set(x_col, optr.sidx, (void*)&zero);
+        //     t.set(y_col, optr.sidx, (void*)&zero);
+        //     t.set(z_col, optr.sidx, (void*)&zero);
+        // };
 
         return at;
     }
@@ -292,6 +347,18 @@ namespace Acorn {
         inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
         inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
         std::string to_std() {return std::string((char*)col().storage, length());}
+    };
+
+    struct Qstring : Col {
+        inline char at(uint32_t idx) {return *(char*)get(idx);}
+        inline void push(char c) { Col::push((void*)&c); }
+        inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) Col::push(&s[i]);}
+        inline void push(const std::string& s) { push(s.data(), s.length()); }
+        inline void operator=(const std::string& s){ clear(); push(s);}
+        inline void operator=(Qstring s){ clear(); push((const char*)s.storage, s.length());}
+        inline void operator=(const char* s) { clear(); push(s, strlen(s)); }
+        inline char& operator[](uint32_t idx) { return *(char*)get(idx); }
+        std::string to_std() {return std::string((char*)storage, length());}
     };
 
     #define NAMED_PTRS 1
@@ -449,16 +516,25 @@ namespace Acorn {
         }
     };
     
+    struct QNode : public Col {
+        inline uint32_t& type()                   {return *(uint32_t*)&storage[node_type_offset];}
+        inline void      type(uint32_t t)         {memcpy(&storage[node_type_offset],(void*)&t,4);}
+        inline uint32_t& sub_type()               {return *(uint32_t*)&storage[node_sub_type_offset];}
+        inline void      sub_type(uint32_t st)    {memcpy(&storage[node_sub_type_offset],(void*)&st,4);}
+    };
+
     struct Node : public Ptr {
         Node() {}
         Node(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx;}
+
+        inline QNode& toQ() {return (QNode&)types[pool][idx];};
     
-        inline uint32_t& type()                   {return *(uint32_t*)types[node_type_id][node_type_col][sidx];}
-        inline void      type(uint32_t t)         {types[node_type_id][node_type_col].set(sidx,(void*)&t);}
-        inline uint32_t& sub_type()               {return *(uint32_t*)types[node_type_id][node_sub_type_col][sidx];}
-        inline void      sub_type(uint32_t st)    {types[node_type_id][node_sub_type_col].set(sidx,(void*)&st);}
+        inline uint32_t& type()                   {return *(uint32_t*)types[pool][idx][node_type_offset];}
+        inline void      type(uint32_t t)         {types[pool][idx].set(node_type_offset,(void*)&t);}
+        inline uint32_t& sub_type()               {return *(uint32_t*)types[pool][idx][node_sub_type_offset];}
+        inline void      sub_type(uint32_t st)    {types[pool][idx].set(node_sub_type_offset,(void*)&st);}
         
-        inline Ptr&      name_ptr()               {return *(Ptr*)types[node_type_id][node_name_col][sidx];}
+        inline Ptr&      name_ptr()               {return *(Ptr*)types[node_type_id][idx][node_name_offset];}
         inline Col&      name_col()               {Ptr& p = name_ptr(); return types[p.pool][p.idx];}
         inline string    name()                   {return string(name_ptr());}
         inline void      name(std::string s)      {name() = s;}
@@ -508,6 +584,7 @@ namespace Acorn {
         inline string    opt_str()                {return string(opt_str_ptr());}
         
         inline bool&     mute()                   {return *(bool*)types[node_type_id][mute_col][sidx];}
+        inline void      mute(bool b)             {types[node_type_id][mute_col].set(sidx,(void*)&b);}
     
     
         inline void copy(Node o) {
@@ -518,6 +595,8 @@ namespace Acorn {
             idx = o.idx;
         }
     };
+
+    bool is_live(Ptr& p) {return p.sidx==1;}
 
     inline Node Value::type_scope() {return Node(*(Ptr*)types[value_type_id][type_scope_col][sidx]);}
 
@@ -586,9 +665,9 @@ namespace Acorn {
         Ptr p = types[value_type_id].create();
         return Value(p);
     }
-    Value make_value(uint32_t type, uint32_t size, uint32_t addr = 0, uint32_t subtype = 0, uint32_t subsize = 0) {
+    Value make_value(uint32_t type, uint32_t size, uint32_t addr = 0, uint32_t subtype = 0, uint32_t subsize = 0, Ptr type_scope = {0,0,0}) {
         Value v = make_value();
-        v.size(size); v.type(type); v.address(addr); v.sub_type(subtype); v.sub_size(subsize);
+        v.size(size); v.type(type); v.address(addr); v.sub_type(subtype); v.sub_size(subsize); v.type_scope(type_scope);
         return v;
     }
 
@@ -947,7 +1026,7 @@ namespace Acorn {
     }
 
     // #define MUTE_TABLES 1
-    // #define MUTE_MUTED_QUALS 1
+    #define ACORN_MUTE_MUTED_QUALS 0
 
     std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
         std::string indent(depth * 2, ' ');
@@ -955,18 +1034,18 @@ namespace Acorn {
         
         to_return += indent + sigil + std::to_string(index) + ": " + node_info(node);
         
-        // if(!node->quals.empty()) {
-        //     to_return += " [";
-        //     for(int i=0;i<node->quals.length();i++) {
-        //         #if MUTE_MUTED_QUALS
-        //         if(!node->quals[i]->mute)
-        //             to_return += labels[node->quals[i]->type]+(i!=node->quals.length()-1?", ":"");
-        //         #else
-        //             to_return += labels[node->quals[i]->type]+(i!=node->quals.length()-1?", ":"");
-        //         #endif
-        //     }
-        //     to_return += "]";
-        // }
+        if(!node.quals().empty()) {
+            to_return += " [";
+            for(int i=0;i<node.quals().length();i++) {
+                #if ACORN_MUTE_MUTED_QUALS
+                if(!node.quals()[i].mute())
+                    to_return += labels[node.quals()[i].type()]+(i!=node.quals().length()-1?", ":"");
+                #else
+                    to_return += labels[node.quals()[i].type()]+(i!=node.quals().length()-1?", ":"");
+                #endif
+            }
+            to_return += "]";
+        }
 
         // #if !MUTE_TABLES 
         // if(node->value_table.size()>0) {
@@ -1030,7 +1109,6 @@ namespace Acorn {
 
     void init_type_pool() {
         labels[undefined_id] = "UDEFINED";
-        labels[ptr_id] = "ptr";
         labels[ptr_id] = "Ptr";
 
         types[handler_type_id].type_name = "handlers";
@@ -1046,26 +1124,26 @@ namespace Acorn {
         types[data_store_id].type_name = "data";
         types[sub_value_store_id].type_name = "sub_value";
         
-        value_table look;
-        Node ntemp(types[node_type_id].create()); //The node template
-        ntemp.name("Node template");
-        ntemp.value_table_col().label = "node template";
-        look = ntemp.value_table();
-        look.put("type",make_value(int_id,4,node_type_col));
-        look.put("name",make_value(string_id,sizeof(Ptr),node_name_col));
-        look.put("children",make_value(col_id,sizeof(Ptr),node_children_col,node_id,sizeof(Ptr)));
-        look.put("value",make_value(value_id,sizeof(Ptr),node_value_col));
-        look.put("scopes",make_value(col_id,sizeof(Ptr),node_scopes_col,node_id,sizeof(Ptr)));
-        look.put("quals",make_value(col_id,sizeof(Ptr),node_quals_col,node_id,sizeof(Ptr)));
+        // value_table look;
+        // Node ntemp(types[node_type_id].create()); //The node template
+        // ntemp.name("Node template");
+        // ntemp.value_table_col().label = "node template";
+        // look = ntemp.value_table();
+        // look.put("type",make_value(int_id,4,node_type_col));
+        // look.put("name",make_value(string_id,sizeof(Ptr),node_name_col));
+        // look.put("children",make_value(col_id,sizeof(Ptr),node_children_col,node_id,sizeof(Ptr)));
+        // look.put("value",make_value(value_id,sizeof(Ptr),node_value_col));
+        // look.put("scopes",make_value(col_id,sizeof(Ptr),node_scopes_col,node_id,sizeof(Ptr)));
+        // look.put("quals",make_value(col_id,sizeof(Ptr),node_quals_col,node_id,sizeof(Ptr)));
 
-        Node vtemp(types[node_type_id].create()); //The value template
-        vtemp.name("Value template");
-        vtemp.value_table_col().label = "value template";
-        look = vtemp.value_table();
-        look.put("type",make_value(int_id,4,value_type_col));
-        look.put("size",make_value(int_id,4,size_col));
-        look.put("data",make_value(ptr_id,sizeof(Ptr),value_data_col));
-        look.put("quals",make_value(col_id,sizeof(Ptr),value_quals_col,node_id,sizeof(Ptr)));
+        // Node vtemp(types[node_type_id].create()); //The value template
+        // vtemp.name("Value template");
+        // vtemp.value_table_col().label = "value template";
+        // look = vtemp.value_table();
+        // look.put("type",make_value(int_id,4,value_type_col));
+        // look.put("size",make_value(int_id,4,size_col));
+        // look.put("data",make_value(ptr_id,sizeof(Ptr),value_data_col));
+        // look.put("quals",make_value(col_id,sizeof(Ptr),value_quals_col,node_id,sizeof(Ptr)));
     }
 
     Node scan_for_node(const std::string& label, Node from) {
@@ -1081,7 +1159,18 @@ namespace Acorn {
             }
         }
         return Ptr(0,0,0);
-}
+    }
+
+    void test_acorn() {
+        Ptr p = {node_type_id,types[node_type_id].create_column(1,node_id,true),0};
+        types[p.pool][p.idx].push(malloc(layouts[node_id].total_size));
+        // QNode& node = (QNode&)types[node_type_id][p.idx];
+        Ptr nameptr = {name_store_id,types[name_store_id].create_column(1,char_id,true),0};
+        Node n(p);
+        types[n.pool][n.idx].set(node_name_offset,(void*)&nameptr);
+        n.name("Hey jay");
+        print(n.name().to_std());
+    }
         
     struct Unit : public q_object {
         Unit() {init();}

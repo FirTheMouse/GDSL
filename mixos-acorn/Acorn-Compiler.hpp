@@ -404,6 +404,30 @@ namespace Acorn {
             return val;
         }
 
+        // Value distribute_value(QNode& node, const std::string& label, Value val) {
+        //     if(node.value_table().hasKey(label)) {
+        //         Value table_value = node.value_table().get(label);
+        //         if(table_value.type() == 0) {
+        //             table_value.copy(val);
+        //             val = table_value;
+        //         }
+        //     } else {
+        //         node.value_table().put(label, val);
+        //     }
+        //     for(int c = 0;c<node.children().length();c++) {
+        //         QNode& child = node.children()[c].toQ();
+        //         if(!child.scopes().empty()) {
+        //             for(int s = 0;s<child.scopes().length();s++) {
+        //                 QNode& scope = child.scopes().get(s).toQ();
+        //                 if(scope.owner().idx==child.idx) {
+        //                     val = distribute_value(scope,label,val);
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     return val;
+        // }
+
         Node distribute_node(Node node, const std::string& label, Node carry) {
             if(node.node_table().hasKey(label)) {
                 Node table_node = node.node_table().get(label);
@@ -797,6 +821,9 @@ namespace Acorn {
                     node.type(func_decl_id);
                     node.scopes()[0] = distribute_node(node.in_scope(),node.name().to_std(),node.scopes()[0]);
                     node.value().type_scope(node.scopes()[0]);
+                    if(node.in_scope().type()==type_scope_id) {
+                        layouts[node.in_scope().owner().value().type()].add_prop(func_call_id,0,node.name().to_std(),node.value().type(),node.value().sub_type(),node.scopes()[0]);
+                    }
                     node.value().sub_type(0);
                     node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value()));
                 } else {
@@ -805,16 +832,18 @@ namespace Acorn {
                     node.value().type_scope(node.scopes()[0]);
                     node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value()));
                     node.scopes()[0].type(type_scope_id);
+                    add_template(node.value().type());
                 }
             } else {
                 has_scope = find_node_in_scope(node); //To distinquish func_calls from object identifiers
                 if(has_sub_type) {
                     node.type(var_decl_id);
-                    // if(node.in_scope().type()==type_scope_id) {
-                    //     node->in_scope->value_table.put(node->name, decl_value);
-                    // } else {
+                    if(node.in_scope().type()==type_scope_id) {
+                        node.in_scope().value_table().put(node.name().to_std(), decl_value); //So we don't distribute into function bodies, we need to alias later via this, as it's per instance
+                        layouts[node.in_scope().owner().value().type()].add_prop(node.value().type(),node.value().size(),node.name().to_std());
+                    } else {
                         node.value(distribute_value(node.in_scope(), node.name().to_std(), decl_value));
-                    //}
+                    }
                     node.value().sub_type(0);
                 } else if(has_scope) {
                     node.type(func_call_id);

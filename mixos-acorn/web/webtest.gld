@@ -2,10 +2,6 @@
 
     Node emitter;
 
-    int emit_as_html(Node n) {
-        source.append(n.name);
-    }
-
     int emit_contents {
         if(node.scopes.length>0) {
             Node scope = node.scopes.get(0);
@@ -24,10 +20,15 @@
         in naming {
             node.name = result.take(index+1).name;
         }
+        in resolving {
+            gather_props;
+        }
         in htmlemiting {
             source(subsource);
-            source.append("<p>");
-            emit_as_html(node);
+            source.append("<p");
+            emit_inline_html;
+            source.append(">");
+            source.append(node.name);
             source.append("</p>");
             emit_contents;
         }
@@ -39,13 +40,6 @@
             source.append("<html><body>");
             emit_contents;
             source.append("<body></html>");
-        }
-    }
-
-    "print" {
-        in htmlemiting {
-            source(subsource);
-            source.append("PRINT");
         }
     }
 
@@ -68,7 +62,9 @@ while(0<1) {
     Node handle;
     aboveasbelow;
     emit_block {
-        text "wub" {}
+        text "wub" {
+            "color" : "red";
+        }
     }
     string response = "";
         response.append("HTTP/1.1 200 OK\r\n");

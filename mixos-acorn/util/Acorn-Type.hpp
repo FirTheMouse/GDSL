@@ -10,6 +10,7 @@ namespace Acorn {
         uint32_t size = 0;
         uint32_t capacity = 0;
         uint32_t tag = 0;
+        bool live = true;
 
         std::string label;
         map<std::string,uint32_t> cells;
@@ -419,6 +420,25 @@ namespace Acorn {
         uint32_t new_column(const std::string& name,void* value, uint32_t size, uint32_t tag) {
             add(name,value,size,-1,tag);
             return columns.length()-1;
+        }
+
+        //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
+        uint32_t create_column(uint32_t size, uint32_t tag, bool use_pooling, bool tag_sensitive = false) {
+            if(use_pooling) {
+                for(int i=0;i<columns.length();i++) {
+                    Col& col = columns[i];
+                    if(!col.live&&col.element_size==size&&(!tag_sensitive||col.tag==tag)) {
+                        return i;
+                    }
+                }
+            }
+            add_column(size);
+            columns.last().tag = tag;
+            return columns.length()-1;
+        }
+
+        void recycle_column(uint32_t id) {
+            columns[id].live = false;
         }
 
         //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array

@@ -38,7 +38,7 @@ namespace Acorn {
         uint32_t ptr_length_id = reg_id("PTR_LENGTH");
         uint32_t ptr_clear_id = reg_id("PTR_CLEAR");
         uint32_t string_append_id = reg_id("STRING_APPEND");
-        //uint32_t string_substr = reg_id("STRING_SUBSTR");
+        uint32_t string_substr = reg_id("STRING_SUBSTR");
 
         void init() override {
 

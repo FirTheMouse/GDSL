@@ -1,0 +1,27 @@
+"test" {
+    in executing {
+        print(source);
+    }
+}
+
+ctxsource("Hello world");
+test;
+
+ctxsource("Goodbye world");
+test;
+
+Node n;
+Node j;
+n.type = 3;
+n.children.push(j);
+j.name = "Joe";
+j.type = 6;
+print("Child: ",n.children.get(0).type);
+
+Test 2
+Node n;
+Node m;
+m.type = 8;
+n.children.push(m);
+n.type = 6;
+print(n.type," | ",n.children.length," | ",n.children.get(0).type," | ",n.children(0).type);

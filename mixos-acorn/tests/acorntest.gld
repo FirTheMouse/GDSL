@@ -1,19 +1,6 @@
-"test" {
-    in executing {
-        print(source);
-    }
-}
-
-ctxsource("Hello world");
-test;
-
-ctxsource("Goodbye world");
-test;
-
 Node n;
-Node j;
-n.type = 3;
-n.children.push(j);
-j.name = "Joe";
-j.type = 6;
-print("Child: ",n.children.get(0).type);
+Node m;
+m.name = "ho";
+n.children.push(m);
+n.children.get(0).name+" hey"+" way";
+print(m.name);

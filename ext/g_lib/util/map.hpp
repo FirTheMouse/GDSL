@@ -125,7 +125,13 @@ public:
     }
 };
 
-
+static inline uint32_t hashString(const std::string& str) {
+    uint32_t hash = 5381;
+    for (char c : str) {
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    }
+    return hash;
+}
 
 template<typename K,typename V>
 class map
@@ -147,14 +153,6 @@ public:
 
     size_t size() {return size_;}
 
-    uint32_t hashString(const std::string& str) {
-        uint32_t hash = 5381;
-        for (char c : str) {
-            hash = ((hash << 5) + hash) + c; // hash * 33 + c
-        }
-        return hash;
-    }
-
     static inline uint32_t mix32(uint64_t x) {
         x ^= x >> 33;
         x *= 0xff51afd7ed558ccdULL;
@@ -162,6 +160,11 @@ public:
         x *= 0xc4ceb9fe1a85ec53ULL;
         x ^= x >> 33;
         return (uint32_t)x;
+    }
+
+    uint32_t mix96(uint32_t a, uint32_t b, uint32_t c) {
+        uint64_t combined = ((uint64_t)a << 32) | b;
+        return mix32(combined) ^ mix32((uint64_t)c);
     }
 
     template<typename T>
@@ -182,7 +185,12 @@ public:
             auto addr = (std::uintptr_t)val;
             addr >>= 3; 
             return mix32((uint64_t)addr);
-        } 
+        } else if constexpr (sizeof(T)==12) {
+            const uint32_t* parts = reinterpret_cast<const uint32_t*>(&val);
+            return mix96(parts[0], parts[1], parts[2]);
+        } else if constexpr (sizeof(T)==8) {
+            return mix32((uint64_t)val);
+        }
         else {
             return val;
         }

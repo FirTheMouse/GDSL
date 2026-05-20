@@ -11,6 +11,7 @@ namespace Acorn {
         uint32_t capacity = 0;
         uint32_t tag = 0;
         bool live = true;
+        bool heterogenous = false;
 
         std::string label;
         map<std::string,uint32_t> cells;
@@ -19,13 +20,10 @@ namespace Acorn {
         inline bool empty() {return size==0;}
 
         void reserve(uint32_t new_capacity) {
-            if (new_capacity <= capacity) return;
+            if(new_capacity <= capacity) return;
             
             uint8_t* newPtr = new uint8_t[new_capacity];
-            for (size_t i = 0; i < size; ++i) {
-                newPtr[i] = std::move(storage[i]);
-            }
-            
+            if(storage) memcpy(newPtr, storage, size);
             delete[] storage;
             storage = newPtr;
             capacity = new_capacity;
@@ -39,9 +37,13 @@ namespace Acorn {
         }
 
         void push(const void* element) {
-            size_t old_size = size;
-            resize(old_size + element_size);
+            uint32_t old_size = size;
+            uint32_t new_size = size+element_size;
+            if(new_size>=capacity) {
+                reserve(new_size*2);
+            }
             memcpy(&storage[old_size], element, element_size);
+            size = new_size;
         }
         void operator<<(const void* element) {push(element);}
         void push_default() {
@@ -50,7 +52,15 @@ namespace Acorn {
             memset(&storage[old_size], 0, element_size);
         }
         
-        inline void* get(uint32_t index) {return &storage[index * element_size];}
+        inline void* sget(uint32_t index) {return &storage[index * element_size];}
+        inline void* qget(uint32_t offset) {return &storage[offset];}
+        inline void* get(uint32_t index) {
+            if(heterogenous) {
+                return qget(index);
+            } else {
+                return sget(index);
+            }
+        }
         inline void* operator[](uint32_t index) {return get(index);}
         inline void* last() {return get(size-1);}
 
@@ -62,7 +72,8 @@ namespace Acorn {
         }
         inline void* operator[](const std::string& key) {return get(key);}
 
-        inline void set(size_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
+        inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
+        inline void qset(uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[offset], element, width);}
         inline void set(const std::string& key, const void* element) {
             if(!hasKey(key)) {print(red("acorntype:col:set does not have key "+key+"!"));} 
             else {memcpy(&storage[cells.get(key) * element_size], element, element_size);}
@@ -125,6 +136,8 @@ namespace Acorn {
         uint32_t idx = 0; //Column OR type if a node/value
         uint32_t sidx = 0; //Row
     };
+
+    static const Ptr deadptr = {0,0,0};
 
 
     class Type {
@@ -423,11 +436,13 @@ namespace Acorn {
         }
 
         //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
-        uint32_t create_column(uint32_t size, uint32_t tag, bool use_pooling, bool tag_sensitive = false) {
+        uint32_t create_column(uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
             if(use_pooling) {
                 for(int i=0;i<columns.length();i++) {
                     Col& col = columns[i];
                     if(!col.live&&col.element_size==size&&(!tag_sensitive||col.tag==tag)) {
+                        col.clear();
+                        col.live = true;
                         return i;
                     }
                 }
@@ -435,6 +450,15 @@ namespace Acorn {
             add_column(size);
             columns.last().tag = tag;
             return columns.length()-1;
+        }
+        //Creates a column from pool and intilizes it's memory if empty
+        uint32_t push_column(uint32_t size, uint32_t tag) {
+            uint32_t at = create_column(size,tag);
+            Col& col = columns[at];
+            if(col.size<size) {
+                col.resize(size);
+            }
+            return at;
         }
 
         void recycle_column(uint32_t id) {

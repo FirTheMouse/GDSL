@@ -54,6 +54,7 @@ namespace Acorn {
         
         inline void* sget(uint32_t index) {return &storage[index * element_size];}
         inline void* qget(uint32_t offset) {return &storage[offset];}
+        inline void* iget(uint32_t index, uint32_t offset) {return &storage[index * element_size + offset];}
         inline void* get(uint32_t index) {
             if(heterogenous) {
                 return qget(index);
@@ -74,6 +75,7 @@ namespace Acorn {
 
         inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
         inline void qset(uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[offset], element, width);}
+        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
         inline void set(const std::string& key, const void* element) {
             if(!hasKey(key)) {print(red("acorntype:col:set does not have key "+key+"!"));} 
             else {memcpy(&storage[cells.get(key) * element_size], element, element_size);}

@@ -249,6 +249,7 @@ namespace Acorn {
             at_y = 0.0f;
             Context ctx(result,index);
             ctx.source = code;
+            ctx.root = root;
 
             #if PRINT_ALL
             newline("tokenize pass");
@@ -756,9 +757,9 @@ namespace Acorn {
 
         void resolve_identifier(Context& ctx) {
             Node node = ctx.node;
-            Value decl_value = deadptr;
-            if(is_live(node.value())) decl_value = node.value();
-            else decl_value = make_value();
+            Value decl_value = make_value();
+            // if(is_live(node.value())) decl_value = node.value();
+            // else decl_value = make_value();
             bool is_qualifier = is_live(node.value()) && node.value().type()!=0 && node.value().sub_type() != 0; 
             //We count it as a qualifer if it has a fully valid value to stamp
 
@@ -803,6 +804,7 @@ namespace Acorn {
                 }
             }
 
+            // recycle_value(node.value()); //Figure out how to deal with lifetimes like this later
             node.value(decl_value);
 
             fire_quals(ctx, decl_value);
@@ -1021,20 +1023,6 @@ namespace Acorn {
 
             // add_gather_token('#', hash_id, identifier_id, identifier_id); //REMEMBER TO FIX ## AS WELL LATER!
 
-            // overload_type(string_id,"+string",reg_id("APPEND"));
-            // overload_type(string_id,"+char",reg_id("APPEND_CHAR"));
-            // overload_type(string_id,"+",reg_id("PAD_WHITESPACE"));
-            // overload_type(string_id,"+int",reg_id("PAD_BY"));
-            // overload_type(string_id,"+any",reg_id("ADD_ANY"));
-            // overload_type(string_id,".\"length\"",reg_id("MAKE_LONGNESS"));
-            // overload_type(string_id,".\"get\"",reg_id("GET_CHAR"),make_value(char_id,1));
-            // overload_type(string_id,".\"as_list\"",reg_id("AS_LIST"),make_value(ptr_id,sizeof(Ptr),0,char_id,1));
-            // overload_type(ptr_id,".\"get\"",reg_id("PTR_GET"),make_value(0));
-            // overload_type(char_id,"+\"cry\"",reg_id("CRY_CHAR"),make_value(string_id,sizeof(Ptr)));
-            // overload_type(char_id,"+string",reg_id("SOB_CHAR"),make_value(string_id,sizeof(Ptr)));
-
-            // overload_type(node_id,"+string",reg_id("ADD_TO_NAME"),make_value(string_id,sizeof(Ptr)));
-
             r_handlers[identifier_id] = [this](Context& ctx){
                 resolve_overload(ctx);
             };
@@ -1055,6 +1043,7 @@ namespace Acorn {
                             ctx.node.value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index], layout.ptrs[index]));
                         } else {
                             print(red("r_handlers::dot_id layout of "+labels[ltype]+" does not have prop "+prop));
+                            // print(red("root is: "+labels[ctx.root.type()]));
                         }
                         right.value(ctx.node.value());
                     } else {
@@ -1083,16 +1072,25 @@ namespace Acorn {
                 if(right.type()==identifier_id) {
                     Ptr ptr = *(Ptr*)left.value().get();
                     ptr.sidx = value.address();
-                    if(ctx.root.type()==equals_id&&is_live(ctx.left)) {
-                        types[value.pool][value.idx].qset(value_data_offset,(void*)&ptr,sizeof(Ptr)); //Setting the data_ptr itself
+                    if(!right.children().empty()) { //This is a bit jank, I would prefer to find a way to get = working instead
+                        if(types[ptr.pool][ptr.idx].heterogenous) {
+                            types[ptr.pool][ptr.idx].qset(ptr.sidx,(void*)&right.children()[0].value().data_ptr(),right.children()[0].value().size());
+                        } else {
+                            types[ptr.pool][ptr.idx].set(ptr.sidx,(void*)&right.children()[0].value().data_ptr());
+                        }
                     } else {
-                        value.set(types[ptr.pool][ptr.idx].get(ptr.sidx)); //Setting what the data_ptr points to
+                        if(ctx.root.type()==equals_id&&is_live(ctx.left)) {
+                            types[value.pool][value.idx].qset(value_data_offset,(void*)&ptr,sizeof(Ptr)); //Setting the data_ptr itself
+                        } else {
+                            value.set(types[ptr.pool][ptr.idx].get(ptr.sidx)); //Setting what the data_ptr points to
+                        }
                     }
                 }
             };
 
             r_handlers[langle_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                resolve_overload(ctx);
                 if(!is_live(ctx.node.value())) ctx.node.value(make_value(bool_id,1));
             };
             x_handlers[langle_id] = [this](Context& ctx){
@@ -1107,6 +1105,7 @@ namespace Acorn {
 
             r_handlers[rangle_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                resolve_overload(ctx);
                 if(!is_live(ctx.node.value())) ctx.node.value(make_value(bool_id,1));
             };
             x_handlers[rangle_id] = [this](Context& ctx){

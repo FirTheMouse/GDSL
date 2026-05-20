@@ -33,7 +33,10 @@ namespace Acorn {
         uint32_t to_type_id = make_tokenized_keyword("to_type");
 
         uint32_t ptr_get_id = reg_id("PTR_GET");
+        uint32_t ptr_take_id = reg_id("PTR_TAKE");
         uint32_t ptr_push_id = reg_id("PTR_PUSH");
+        uint32_t ptr_length_id = reg_id("PTR_LENGTH");
+        uint32_t ptr_clear_id = reg_id("PTR_CLEAR");
         uint32_t string_append_id = reg_id("STRING_APPEND");
         //uint32_t string_substr = reg_id("STRING_SUBSTR");
 
@@ -41,13 +44,38 @@ namespace Acorn {
 
 
             overload_type(ptr_id,".\"get\"",ptr_get_id,make_value(0)); //The value with no type means to take the subtype and subsize from left
-            //overload_type(ptr_id,"any",ptr_get_id,make_value(0)); //This indicates with children
+            overload_type(ptr_id,".\"take\"",ptr_take_id,make_value(0));
             overload_type(ptr_id,".\"push\"",ptr_push_id);
+            overload_type(ptr_id,".\"length\"",ptr_length_id,make_value(int_id,4));
+
             overload_type(string_id,".\"append\"",string_append_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,"+string",string_append_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
+            overload_type(string_id,".\"length\"",ptr_length_id,make_value(int_id,4));
+            overload_type(string_id,".\"clear\"",ptr_clear_id);
             //overload_type(string_id,".\"substr\"",string_substr,make_value(string_id,sizeof(Ptr),0,char_id,1));
 
             x_handlers[ptr_get_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                Value cv = right.value();
+                Ptr ptr = *(Ptr*)left.value().get();
+                Col& col = resolve_to_col(ptr);
+                if(!right.children().empty()) {
+                    cv = right.children()[0].value();
+                }
+                if(cv.type()==int_id) {
+                    int index = *(int*)cv.get();
+                    if(index<col.length()) {
+                        ctx.node.value().set(col.get(index));
+                    } else {
+                        print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
+                    }
+                } else if(cv.type()==string_id) {
+                    ctx.node.value().set(col.get(string(*(Ptr*)cv.get()).to_std()));
+                }
+            };
+            x_handlers[ptr_take_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node.children()[0];
                 Node right = ctx.node.children()[1];
@@ -57,9 +85,9 @@ namespace Acorn {
                     cv = right.children()[0].value();
                 }
                 if(cv.type()==int_id) {
-                    ctx.node.value().set(col.get(*(int*)cv.get()));
-                } else if(cv.type()==string_id) {
-                    ctx.node.value().set(col.get(string(*(Ptr*)cv.get()).to_std()));
+                    int index = *(int*)cv.get();
+                    ctx.node.value().set(col.get(index));
+                    col.removeAt(index);
                 }
             };
             x_handlers[ptr_push_id] = [this](Context& ctx){
@@ -70,6 +98,21 @@ namespace Acorn {
                     Col& col = resolve_to_col(*(Ptr*)left.value().get());
                     col.push(right.children()[0].value().get());
                 }
+            };
+            x_handlers[ptr_length_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                Col& col = resolve_to_col(*(Ptr*)left.value().get());
+                int len = col.length();
+                ctx.node.value().set((void*)&len);
+            };
+            x_handlers[ptr_clear_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                Col& col = resolve_to_col(*(Ptr*)left.value().get());
+                col.clear();
             };
             x_handlers[string_append_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -118,9 +161,9 @@ namespace Acorn {
                     print(node_to_string(root,0,0,true));
                     start_stage(x_handlers);
                     standard_travel_pass(root);
-                    for(int i=0;i<root.children().length();i++) {
-                        ctx.root.children().push(root.children()[i]);
-                    }
+                    // for(int i=0;i<root.children().length();i++) {
+                    //     ctx.root.children().push(root.children().get(i));
+                    // }
                 } else if(c=='\n') {
                     at_y += 1.0f; at_x = -1.0f;
                     ctx.node.name().push(c);
@@ -194,8 +237,10 @@ namespace Acorn {
 
 
             r_handlers[ctx_node_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 ctx.node.value(make_value(node_id,sizeof(Ptr)));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[ctx_node_id] = [this](Context& ctx){
                 ctx.node.value().set((void*)&ctx.sub->node);
@@ -204,8 +249,9 @@ namespace Acorn {
 
             r_handlers[ctx_result_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node.value(make_value(col_id,sizeof(Ptr),0,node_id));
+                ctx.node.value(make_value(ptr_id,sizeof(Ptr),0,node_id,sizeof(Ptr)));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[ctx_result_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -216,6 +262,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 ctx.node.value(make_value(int_id,4));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[ctx_index_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -230,6 +277,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 ctx.node.value(make_value(string_id,sizeof(Ptr)));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[ctx_source_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -243,6 +291,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 ctx.node.value(make_value(string_id,sizeof(Ptr)));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[ctx_nosub_source_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -256,6 +305,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 ctx.node.value(make_value(string_id,sizeof(Ptr)));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[ctx_subsub_source_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -272,6 +322,7 @@ namespace Acorn {
                 ctx.node.value().init_data();
                 Ptr ticket(data_store_id,types[data_store_id].note_value("tostringstorage",sizeof(char),char_id),0);
                 ctx.node.value().set((void*)&ticket);
+                resolve_overload(ctx);
             };
             x_handlers[to_string_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -285,6 +336,7 @@ namespace Acorn {
                 ctx.node.value().setup(string_id,sizeof(Ptr));
                 Ptr ticket(data_store_id,types[data_store_id].note_value("labelstorage",sizeof(char),char_id),0);
                 ctx.node.value().set((void*)&ticket);
+                resolve_overload(ctx);
             };
             x_handlers[labels_id] = [this](Context& ctx){
                 if(!ctx.node.children().empty()) {
@@ -299,6 +351,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 ctx.node.value(make_value(int_id,4));
                 ctx.node.value().init_data();
+                resolve_overload(ctx);
             };
             x_handlers[to_type_id] = [this](Context& ctx){
                 //Add caching for this later

@@ -33,12 +33,11 @@ int main(int argc, char* argv[]) {
     Acorn::init_type_pool();
     // Acorn::test_acorn();
  
-    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
-    // Acorn::init_type_pool();
-    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();

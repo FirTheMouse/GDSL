@@ -13,6 +13,8 @@ namespace Acorn {
     map<uint32_t,std::string> labels;
     list<TypePool> types;
 
+    std::string tag_to_str(uint32_t tag, void* data);
+
     struct type_and_value {
         uint32_t type;
         Ptr value;
@@ -194,15 +196,15 @@ namespace Acorn {
         x_offset = ntemp.add_prop(float_id,4,"x");
         y_offset = ntemp.add_prop(float_id,4,"y");
         z_offset = ntemp.add_prop(float_id,4,"z");
-        node_value_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"value");
+        node_value_offset = ntemp.add_prop(value_id,sizeof(Ptr),"value");
         node_children_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"children",node_id,sizeof(Ptr));
         node_quals_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"quals",node_id,sizeof(Ptr));
         node_node_table_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"node_table",node_id,sizeof(Ptr));
         node_value_table_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"value_table",value_id,sizeof(Ptr));
         node_scopes_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"scopes",node_id,sizeof(Ptr));
-        parent_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"parent");
-        owner_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"owner");
-        in_scope_offset = ntemp.add_prop(ptr_id,sizeof(Ptr),"in_scope");
+        parent_offset = ntemp.add_prop(node_id,sizeof(Ptr),"parent");
+        owner_offset = ntemp.add_prop(node_id,sizeof(Ptr),"owner");
+        in_scope_offset = ntemp.add_prop(node_id,sizeof(Ptr),"in_scope");
         is_scope_offset = ntemp.add_prop(bool_id,1,"is_scope");
         node_opt_str_offset = ntemp.add_prop(string_id,sizeof(Ptr),"opt_str");
         mute_offset = ntemp.add_prop(bool_id,1,"mute");
@@ -225,7 +227,7 @@ namespace Acorn {
         sub_size_offset = vtemp.add_prop(int_id,4,"sub_size");
         value_quals_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"quals",node_id,sizeof(Ptr));
         value_sub_values_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"sub_values",value_id,sizeof(Ptr));
-        type_scope_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"type_scope");
+        type_scope_offset = vtemp.add_prop(node_id,sizeof(Ptr),"type_scope");
         store_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"store");
 
         return at;
@@ -388,6 +390,9 @@ namespace Acorn {
             if(!is_live(dataptr)) {
                 dataptr = init_data();
             }
+            // print("SET AT: ",Ptr_as_string(dataptr));
+            // print("FROM: ",tag_to_str(types[dataptr.pool][dataptr.idx].tag,types[dataptr.pool][dataptr.idx].get(dataptr.sidx)));
+            // print("TO: ",tag_to_str(types[dataptr.pool][dataptr.idx].tag,data));
             types[dataptr.pool][dataptr.idx].set(dataptr.sidx, data);
         }
     
@@ -969,6 +974,27 @@ namespace Acorn {
             lines << subline;
         }
         return print_columnar_table(lines);
+    }
+
+    void print_column(Col& col) {
+        print("COL: ",col.label,"[",labels[col.tag],"]");
+        if(col.heterogenous) {
+            if(layouts.hasKey(col.tag)) {
+                _layout& l = layouts.get(col.tag);
+                for(int o=0;o<l.offsets.length();o++) {
+                    std::string line = "";
+                    line+=pad_str(l.labels[o]+": ",12);
+                    line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
+                    print(line);
+                }
+            } else {
+                print(red("core::print_column unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
+            }
+        } else {
+            for(int i=0;i<col.length();i++) {
+                print(i,": ",tag_to_str(col.tag,col[i]));
+            }
+        }
     }
 
     void dump_unit(bool clear_dump) {

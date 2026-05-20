@@ -2,5 +2,12 @@ Node n;
 Node m;
 m.name = "ho";
 n.children.push(m);
-n.children.get(0).name+" hey"+" way";
-print(m.name);
+print(n.children.take(0).name);
+print(n.children.length);
+
+register text;
+"text" {
+    in naming {
+        node.name = result.take(index+1).name;
+    }
+}

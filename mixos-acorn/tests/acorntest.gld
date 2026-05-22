@@ -1,13 +1,1 @@
-Node n;
-Node m;
-m.name = "ho";
-n.children.push(m);
-print(n.children.take(0).name);
-print(n.children.length);
-
-register text;
-"text" {
-    in naming {
-        node.name = result.take(index+1).name;
-    }
-}
+"wub"|*^+3;

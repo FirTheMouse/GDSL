@@ -114,12 +114,58 @@ namespace Acorn {
             return id;
         }
 
+        map<uint32_t,map<uint32_t,uint32_t>> token_combos;
+        inline uint32_t combine_tokens(char a, char b, char c = '\0', char d = '\0') {
+            return  (uint32_t(uint8_t(a)) << 24) |
+                    (uint32_t(uint8_t(b)) << 16) |
+                    (uint32_t(uint8_t(c)) << 8)  |
+                    (uint32_t(uint8_t(d)));
+        }
+        uint32_t add_token_combo(const std::string& f, char a, char b, char c = '\0', char d = '\0') {
+            uint32_t id = reg_id(f);
+            token_combos[a].put(combine_tokens(a,b,c,d),id);
+            return id;
+        }
+        int find_token_combo(Context& ctx) {
+            char a = ctx.source.at(ctx.index);
+            if(!token_combos.hasKey(a)) return 0;
+
+            char c[4] = {a,'\0','\0','\0'};
+            for(int i=1;i<4;i++) { //To safely fill without outrunning the length of source
+                if(ctx.index+i < ctx.source.length()) {
+                    c[i] = ctx.source.at(ctx.index+i);
+                }
+            }
+
+            uint32_t zero = 0;
+            map<uint32_t,uint32_t>& combos = token_combos.get(a);
+            for(int i=3;i>0;i--) {
+                uint32_t key = combine_tokens(c[0],c[1],c[2],c[3]);
+                uint32_t result = combos.getOrDefault(key,zero);
+                if(result!=0) {
+                    ctx.node.type(result);
+                    return i;
+                }
+                c[i] = '\0';
+            }
+            return 0;
+        }
+
         size_t add_token(char c, const std::string& f) {
             size_t id = reg_id(f);
             tokenizer_functions[c] = [this,id,c](Context& ctx) {
                 ctx.node = make_node();
-                ctx.node.type(id);
-                ctx.node.name().push(c);
+                int to_skip = find_token_combo(ctx);
+                if(to_skip!=0) {
+                    ctx.node.name().push(c);
+                    for(int i=0;i<to_skip;i++) {
+                        ctx.index++;
+                        ctx.node.name().push(ctx.source.at(ctx.index));
+                    }
+                } else {
+                    ctx.node.type(id);
+                    ctx.node.name().push(c);
+                }
                 ctx.result.push(ctx.node);
             };
             char_is_split.put(c, true);
@@ -496,7 +542,9 @@ namespace Acorn {
                     Node type_term = children[0];
                     ctx.node.name(c+type_term.name().to_std());
                     ctx.node.type(unary_id);
-                    ctx.node.value().copy(type_term.value());
+                    if(is_live(type_term.value())) {
+                        ctx.node.value().copy(type_term.value());
+                    }
                 } 
             };
             t_handlers[id] = handler;
@@ -519,6 +567,12 @@ namespace Acorn {
         size_t amp_id = add_binary_operator('&',"AMPERSAND");
         size_t dot_id = add_binary_operator('.', "DOT");
         size_t pipe_id = add_binary_operator('|', "PIPE");
+
+        uint32_t plus_plus_id = add_token_combo("PLUS_PLUS",'+','+');
+        uint32_t plus_plus_plus_id = add_token_combo("PLUS_PLUS_PLUS",'+','+','+');
+        uint32_t plus_equals_plus_id = add_token_combo("PLUS_EQUALS_PLUS",'+','=','+');
+
+        uint32_t random_combo_id = add_token_combo("RANDOM",'|','*','^','+');
 
         //size_t pipe_id = add_token('|',"pipe");
 
@@ -943,7 +997,7 @@ namespace Acorn {
                         if(is_live(tnv.value)) {
                             Value& value = (Value&)tnv.value;
                             if((value.type()!=0)) {
-                                ctx.root.value(tnv.value);
+                                ctx.root.value(make_value(value.type(),value.size(),value.address(),value.sub_type(),value.sub_size(),value.type_scope()));
                             } else {
                                 ctx.root.value(make_value(
                                     ctx.node.value().sub_type(),
@@ -993,6 +1047,8 @@ namespace Acorn {
             set_binding_powers(amp_id, 4,8);
             set_binding_powers(dot_id, 8,9);
             set_binding_powers(pipe_id, 9,8);
+
+            set_binding_powers(random_combo_id,8,9);
 
             t_handlers[identifier_id] = [this](Context& ctx){resolve_identifier(ctx);};
             t_handlers[equals_id] = [this](Context& ctx){standard_sub_process(ctx);};

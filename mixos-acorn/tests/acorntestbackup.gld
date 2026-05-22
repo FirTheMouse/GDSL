@@ -25,3 +25,20 @@ m.type = 8;
 n.children.push(m);
 n.type = 6;
 print(n.type," | ",n.children.length," | ",n.children.get(0).type," | ",n.children(0).type);
+
+
+
+
+string s = "hello world";
+print("Just hello: ",s.slice(0,s.find(" ")));
+print("Just world: ",s.slice(s.find(" ")+1,s.length));
+print("Last l: ",s.substr(s.find("l",0,3),2));
+
+list Node nodes;
+Node n;
+Node m;
+n.name = "N"; m.name = "M";
+print(n.name,"/",m.name);
+nodes.push(n); nodes.push(m);
+nodes.get(0) = m;
+print(nodes.get(0).name,"/",nodes.get(1).name,"/",n.name,"/",m.name);

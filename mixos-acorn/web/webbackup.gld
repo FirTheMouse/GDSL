@@ -27,3 +27,11 @@ while(0<1) {
     }
     write(cfd,ctxsource);
 }
+
+
+
+
+  int body_start = req.find("\r\n\r\n");
+    if(body_start > -1) {    
+        ctxsource(request.substr(body_start + 4));
+    }

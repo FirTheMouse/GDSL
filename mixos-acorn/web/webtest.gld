@@ -34,6 +34,24 @@
         }
     }
 
+    register script;
+    "script" {
+        in naming {
+            node.children.push(result.take(index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            source(subsource);
+            source.append("<script");
+            emit_inline_html;
+            source.append(">");
+            source.append(node.children.get(0).name);
+            source.append("</script>");
+        }
+    }
+
     register emit_block;
     "emit_block" {
         in executing {
@@ -62,10 +80,32 @@ while(0<1) {
     Node handle;
     aboveasbelow;
     emit_block {
+        script "
+            function post(body) {
+                 console.log(\"Button was clicked!\");
+                fetch(window.location.pathname, {
+                    method: \"POST\",
+                    body: body
+                })
+            }
+        ";
+
         text "wub" {
-            "color" : "red";
+            "color" : "purple";
+            "onclick" : "post('wub')";
         }
     }
+
+    print("REQ: ",req);
+
+    string first_line = req.substr(0, req.find("\r\n"));
+    string method = first_line.substr(0, first_line.find(" "));
+    string path = first_line.slice(" ", 1, 2);
+    print("Method: ",method);
+    print("Path: ",path);
+
+  
+
     string response = "";
         response.append("HTTP/1.1 200 OK\r\n");
         response.append("Content-Type: text/html\r\n");

@@ -33,11 +33,11 @@ int main(int argc, char* argv[]) {
     Acorn::init_type_pool();
     // Acorn::test_acorn();
  
-    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
-    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();
@@ -106,8 +106,8 @@ int main(int argc, char* argv[]) {
     // root = twig->process(readFile("modules/tests/pebble.gld"));
     // twig->run(root);
 
-    // g_ptr<Thistle_Unit> thistle = make<Thistle_Unit>();
-    // g_ptr<Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
+    // g_ptr<GDSL::Thistle_Unit> thistle = make<GDSL::Thistle_Unit>();
+    // g_ptr<GDSL::Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));
     // thistle->run(thistle_root);
 
     // g_ptr<Thistle_Unit> pine_thistle = make<Thistle_Unit>();

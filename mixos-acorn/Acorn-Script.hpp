@@ -38,7 +38,10 @@ namespace Acorn {
         uint32_t ptr_length_id = reg_id("PTR_LENGTH");
         uint32_t ptr_clear_id = reg_id("PTR_CLEAR");
         uint32_t string_append_id = reg_id("STRING_APPEND");
-        uint32_t string_substr = reg_id("STRING_SUBSTR");
+        uint32_t string_substr_id = reg_id("STRING_SUBSTR");
+        uint32_t string_slice_id = reg_id("STRING_SLICE");
+        uint32_t string_find_id = reg_id("STRING_FIND");
+        uint32_t string_find_from_id = reg_id("STRING_FIND_FROM");
 
         void init() override {
 
@@ -52,7 +55,11 @@ namespace Acorn {
             overload_type(string_id,"+string",string_append_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,".\"length\"",ptr_length_id,make_value(int_id,4));
             overload_type(string_id,".\"clear\"",ptr_clear_id);
-            //overload_type(string_id,".\"substr\"",string_substr,make_value(string_id,sizeof(Ptr),0,char_id,1));
+            overload_type(string_id,".\"substr\"",string_substr_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
+            overload_type(string_id,".\"slice\"",string_slice_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
+            overload_type(string_id,".\"find\"",string_find_id,make_value(int_id,4));
+
+            overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_value(ptr_id,sizeof(Ptr),0,int_id,4));
 
             x_handlers[ptr_get_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -67,11 +74,18 @@ namespace Acorn {
                 if(cv.type()==int_id) {
                     int index = *(int*)cv.get();
                     if(index<col.length()) {
-                        ctx.node.value().set(col.get(index));
+                        Value value = ctx.node.value();
+                        if(ctx.root.type()==equals_id&&is_live(ctx.left)) {
+                            ptr.sidx = index;
+                            types[value.pool][value.idx].qset(value_data_offset,(void*)&ptr,sizeof(Ptr)); //Setting the data_ptr itself
+                        } else {
+                            value.set(col.get(index)); //Setting what the data_ptr points to
+                        }
                     } else {
                         print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
                     }
                 } else if(cv.type()==string_id) {
+                    //Add suppourt for this and indexing by string later
                     ctx.node.value().set(col.get(string(*(Ptr*)cv.get()).to_std()));
                 }
             };
@@ -131,7 +145,70 @@ namespace Acorn {
                 }
                 ctx.node.value(left.value());
             };
-
+            x_handlers[string_substr_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                if(!is_live(ctx.node.value().data_ptr())) {
+                    Ptr ticket = get_ticket(data_store_id,1,char_id);
+                    ctx.node.value().set((void*)&ticket);
+                }
+                string target(*(Ptr*)ctx.node.value().get());
+                Ptr ptr = *(Ptr*)left.value().get();
+                int from = *(int*)right.children()[0].value().get();
+                int to = target.length()-from;
+                if(right.children().length()>1) {
+                    to = *(int*)right.children()[1].value().get();
+                }
+                target.col().clear();
+                for(int i=from;i<from+to;i++) {
+                    target.push(*(char*)types[ptr.pool][ptr.idx][i]);
+                }
+            };
+            x_handlers[string_slice_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                if(!is_live(ctx.node.value().data_ptr())) {
+                    Ptr ticket = get_ticket(data_store_id,1,char_id);
+                    ctx.node.value().set((void*)&ticket);
+                }
+                string target(*(Ptr*)ctx.node.value().get());
+                Ptr ptr = *(Ptr*)left.value().get();
+                int from = 0;
+                int to = 0; //Add some deffensive checking here later
+                if(right.children()[0].value().type()==string_id) {
+                    string refstr(*(Ptr*)right.children()[0].value().get());
+                    string fromstr(ptr);
+                    from = fromstr.find(refstr,0,*(int*)right.children()[1].value().get())+1;
+                    to = fromstr.find(refstr,0,*(int*)right.children()[2].value().get());
+                } else {
+                    from = *(int*)right.children()[0].value().get();
+                    to = *(int*)right.children()[1].value().get();
+                }
+                target.col().clear();
+                for(int i=from;i<to;i++) {
+                    target.push(*(char*)types[ptr.pool][ptr.idx][i]);
+                }
+            };
+            x_handlers[string_find_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                Node right = ctx.node.children()[1];
+                Ptr ptr = *(Ptr*)left.value().get();
+                Col& tcol = types[ptr.pool][ptr.idx];
+                string refstr(*(Ptr*)right.children()[0].value().get());
+                int start_at = 0;
+                if(right.children().length()>1) {
+                    start_at = *(int*)right.children()[1].value().get();
+                }
+                int nth_of = 1;
+                if(right.children().length()>2) {
+                    nth_of = *(int*)right.children()[2].value().get();
+                }
+                int found_id = string(ptr).find(refstr,start_at,nth_of);
+                ctx.node.value().set((void*)&found_id);
+            };
 
             Handler discard = [this](Context& ctx){
                 ctx.result.removeAt(ctx.index);
@@ -180,18 +257,36 @@ namespace Acorn {
                 ctx.node.value().set((void*)&rv.data_ptr());
             };
 
+            register_type("list",ptr_id,sizeof(Ptr));
+
             r_handlers[var_decl_id] = [this](Context& ctx){
                 ctx.node.value().init_data();
                 fire_quals(ctx,ctx.node.value());
             };
-            r_handlers[prefix_node_id] = [this](Context& ctx){
+
+
+            r_handlers[prefix_ptr_id] = [this](Context& ctx){
                 if(is_live(ctx.value)) {
+                    if(ctx.value.quals().length()>1) {
+                        Node left = ctx.value.quals()[1];
+                        Ptr ticket = get_ticket(data_store_id,left.value().size(),left.value().type());
+                        ctx.value.set((void*)&ticket);
+                        ctx.value.sub_type(left.value().type());
+                        ctx.value.sub_size(left.value().size());
+                    } else {
+                        print(red("prefix_ptr_id::r_handler missing type for list"));
+                    }
+                }
+            };
+
+            r_handlers[prefix_node_id] = [this](Context& ctx){
+                if(is_live(ctx.value)&&ctx.value.quals().length()==1) {
                     Node n = make_node();
                     ctx.value.set((void*)&n);
                 }
             };
             r_handlers[prefix_value_id] = [this](Context& ctx){
-                if(is_live(ctx.value)) {
+                if(is_live(ctx.value)&&ctx.value.quals().length()==1) {
                     Value v = make_value();
                     ctx.value.set((void*)&v);
                 }
@@ -505,7 +600,6 @@ namespace Acorn {
         virtual Node process(std::string path) override {
             Node root = tokenize(path);
             unit_root = root;
-
             return root;
         }
 
@@ -544,6 +638,8 @@ namespace Acorn {
             standard_resolving_pass(root);
         }
     
+
+
         virtual void run(Node root) override {
             compile(root);
 

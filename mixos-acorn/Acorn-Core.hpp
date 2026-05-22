@@ -94,6 +94,8 @@ namespace Acorn {
         labels.put(at,label);
         return at;
     }
+
+    uint32_t prefix_ptr_id = reg_id("prefix_ptr"); uint32_t suffix_ptr_id = reg_id("suffix_ptr");
     uint32_t float_id = reg_id("float"); uint32_t prefix_float_id = reg_id("prefix_float"); uint32_t suffix_float_id = reg_id("suffix_float");
     uint32_t int_id = reg_id("int"); uint32_t prefix_int_id = reg_id("prefix_int"); uint32_t suffix_int_id = reg_id("suffix_int");
     uint32_t bool_id = reg_id("bool"); uint32_t prefix_bool_id = reg_id("prefix_bool"); uint32_t suffix_bool_id = reg_id("suffix_bool");
@@ -281,6 +283,25 @@ namespace Acorn {
         inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
         inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
         std::string to_std() {return std::string((char*)col().storage, length());}
+
+        inline int find(string look_for, int start_at, int nth_of = 1) {
+            int found_at = -1;
+            for(int i=start_at;i<col().length();i++) {
+                bool match = true;
+                for(int s=0;s<look_for.length();s++) {
+                    if(*(char*)col()[i+s]!=look_for[s]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if(match) {
+                    if(--nth_of<=0) {
+                        found_at = i; break;
+                    }
+                }
+            }
+            return found_at;
+        }
     };
 
     struct Qstring : Col {

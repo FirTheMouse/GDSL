@@ -21,8 +21,9 @@ namespace Acorn {
         uint32_t properties_id = reg_id("properties");
         uint32_t inlined_id = reg_id("inlined");
         uint32_t invisible_id = reg_id("invisible");
-        uint32_t component_id = reg_id("component");
+        uint32_t component_id = reg_id("component"); uint32_t suffix_component_id = reg_id("suffix_component"); uint32_t prefix_component_id = reg_id("prefix_component");
 
+        uint32_t find_node_id = make_tokenized_keyword("find_node");
 
         _lookup is_structural{{
             "id", "class", "name", "type",
@@ -100,7 +101,7 @@ namespace Acorn {
                 }  
                 s += "\""; 
             }
-            ctx.sub->sub->source.push(s);
+            ctx.sub->source.push(s);
         }
 
        Node make_property(Node type, Node value, Node parent) {
@@ -170,9 +171,102 @@ namespace Acorn {
             }
         }
 
-        void init() override {
 
+
+        Node webcorn_node_scan(const std::string& label, Node from) {
+            if(!from.scopes().empty()) {
+                for(int q=0;q<from.scopes()[0].quals().length();q++) {
+                    Node qual = from.scopes()[0].quals()[q];
+                    for(int i=0;i<qual.children().length();i++) {
+                        Node c = qual.children()[i];
+                        if(c.type()==property_id) {
+                            std::string prop = "";
+                            std::string val = "";
+    
+                            if(c.children()[0].value().type()==string_id) {
+                                prop = string(*(Ptr*)c.children()[0].value().get()).to_std();
+                            } else {
+                                prop = c.children()[0].name().to_std();
+                            }
+    
+                            if(c.children()[1].value().type()==string_id) {
+                                val = string(*(Ptr*)c.children()[1].value().get()).to_std();
+                            } else {
+                                val = c.children()[1].name().to_std();
+                            }
+
+                            if(prop=="id"&&val==label) return from;
+                        }
+                    }
+                }
+            }
+            for(int i=0;i<from.children().length();i++) {
+                Node found = webcorn_node_scan(label,from.children()[i]);
+                if(is_live(found)) {
+                    return found;
+                }
+            }
+            for(int i=0;i<from.scopes().length();i++) {
+                Node found = webcorn_node_scan(label,from.scopes()[i]);
+                if(is_live(found)) {
+                    return found;
+                }
+            }
+            return deadptr;
+        }
+
+        void init() override {
             set_binding_powers(colon_id,4,6);
+            register_type("div",component_id,0);
+
+            r_handlers[func_decl_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
+                if(ctx.node.type()==func_call_id) {
+                    //instantiate_template(ctx.node,ctx.node.value().type_scope().owner(),ctx);
+                    sync_args(ctx);
+                } else {
+                    Node scope = ctx.node.scopes()[0];
+                    if(!is_live(scope.value())) {
+                        scope.value(make_value()); 
+                        scope.value().loc(0); //Set location for stack depth
+                    }
+                }
+                if(ctx.node.value().type()==component_id) {
+                    standard_gather_from_scope(ctx);    
+                    if(!ctx.node.scopes().empty()) {
+                        // for(auto c : ctx.node->children) {
+                        //     if(c->type==var_decl_id||c->type==func_decl_id) {
+                        //         ctx.node->quals << make<Node>(template_id);
+                        //         break;
+                        //     }
+                        // }
+                        for(int i=0;i<ctx.node.scopes().length();i++) {
+                            Node s = ctx.node.scopes()[i];
+                            if(ctx.node.value().type()==invisible_id) {
+                                s.type(invisible_id);
+                            // } else if(ctx.node->value->type==foldable_id) {
+                            //     s->type = foldable_id;
+                            // } else if(ctx.node->value->type==iframe_id) {
+                            //     s->type = iframe_id;
+                            } else {
+                                s.type(component_id);
+                            }
+                        }
+                    }
+                }
+            };
+            r_handlers[func_call_id] = r_handlers[func_decl_id];
+            // html_handlers[func_decl_id] = [this](Context& ctx){
+            //     if(ctx.node->value->type==inlined_id) return;
+            //     if(ctx.node->value->type==invisible_id) return;
+            //     if(ctx.node->has_qual(template_id)) return;
+            //     if(ctx.node->scope()) {
+            //         for(auto s : ctx.node->scopes) { 
+            //             ctx.source = html_encode_node(s);
+            //         }
+            //     }   
+            // };
+            // html_handlers[func_call_id] = html_handlers[func_decl_id];
 
             x_handlers[make_tokenized_keyword("gather_props")] = [this](Context& ctx){
                 ctx.node = ctx.sub->node;
@@ -183,6 +277,22 @@ namespace Acorn {
                 if(ctx.sub->node.scopes().empty()) return;
                 ctx.node = ctx.sub->node.scopes()[0];
                 emit_inline_html(ctx);
+            };
+
+            r_handlers[find_node_id] = [this](Context& ctx){
+                ctx.node.value(make_value(node_id,sizeof(Ptr)));
+            };
+            x_handlers[find_node_id] = [this](Context& ctx){
+                std::string target = string(*(Ptr*)ctx.node.children()[0].value().get()).to_std();
+                Node& from = (Node&)(*(Ptr*)ctx.node.children()[1].value().get());
+                Node result = webcorn_node_scan(target,from);
+                ctx.node.value().set((void*)&result);
+                print("TARGET: ",target," FROM: ",node_info(from));
+                if(is_live(result)) {
+                    print("FOUND: ",node_to_string(result));
+                } else {
+                    print(red("COULD NOT FIND "+target));
+                }
             };
 
             x_handlers[make_tokenized_keyword("webcorn")] = [this](Context& ctx){

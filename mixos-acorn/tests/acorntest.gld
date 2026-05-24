@@ -1,1 +1,10 @@
-"wub"|*^+3;
+##
+
+print("PRECOMPILE");
+
+##
+
+int i = 4;
+if(i<=4) {
+    print("RIGHT");
+}

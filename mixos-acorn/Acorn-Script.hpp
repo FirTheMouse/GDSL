@@ -31,6 +31,7 @@ namespace Acorn {
 
         uint32_t to_string_id = make_tokenized_keyword("to_string");
         uint32_t to_type_id = make_tokenized_keyword("to_type");
+        uint32_t DEBUG_ROOT_id = make_tokenized_keyword("DEBUG_ROOT");
 
         uint32_t ptr_get_id = reg_id("PTR_GET");
         uint32_t ptr_take_id = reg_id("PTR_TAKE");
@@ -43,12 +44,61 @@ namespace Acorn {
         uint32_t string_find_id = reg_id("STRING_FIND");
         uint32_t string_find_from_id = reg_id("STRING_FIND_FROM");
 
+        uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (*(int*)ctx.node.children()[0].value().get()==*(int*)ctx.node.children()[1].value().get());
+            ctx.node.value().set((void*)&result);
+        });
+
+        uint32_t check_equality_string = overload_type(string_id,"==string","CHECK_EQUALITY_STRING",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            string l(*(Ptr*)ctx.node.children()[0].value().get());
+            string r(*(Ptr*)ctx.node.children()[1].value().get());
+            bool result = false;
+            if(l.length()!=r.length()) {ctx.node.value().set((void*)&result); return;}
+            for(int i=0;i<l.length();i++) {
+                if(l.at(i)!=r.at(i)) {
+                    ctx.node.value().set((void*)&result);
+                    return;
+                }
+            }
+            result = true;
+            ctx.node.value().set((void*)&result);
+        });
+
+        uint32_t check_lessthan_or_equalsto_int = overload_type(int_id,"<=int","CHECK_LEQ_INT",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (*(int*)ctx.node.children()[0].value().get()<=*(int*)ctx.node.children()[1].value().get());
+            ctx.node.value().set((void*)&result);
+        });
+        uint32_t check_greaterthan_or_equalsto_int = overload_type(int_id,">=int","CHECK_GEQ_INT",make_value(bool_id,1),[this](Context& ctx){
+            x_handlers.run(check_lessthan_or_equalsto_int)(ctx);
+            bool result = !*(bool*)ctx.node.value().get();
+            ctx.node.value().set((void*)&result);
+        });
+        uint32_t check_lessthan_int = overload_type(int_id,"<int","CHECK_LT_INT",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (*(int*)ctx.node.children()[0].value().get()<*(int*)ctx.node.children()[1].value().get());
+            ctx.node.value().set((void*)&result);
+        });
+        uint32_t check_greaterthan_int = overload_type(int_id,">int","CHECK_GT_INT",make_value(bool_id,1),[this](Context& ctx){
+            x_handlers.run(check_lessthan_int)(ctx);
+            bool result = !*(bool*)ctx.node.value().get();
+            ctx.node.value().set((void*)&result);
+        });
+
+        uint32_t increment_int = overload_type(int_id,"++int","INCREMENT_INT",make_value(int_id,4),[this](Context& ctx){
+            ctx.node.value(ctx.node.children()[0].value());
+            int inced = *(int*)ctx.node.value().get()+1;
+            ctx.node.value().set((void*)&inced);
+        });
+
+
         void init() override {
-
-
             overload_type(ptr_id,".\"get\"",ptr_get_id,make_value(0)); //The value with no type means to take the subtype and subsize from left
             overload_type(ptr_id,".\"take\"",ptr_take_id,make_value(0));
             overload_type(ptr_id,".\"push\"",ptr_push_id);
+            overload_type(ptr_id,"<<any",ptr_push_id);
             overload_type(ptr_id,".\"length\"",ptr_length_id,make_value(int_id,4));
 
             overload_type(string_id,".\"append\"",string_append_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
@@ -109,9 +159,10 @@ namespace Acorn {
                 Node left = ctx.node.children()[0];
                 Node right = ctx.node.children()[1];
                 if(!right.children().empty()) {
-                    Col& col = resolve_to_col(*(Ptr*)left.value().get());
-                    col.push(right.children()[0].value().get());
+                    right = right.children()[0];
                 }
+                Col& col = resolve_to_col(*(Ptr*)left.value().get());
+                col.push(right.value().get());
             };
             x_handlers[ptr_length_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -232,12 +283,18 @@ namespace Acorn {
                     ctx.state=0;
                     ctx.result.removeAt(ctx.index);
                     ctx.index++;
+
+                    std::string oldsrc = ctx.source.to_std(); //Remember to just fix the source in context (when I'm not trying to ship a prototype)
+
                     Node root = process(ctx.node.name().to_std());
                     ctx.node.name().col().clear(); //To avoid stinking up the nodenet and memory dump
                     compile(root);
                     print(node_to_string(root,0,0,true));
                     start_stage(x_handlers);
                     standard_travel_pass(root);
+
+                    ctx.source = oldsrc;
+
                     // for(int i=0;i<root.children().length();i++) {
                     //     ctx.root.children().push(root.children().get(i));
                     // }
@@ -595,6 +652,30 @@ namespace Acorn {
             x_handlers[make_tokenized_keyword("rectify")] = [this](Context& ctx){
                 ctx.sub->source.col_ptr = ctx.sub->sub->source.col_ptr;
             };
+
+
+            a_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                print("==A STAGE==");
+                print(node_to_string(ctx.root));
+            };
+            t_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                // static int t = 0;
+                // t+=1;
+                // if(t>2) {
+                //     span->print_all();
+                // }
+                print("==T STAGE==");
+                print(node_to_string(ctx.root));
+            };
+            r_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                print("==R STAGE==");
+                print(node_to_string(ctx.root));
+            };
+            x_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                print("==X STAGE==");
+                print(node_to_string(ctx.root));
+            };
+
         }
 
         virtual Node process(std::string path) override {
@@ -636,6 +717,7 @@ namespace Acorn {
 
             start_stage(r_handlers);
             standard_resolving_pass(root);
+
         }
     
 

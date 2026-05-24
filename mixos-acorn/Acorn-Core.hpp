@@ -320,6 +320,9 @@ namespace Acorn {
 
     std::string Ptr_as_string(Ptr p) {
         #if NAMED_PTRS
+            if(p.pool>types.length()) {
+                return red("PTR ERROR "+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx));
+            }
             std::string plabel = types[p.pool].type_name=="bullets"?std::to_string(p.pool):types[p.pool].type_name;
             std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label;
             return ""+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
@@ -436,7 +439,8 @@ namespace Acorn {
             Col& src = types[o.pool][o.idx];
             Col& dst = types[pool][idx];
             memcpy(dst.storage, src.storage, layouts[value_id].total_size);
-            idx = o.idx;
+            init_data();
+            set(o.get());
         }
     };
     
@@ -675,6 +679,69 @@ namespace Acorn {
         return v;
     }
 
+
+    void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
+        n.type(o.type());
+        n.sub_type(o.sub_type());
+        n.name(o.name().to_std());
+        n.x() = o.x();
+        n.y() = o.y();
+        n.z() = o.z();
+        n.mute(o.mute());
+        n.is_scope(o.is_scope());
+    
+        n.children().clear();
+        for(int i = 0; i < o.children().length(); i++) {
+            Node newc = make_node();
+            deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
+            n.children() << newc;
+        }
+    
+        n.quals().clear();
+        for(int i = 0; i < o.quals().length(); i++) {
+            Node newq = make_node();
+            deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
+            n.quals() << newq;
+        }
+    
+        n.scopes().clear();
+        for(int i = 0; i < o.scopes().length(); i++) {
+            Node news = make_node();
+            deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
+            n.scopes() << news;
+        }
+    
+        if(value_alias_table.hasKey(o.value().idx)) {
+            Value aliased = value_alias_table.get(o.value().idx);
+            n.value(aliased);
+            if(is_live(aliased.type_scope())) {
+                if(!n.scopes().empty()) {
+                    Node ntyscope = aliased.type_scope();
+                    n.scopes().col().set(0,(void*)&ntyscope);
+                }
+                else
+                    n.scopes() << aliased.type_scope();
+            }
+        } else {
+            if(is_live(o.value())) {
+                if(!is_live(n.value())) {
+                    n.value(make_value());
+                }
+                n.value().copy(o.value());
+            }
+        }
+    
+        types[n.pool][n.idx].qset(node_value_table_offset,
+            types[o.pool][o.idx].qget(node_value_table_offset), sizeof(Ptr));
+        types[n.pool][n.idx].qset(node_node_table_offset,
+            types[o.pool][o.idx].qget(node_node_table_offset), sizeof(Ptr));
+    
+        n.parent(o.parent_ptr());
+        n.owner(o.owner_ptr());
+        n.in_scope(o.in_scope_ptr());
+        n.opt_str() = o.opt_str().to_std();
+    }
+
     Ptr last_source_ptr = {0,0,0};
 
     struct Context {
@@ -760,6 +827,9 @@ namespace Acorn {
             return std::string(1,*(char*)data);
         } else if(tag==string_id) {
             Ptr ptr = *(Ptr*)data;
+            if(ptr.pool>=types.length()) {
+                return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
+            }
             std::string content = string(ptr).to_std();
             content.erase(std::remove(content.begin(), content.end(), '\0'), content.end());
             return Ptr_as_string(ptr)+"> \""+content+"\"";
@@ -998,7 +1068,7 @@ namespace Acorn {
     }
 
     void print_column(Col& col) {
-        print("COL: ",col.label,"[",labels[col.tag],"]");
+        print("COL: ",col.label," TAG: ",labels[col.tag]," [",std::to_string(col.length()),"]");
         if(col.heterogenous) {
             if(layouts.hasKey(col.tag)) {
                 _layout& l = layouts.get(col.tag);
@@ -1044,6 +1114,7 @@ namespace Acorn {
         + (value.size()!=0?", size: "+std::to_string(value.size()):"")
         + (value.sub_size()!=0?", sub_size: "+std::to_string(value.sub_size()):"")
         + (value.address()!=0?", address: "+std::to_string(value.address()):"")
+        + (value.loc()!=-1?", loc: "+std::to_string(value.loc()):"")
         + (is_live(value.store())?", store: "+Ptr_as_string(value.store()):"")
         + (!value.sub_values().empty()?", sub: "+std::to_string(value.sub_values().length()):"");
         if(!value.quals().empty()) {
@@ -1067,6 +1138,7 @@ namespace Acorn {
         // + (node->x!=-1.0f?"("+std::to_string((int)node->x)+","+std::to_string((int)node->y)+")":"")
         + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
         + (!node.scopes().empty()?"[S:"+std::to_string(node.scopes().length())+"]":"")
+        + (is_live(node.owner())?"[O:"+blue(Ptr_as_string(node.owner()))+"]":"")
         + (is_live(node.in_scope())?"{"+node.in_scope().name().to_std()+"}":"");
         return to_return;
     }
@@ -1115,10 +1187,6 @@ namespace Acorn {
         //     to_return +=  "\n" + indent + "  Opt_str: " + node->opt_str;
         // }
 
-        // if(node.owner().live) {
-        //     to_return +=  "\n" + indent + "  Owner: " + node_info(node.owner());
-        // }
-
         if(!node.children().empty()) {
             for(int i=0;i<node.children().length();i++) {
                 if(is_live(node.children()[i])) {
@@ -1139,7 +1207,7 @@ namespace Acorn {
             int i = 0;
             for(int s=0;s<node.scopes().length();s++) {
                 Node scope = node.scopes()[s];
-                if(print_sub_scopes&&scope.owner().idx==node.idx) {
+                if(scope.owner().idx==node.idx) {
                     to_return += "\n " + node_to_string(scope, depth + 1, s, print_sub_scopes,"s");
                 }
                 else {
@@ -1176,17 +1244,22 @@ namespace Acorn {
 
     Node scan_for_node(const std::string& label, Node from) {
         for(int i=0;i<from.children().length();i++) {
+            //print("CHECKING: ",from.children()[i].name().to_std());
             if(from.children()[i].name().to_std()==label) {
                 return from.children()[i];
+            }
+            Node found = scan_for_node(label,from.children()[i]);
+            if(is_live(found)) {
+                return found;
             }
         }
         for(int i=0;i<from.scopes().length();i++) {
             Node found = scan_for_node(label,from.scopes()[i]);
-            if(found.pool!=0) {
+            if(is_live(found)) {
                 return found;
             }
         }
-        return Ptr(0,0,0);
+        return deadptr;
     }
 
     void test_acorn() {
@@ -1469,7 +1542,9 @@ namespace Acorn {
             while(i < ctx.result.length()) {    //Then finnaly the subscopes
                 if(!ctx.result[i].scopes().empty()) {
                     for(int s = 0;s<ctx.result[i].scopes().length();s++) {
-                        standard_resolving_pass(ctx.result[i].scopes()[s]);
+                        if(ctx.result[i].scopes()[s].owner().idx==ctx.result[i].idx) {
+                            standard_resolving_pass(ctx.result[i].scopes()[s]);
+                        }
                     }
                 }
                 i++;
@@ -1485,7 +1560,11 @@ namespace Acorn {
         int i = 0;
         Context ctx(children, i);
         ctx.root = root;
-        if(sub) ctx.sub = sub;
+        if(sub) {
+            ctx.sub = sub;
+            if(is_live(sub->source.col_ptr))
+                ctx.source.col_ptr = sub->source.col_ptr;
+        }
         while(i < ctx.result.length()) {
             ctx.node = ctx.result.get(i);
             standard_process(ctx);

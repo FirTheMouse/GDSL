@@ -1,15 +1,15 @@
-#include "modules/GDSL-Test.hpp"
-#include "modules/Q-HTML.hpp"
-#include "modules/GDSL-C.hpp"
-#include "modules/GDSL-LISP.hpp"
-#include "modules/GDSL-TwigSnap.hpp"
-#include "modules/GDSL-Script.hpp"
-#include "modules/GDSL-GQL.hpp"
-#include "modules/GDSL-Thistle.hpp"
-#include "modules/GDSL-PineNeedle.hpp"
-#include "mixos-acorn/Acorn-Kernel.hpp"
-#include "mixos-acorn/Acorn-Dirt.hpp"
-#include "mixos-acorn/Acorn-JIT.hpp"
+// #include "modules/GDSL-Test.hpp"
+// #include "modules/Q-HTML.hpp"
+// #include "modules/GDSL-C.hpp"
+// #include "modules/GDSL-LISP.hpp"
+// #include "modules/GDSL-TwigSnap.hpp"
+// #include "modules/GDSL-Script.hpp"
+// #include "modules/GDSL-GQL.hpp"
+// #include "modules/GDSL-Thistle.hpp"
+// #include "modules/GDSL-PineNeedle.hpp"
+// #include "mixos-acorn/Acorn-Kernel.hpp"
+// #include "mixos-acorn/Acorn-Dirt.hpp"
+// #include "mixos-acorn/Acorn-JIT.hpp"
 #include "mixos-acorn/web/Webcorn-Core.hpp"
 
 // using namespace GDSL;
@@ -33,11 +33,11 @@ int main(int argc, char* argv[]) {
     Acorn::init_type_pool();
     // Acorn::test_acorn();
  
-    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
-    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();

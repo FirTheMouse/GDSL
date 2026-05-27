@@ -15,6 +15,9 @@ namespace Acorn {
 
     std::string tag_to_str(uint32_t tag, void* data);
 
+    list<Ptr> marked_ptrs;
+    void mark_error(Ptr ptr) {marked_ptrs << ptr;}
+
     struct type_and_value {
         uint32_t type;
         Ptr value;
@@ -55,6 +58,36 @@ namespace Acorn {
     };
     map<uint32_t,_layout> layouts;
 
+    void make_wrapper_for_layout(_layout& l, const std::string& name,  const std::string& output_path) {
+        std::string s = "";
+        std::string pad = "     ";
+        s+="struct "+name+" : Ptr {\n";
+        s += pad+name+"() {}\n";
+        s += pad+name+"(uint32_t p, uint32_t i, uint32_t s) { pool = p; idx = i; sidx = s; }\n";
+        s += pad+name+"(Ptr p) { pool = p.pool; idx = p.idx; sidx = p.sidx; }\n";
+        for(int i=0;i<l.offsets.length();i++) {
+            s+="\n";
+            std::string type = labels[l.tags[i]];
+            std::string label = l.labels[i];
+            uint32_t offset = l.offsets[i];
+            uint32_t size = l.sizes[i];
+
+            bool is_compound = layouts.hasKey(l.tags[i]);
+
+            if(is_compound) {
+                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return {pool, idx, sidx+"+std::to_string(offset)+"}; }\n";
+                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", types[t.pool][t.idx].qget(t.sidx), "+std::to_string(size)+"); }\n";
+            } else {
+                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return *("+type+"*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
+                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&t, "+std::to_string(size)+"); }\n";
+            }
+        }
+        s+="};";
+        editTextFile(output_path,[s](std::string& source){
+            source += (source.empty()?"":"\n\n")+s;
+        });
+    }
+
     bool is_live(Ptr p) {return p.pool!=0||p.idx!=0;}
 
     uint32_t undefined_id = 0;
@@ -78,7 +111,7 @@ namespace Acorn {
     uint32_t init_handler_type() {
         TypePool t;
         uint32_t at = types.length();
-        t.note_value("UNDEFINED",sizeof(Ptr),ptr_id);
+        t.note_value("UNDEFINED",0,0);
         t.add_row(0); //The nullptr
         t.note_value("stages",sizeof(Ptr),ptr_id);
         t.note_value("ptr",sizeof(Ptr),ptr_id);
@@ -267,6 +300,10 @@ namespace Acorn {
         types[ptr.pool].columns[idx].set(ptr.sidx,to);
     }
 
+    inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
+        Ptr ticket{type_id,types[type_id].create_column(size,tag),0};
+        return ticket;
+    }
 
     struct string {
         string() {}
@@ -319,10 +356,10 @@ namespace Acorn {
     #define NAMED_PTRS 1
 
     std::string Ptr_as_string(Ptr p) {
+        if(p.pool>types.length()||marked_ptrs.has(p)) {
+            return red(std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx));
+        }
         #if NAMED_PTRS
-            if(p.pool>types.length()) {
-                return red("PTR ERROR "+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx));
-            }
             std::string plabel = types[p.pool].type_name=="bullets"?std::to_string(p.pool):types[p.pool].type_name;
             std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label;
             return ""+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
@@ -338,25 +375,27 @@ namespace Acorn {
 
     template<typename T>
     struct col_Ptr : Ptr {
-        inline Col& col()                    {return types[pool][idx];}
-        inline uint32_t length()             {return col().length();}
-        inline bool empty()                  {return col().empty();}
-        inline void removeAt(uint32_t idx)   {col().removeAt(idx);}
-        inline void clear()                  {col().clear();}
+        inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but col_ptr was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline T get(uint32_t idx)           {return T(*(Ptr*)col().get(idx));}
+        inline Col& col()                    {DEBUG_ONLY(if(safety_check("col_ptr:col")){static Col d; return d;}) return types[pool][idx];}
+        inline uint32_t length()             {DEBUG_ONLY(if(safety_check("col_ptr:length")){return 0;}) return col().length();}
+        inline bool empty()                  {DEBUG_ONLY(if(safety_check("col_ptr:empty")){return true;}) return col().empty();}
+        inline void removeAt(uint32_t idx)   {DEBUG_ONLY(if(safety_check("col_ptr:removeAt")){return;}) col().removeAt(idx);}
+        inline void clear()                  {DEBUG_ONLY(if(safety_check("col_ptr:clear")){return;}) col().clear();}
+    
+        inline T get(uint32_t idx)           {DEBUG_ONLY(if(safety_check("col_ptr:get")){return T(deadptr);}) return T(*(Ptr*)col().get(idx));}
         inline T operator[](uint32_t idx)    {return get(idx);}
-        inline T last()                      {return get(length()-1);}
+        inline T last()                      {DEBUG_ONLY(if(safety_check("col_ptr:last")){return T(deadptr);}) return get(length()-1);}
     
-        inline T take(uint32_t idx)           {T val = get(idx); removeAt(idx); return val;}
-        inline T pop()                       {Ptr p; col().pop(&p); return T(p);}
-        inline void push(T t)                {Ptr p(t); col().push(&p);}
+        inline T take(uint32_t idx)          {DEBUG_ONLY(if(safety_check("col_ptr:take")){return T(deadptr);}) T val = get(idx); removeAt(idx); return val;}
+        inline T pop()                       {DEBUG_ONLY(if(safety_check("col_ptr:pop")){return T(deadptr);}) Ptr p; col().pop(&p); return T(p);}
+        inline void push(T t)                {DEBUG_ONLY(if(safety_check("col_ptr:push")){return;}) Ptr p(t); col().push(&p);}
         inline void operator<<(T t)          {push(t);}
-
-        inline bool hasKey(const std::string& key) {return col().hasKey(key);}
-        inline T get(const std::string& key) {return T(*(Ptr*)col().get(key));}
+    
+        inline bool hasKey(const std::string& key) {DEBUG_ONLY(if(safety_check("col_ptr:hasKey")){return false;}) return col().hasKey(key);}
+        inline T get(const std::string& key) {DEBUG_ONLY(if(safety_check("col_ptr:get_key")){return T(deadptr);}) return T(*(Ptr*)col().get(key));}
         inline T operator[](const std::string& key) {return get(key);}
-        inline void put(const std::string& key, T t) {col().put(key, (void*)&t);}
+        inline void put(const std::string& key, T t) {DEBUG_ONLY(if(safety_check("col_ptr:put")){return;}) col().put(key, (void*)&t);}
     };
     using node_col  = col_Ptr<Node>;
     using value_col = col_Ptr<Value>;
@@ -364,39 +403,41 @@ namespace Acorn {
     struct Value : public Ptr {
         Value() {}
         Value(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx;}
+
+        inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but value was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline uint32_t& type()                {return *(uint32_t*)types[pool][idx].qget(value_type_offset);}
-        inline void      type(uint32_t t)      {types[pool][idx].qset(value_type_offset,(void*)&t,4);}
-        inline uint32_t& sub_type()            {return *(uint32_t*)types[pool][idx].qget(value_sub_type_offset);}
-        inline void      sub_type(uint32_t st) {types[pool][idx].qset(value_sub_type_offset,(void*)&st,4);}
-    
-        inline Ptr&      data_ptr()            {return *(Ptr*)types[pool][idx].qget(value_data_offset);}
-        inline Col&      data_col()            {Ptr& p = data_ptr(); return types[p.pool][p.idx];}
-    
-        inline uint32_t& address()             {return *(uint32_t*)types[pool][idx].qget(address_offset);}
-        inline void      address(uint32_t v)   {types[pool][idx].qset(address_offset,(void*)&v,4);}
-        inline int&      reg()                 {return *(int*)types[pool][idx].qget(reg_offset);}
-        inline void      reg(int i)            {types[pool][idx].qset(reg_offset,(void*)&i,4);}
-        inline int&      loc()                 {return *(int*)types[pool][idx].qget(loc_offset);}
-        inline void      loc(int i)            {types[pool][idx].qset(loc_offset,(void*)&i,4);}
-    
-        inline uint32_t& size()                {return *(uint32_t*)types[pool][idx].qget(size_offset);}
-        inline void      size(uint32_t s)      {types[pool][idx].qset(size_offset,(void*)&s,4);}
-        inline uint32_t& sub_size()            {return *(uint32_t*)types[pool][idx].qget(sub_size_offset);}
-        inline void      sub_size(uint32_t s)  {types[pool][idx].qset(sub_size_offset,(void*)&s,4);}
-    
-        inline Ptr&      quals_ptr()           {return *(Ptr*)types[pool][idx].qget(value_quals_offset);}
+        inline uint32_t  type()                {DEBUG_ONLY(if(safety_check("value:type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(value_type_offset);}
+        inline void      type(uint32_t t)      {DEBUG_ONLY(if(safety_check("value:type:set")){return;}) types[pool][idx].qset(value_type_offset,(void*)&t,4);}
+        inline uint32_t  sub_type()            {DEBUG_ONLY(if(safety_check("value:sub_type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(value_sub_type_offset);}
+        inline void      sub_type(uint32_t st) {DEBUG_ONLY(if(safety_check("value:sub_type:set")){return;}) types[pool][idx].qset(value_sub_type_offset,(void*)&st,4);}
+        
+        inline Ptr&      data_ptr()            {DEBUG_ONLY(if(safety_check("value:data_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(value_data_offset);}
+        inline Col&      data_col()            {Ptr p = data_ptr(); return types[p.pool][p.idx];}
+        
+        inline uint32_t  address()             {DEBUG_ONLY(if(safety_check("value:address:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(address_offset);}
+        inline void      address(uint32_t v)   {DEBUG_ONLY(if(safety_check("value:address:set")){return;}) types[pool][idx].qset(address_offset,(void*)&v,4);}
+        inline int       reg()                 {DEBUG_ONLY(if(safety_check("value:reg:get")){return -1;}) return *(int*)types[pool][idx].qget(reg_offset);}
+        inline void      reg(int i)            {DEBUG_ONLY(if(safety_check("value:reg:set")){return;}) types[pool][idx].qset(reg_offset,(void*)&i,4);}
+        inline int       loc()                 {DEBUG_ONLY(if(safety_check("value:loc:get")){return -1;}) return *(int*)types[pool][idx].qget(loc_offset);}
+        inline void      loc(int i)            {DEBUG_ONLY(if(safety_check("value:loc:set")){return;}) types[pool][idx].qset(loc_offset,(void*)&i,4);}
+        
+        inline uint32_t  size()                {DEBUG_ONLY(if(safety_check("value:size:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(size_offset);}
+        inline void      size(uint32_t s)      {DEBUG_ONLY(if(safety_check("value:size:set")){return;}) types[pool][idx].qset(size_offset,(void*)&s,4);}
+        inline uint32_t  sub_size()            {DEBUG_ONLY(if(safety_check("value:sub_size:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(sub_size_offset);}
+        inline void      sub_size(uint32_t s)  {DEBUG_ONLY(if(safety_check("value:sub_size:set")){return;}) types[pool][idx].qset(sub_size_offset,(void*)&s,4);}
+        
+        inline Ptr&      quals_ptr()           {DEBUG_ONLY(if(safety_check("value:quals_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(value_quals_offset);}
         inline Col&      quals_col()           {Ptr& p = quals_ptr(); return types[p.pool][p.idx];}
         inline node_col  quals()               {return (node_col&)quals_ptr();}
-    
-        inline Ptr&       sub_values_ptr()     {return *(Ptr*)types[pool][idx].qget(value_sub_values_offset);}
+        
+        inline Ptr&       sub_values_ptr()     {DEBUG_ONLY(if(safety_check("value:sub_values_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(value_sub_values_offset);}
         inline Col&       sub_values_col()     {Ptr& p = sub_values_ptr(); return types[p.pool][p.idx];}
         inline value_col  sub_values()         {return (value_col&)sub_values_ptr();}
-    
+        
         inline Node      type_scope();
-        inline void      type_scope(Ptr o)     {types[pool][idx].qset(type_scope_offset,(void*)&o,sizeof(Ptr));}
-        inline Ptr&      store()               {return *(Ptr*)types[pool][idx].qget(store_offset);}
-        inline void      store(Ptr p)          {types[pool][idx].qset(store_offset,(void*)&p,sizeof(Ptr));}
+        inline void      type_scope(Ptr o)     {DEBUG_ONLY(if(safety_check("value:type_scope:set")){return;}) types[pool][idx].qset(type_scope_offset,(void*)&o,sizeof(Ptr));}
+        inline Ptr&      store()               {DEBUG_ONLY(if(safety_check("value:store:get")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(store_offset);}
+        inline void      store(Ptr p)          {DEBUG_ONLY(if(safety_check("value:store:set")){return;}) types[pool][idx].qset(store_offset,(void*)&p,sizeof(Ptr));}
     
         inline void setup(uint32_t _type, uint32_t _size, uint32_t _address = 0) {
             type(_type); size(_size); address(_address);
@@ -410,6 +451,7 @@ namespace Acorn {
         }
     
         inline void set(void* data) {
+            DEBUG_ONLY(if(safety_check("value:set")){return;})
             Ptr dataptr = data_ptr();
             if(!is_live(dataptr)) {
                 dataptr = init_data();
@@ -421,26 +463,56 @@ namespace Acorn {
         }
     
         inline void* get() {
+            DEBUG_ONLY(if(safety_check("value:get")){return nullptr;})
             Ptr dataptr = data_ptr();
             return types[dataptr.pool][dataptr.idx].get(dataptr.sidx);
         }
 
         inline void* sget() {
+            DEBUG_ONLY(if(safety_check("value:sget")){return nullptr;})
             Ptr dataptr = data_ptr();
-            return types[dataptr.pool][dataptr.idx].get(dataptr.sidx);
+            return types[dataptr.pool][dataptr.idx].sget(dataptr.sidx);
         }
         
         inline void* qget() {
+            DEBUG_ONLY(if(safety_check("value:qget")){return nullptr;})
             Ptr dataptr = data_ptr();
             return types[dataptr.pool][dataptr.idx].qget(dataptr.sidx);
         }
 
-        inline void copy(Value o) {
+        inline void copy(Value o, bool is_deep) {
             Col& src = types[o.pool][o.idx];
             Col& dst = types[pool][idx];
             memcpy(dst.storage, src.storage, layouts[value_id].total_size);
-            init_data();
-            set(o.get());
+            if(is_deep) {
+                if(is_live(o.data_ptr())) {
+                    init_data();
+                    set(o.get());
+                }
+
+                Ptr qualsptr = get_ticket(quals_store_id, sizeof(Ptr), ptr_id);
+                Col& new_quals = resolve_to_col(qualsptr);
+                Col& old_quals = o.quals_col();
+                new_quals.reserve(old_quals.size);
+                memcpy(new_quals.storage, old_quals.storage, old_quals.size);
+                new_quals.size = old_quals.size;
+                types[pool][idx].qset(value_quals_offset,(void*)&qualsptr,sizeof(Ptr));
+        
+                Ptr subvalsptr = get_ticket(sub_value_store_id, sizeof(Ptr), ptr_id);
+                Col& new_subvals = resolve_to_col(subvalsptr);
+                Col& old_subvals = o.sub_values_col();
+                new_subvals.reserve(old_subvals.size);
+                memcpy(new_subvals.storage, old_subvals.storage, old_subvals.size);
+                new_subvals.size = old_subvals.size;
+                types[pool][idx].qset(value_sub_values_offset,(void*)&subvalsptr,sizeof(Ptr));
+            }
+        }
+
+        int find_qual(uint32_t q_id);
+        Node get_qual(uint32_t q_id);
+    
+        bool has_qual(uint32_t q_id) {
+            return find_qual(q_id)!=-1;
         }
     };
     
@@ -456,81 +528,110 @@ namespace Acorn {
         Node(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx;}
     
         inline QNode& toQ() {return (QNode&)types[pool][idx];}
+
+        inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but node was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline uint32_t& type()                {return *(uint32_t*)types[pool][idx].qget(node_type_offset);}
-        inline void      type(uint32_t t)      {types[pool][idx].qset(node_type_offset,(void*)&t,4);}
-        inline uint32_t& sub_type()            {return *(uint32_t*)types[pool][idx].qget(node_sub_type_offset);}
-        inline void      sub_type(uint32_t st) {types[pool][idx].qset(node_sub_type_offset,(void*)&st,4);}
+        inline uint32_t  type()                {DEBUG_ONLY(if(safety_check("node:type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(node_type_offset);}
+        inline void      type(uint32_t t)      {DEBUG_ONLY(if(safety_check("node:type:set")){return;}) types[pool][idx].qset(node_type_offset,(void*)&t,4);}
+        inline uint32_t  sub_type()            {DEBUG_ONLY(if(safety_check("node:sub_type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(node_sub_type_offset);}
+        inline void      sub_type(uint32_t st) {DEBUG_ONLY(if(safety_check("node:sub_type:set")){return;}) types[pool][idx].qset(node_sub_type_offset,(void*)&st,4);}
         
-        inline Ptr&      name_ptr()            {return *(Ptr*)types[pool][idx].qget(node_name_offset);}
+        inline Ptr&      name_ptr()            {DEBUG_ONLY(if(safety_check("node:name_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_name_offset);}
         inline Col&      name_col()            {Ptr& p = name_ptr(); return types[p.pool][p.idx];}
         inline string    name()                {return string(name_ptr());}
-        inline void      name(std::string s)   {name() = s;}
+        inline void      name(std::string s)   {DEBUG_ONLY(if(safety_check("node:name:set")){return;}) name() = s;}
         
-        inline float&    x()                   {return *(float*)types[pool][idx].qget(x_offset);}
-        inline float&    y()                   {return *(float*)types[pool][idx].qget(y_offset);}
-        inline float&    z()                   {return *(float*)types[pool][idx].qget(z_offset);}
+        inline float     x()                   {DEBUG_ONLY(if(safety_check("node:x:get")){return 0.0f;}) return *(float*)types[pool][idx].qget(x_offset);}
+        inline float     y()                   {DEBUG_ONLY(if(safety_check("node:y:get")){return 0.0f;}) return *(float*)types[pool][idx].qget(y_offset);}
+        inline float     z()                   {DEBUG_ONLY(if(safety_check("node:z:get")){return 0.0f;}) return *(float*)types[pool][idx].qget(z_offset);}
         
-        inline Ptr       value_ptr()           {return *(Ptr*)types[pool][idx].qget(node_value_offset);}
+        inline Ptr       value_ptr()           {DEBUG_ONLY(if(safety_check("node:value_ptr")){return deadptr;}) return *(Ptr*)types[pool][idx].qget(node_value_offset);}
         inline Value     value()               {return Value(value_ptr());}
-        inline void      value(Ptr ptr)        {types[pool][idx].qset(node_value_offset,(void*)&ptr,sizeof(Ptr));}
+        inline void      value(Ptr ptr)        {DEBUG_ONLY(if(safety_check("node:value:set")){return;}) types[pool][idx].qset(node_value_offset,(void*)&ptr,sizeof(Ptr));}
         
-        inline Ptr&      children_ptr()        {return *(Ptr*)types[pool][idx].qget(node_children_offset);}
+        inline Ptr&      children_ptr()        {DEBUG_ONLY(if(safety_check("node:children_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_children_offset);}
         inline Col&      children_col()        {Ptr& p = children_ptr(); return types[p.pool][p.idx];}
         inline node_col  children()            {return (node_col&)children_ptr();}
-        inline void      children(node_col l)  {types[pool][idx].qset(node_children_offset,(void*)&l,sizeof(Ptr));}
+        inline void      children(node_col l)  {DEBUG_ONLY(if(safety_check("node:children:set")){return;}) types[pool][idx].qset(node_children_offset,(void*)&l,sizeof(Ptr));}
         
-        inline Ptr&      quals_ptr()           {return *(Ptr*)types[pool][idx].qget(node_quals_offset);}
+        inline Ptr&      quals_ptr()           {DEBUG_ONLY(if(safety_check("node:quals_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_quals_offset);}
         inline Col&      quals_col()           {Ptr& p = quals_ptr(); return types[p.pool][p.idx];}
         inline node_col  quals()               {return (node_col&)quals_ptr();}
     
-        inline Ptr&        node_table_ptr()    {return *(Ptr*)types[pool][idx].qget(node_node_table_offset);}
+        inline Ptr&        node_table_ptr()    {DEBUG_ONLY(if(safety_check("node:node_table_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_node_table_offset);}
         inline Col&        node_table_col()    {Ptr& p = node_table_ptr(); return types[p.pool][p.idx];}
         inline node_col    node_table()        {return (node_col&)node_table_ptr();}
         
-        inline Ptr&        value_table_ptr()   {return *(Ptr*)types[pool][idx].qget(node_value_table_offset);}
+        inline Ptr&        value_table_ptr()   {DEBUG_ONLY(if(safety_check("node:value_table_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_value_table_offset);}
         inline Col&        value_table_col()   {Ptr& p = value_table_ptr(); return types[p.pool][p.idx];}
         inline value_col   value_table()       {return (value_col&)value_table_ptr();}
         
-        inline Ptr&      scopes_ptr()          {return *(Ptr*)types[pool][idx].qget(node_scopes_offset);}
+        inline Ptr&      scopes_ptr()          {DEBUG_ONLY(if(safety_check("node:scopes_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_scopes_offset);}
         inline Col&      scopes_col()          {Ptr& p = scopes_ptr(); return types[p.pool][p.idx];}
         inline node_col  scopes()              {return (node_col&)scopes_ptr();}
         
-        inline Ptr&  parent_ptr()              {return *(Ptr*)types[pool][idx].qget(parent_offset);}
+        inline Ptr&  parent_ptr()              {DEBUG_ONLY(if(safety_check("node:parent_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(parent_offset);}
         inline Node  parent()                  {return Node(parent_ptr());}
-        inline void  parent(Ptr p)             {types[pool][idx].qset(parent_offset,(void*)&p,sizeof(Ptr));}
+        inline void  parent(Ptr p)             {DEBUG_ONLY(if(safety_check("node:parent:set")){return;}) types[pool][idx].qset(parent_offset,(void*)&p,sizeof(Ptr));}
         
-        inline Ptr&  owner_ptr()               {return *(Ptr*)types[pool][idx].qget(owner_offset);}
+        inline Ptr&  owner_ptr()               {DEBUG_ONLY(if(safety_check("node:owner_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(owner_offset);}
         inline Node  owner()                   {return Node(owner_ptr());}
-        inline void  owner(Ptr p)              {types[pool][idx].qset(owner_offset,(void*)&p,sizeof(Ptr));}
+        inline void  owner(Ptr p)              {DEBUG_ONLY(if(safety_check("node:owner:set")){return;}) types[pool][idx].qset(owner_offset,(void*)&p,sizeof(Ptr));}
         
-        inline Ptr&  in_scope_ptr()            {return *(Ptr*)types[pool][idx].qget(in_scope_offset);}
+        inline Ptr&  in_scope_ptr()            {DEBUG_ONLY(if(safety_check("node:in_scope_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(in_scope_offset);}
         inline Node  in_scope()                {return Node(in_scope_ptr());}
-        inline void  in_scope(Ptr p)           {types[pool][idx].qset(in_scope_offset,(void*)&p,sizeof(Ptr));}
+        inline void  in_scope(Ptr p)           {DEBUG_ONLY(if(safety_check("node:in_scope:set")){return;}) types[pool][idx].qset(in_scope_offset,(void*)&p,sizeof(Ptr));}
                 
-        inline Ptr&   opt_str_ptr()            {return *(Ptr*)types[pool][idx].qget(node_opt_str_offset);}
+        inline Ptr&   opt_str_ptr()            {DEBUG_ONLY(if(safety_check("node:opt_str_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_opt_str_offset);}
         inline Col&   opt_str_col()            {Ptr& p = opt_str_ptr(); return types[p.pool][p.idx];}
         inline string opt_str()                {return string(opt_str_ptr());}
         
-        inline bool& mute()                    {return *(bool*)types[pool][idx].qget(mute_offset);}
-        inline void  mute(bool b)              {types[pool][idx].qset(mute_offset,(void*)&b,1);}
-
-        inline bool& is_scope()                {return *(bool*)types[pool][idx].qget(is_scope_offset);}
-        inline void  is_scope(bool b)          {types[pool][idx].qset(is_scope_offset,(void*)&b,1);}
+        inline bool  mute()                    {DEBUG_ONLY(if(safety_check("node:mute:get")){return false;}) return *(bool*)types[pool][idx].qget(mute_offset);}
+        inline void  mute(bool b)              {DEBUG_ONLY(if(safety_check("node:mute:set")){return;}) types[pool][idx].qset(mute_offset,(void*)&b,1);}
+    
+        inline bool  is_scope()                {DEBUG_ONLY(if(safety_check("node:is_scope:get")){return false;}) return *(bool*)types[pool][idx].qget(is_scope_offset);}
+        inline void  is_scope(bool b)          {DEBUG_ONLY(if(safety_check("node:is_scope:set")){return;}) types[pool][idx].qset(is_scope_offset,(void*)&b,1);}
     
         inline void copy(Node o) {
             Col& src = types[o.pool][o.idx];
             Col& dst = types[pool][idx];
             memcpy(dst.storage, src.storage, layouts[node_id].total_size);
         }
+
+        int find_qual(uint32_t q_id) {
+            for(int i=0;i<quals().length();i++){ 
+                if(quals()[i].type()==q_id) {return i;}
+            }
+            return -1;
+        } 
+    
+        int find_qual_in_value(uint32_t q_id) {
+            if(is_live(value()))
+                return value().find_qual(q_id);
+            return -1;
+        }
+        
+        bool has_qual(size_t q_id, bool check_value = true) {
+            if(check_value&&find_qual_in_value(q_id)!=-1) return true;
+            if(find_qual(q_id)!=-1) return true;
+            return false;
+        }
     };
 
     inline Node Value::type_scope() {return Node(*(Ptr*)types[value_type_id][idx].qget(type_scope_offset));}
-
-    inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
-        Ptr ticket{type_id,types[type_id].create_column(size,tag),0};
-        return ticket;
-    }
+    int Value::find_qual(uint32_t q_id) {
+        for(int i=0;i<quals().length();i++){ 
+            if(quals()[i].type()==q_id) {return i;}
+        }
+        return -1;
+    } 
+    Node Value::get_qual(uint32_t q_id) {
+        int q_at = find_qual(q_id);
+        if(q_at!=-1) {
+            return quals()[q_at];
+        }
+        return deadptr;
+    } 
 
     Node make_node(uint32_t type = 0, uint32_t sub_type = 0, std::string name = "", float x = 0, float y = 0, float z = 0,
         Value value = deadptr, Ptr childrenptr = deadptr, Ptr qualsptr = deadptr, Ptr nodetableptr = deadptr, 
@@ -680,67 +781,7 @@ namespace Acorn {
     }
 
 
-    void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
-        n.type(o.type());
-        n.sub_type(o.sub_type());
-        n.name(o.name().to_std());
-        n.x() = o.x();
-        n.y() = o.y();
-        n.z() = o.z();
-        n.mute(o.mute());
-        n.is_scope(o.is_scope());
     
-        n.children().clear();
-        for(int i = 0; i < o.children().length(); i++) {
-            Node newc = make_node();
-            deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
-            n.children() << newc;
-        }
-    
-        n.quals().clear();
-        for(int i = 0; i < o.quals().length(); i++) {
-            Node newq = make_node();
-            deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
-            n.quals() << newq;
-        }
-    
-        n.scopes().clear();
-        for(int i = 0; i < o.scopes().length(); i++) {
-            Node news = make_node();
-            deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
-            n.scopes() << news;
-        }
-    
-        if(value_alias_table.hasKey(o.value().idx)) {
-            Value aliased = value_alias_table.get(o.value().idx);
-            n.value(aliased);
-            if(is_live(aliased.type_scope())) {
-                if(!n.scopes().empty()) {
-                    Node ntyscope = aliased.type_scope();
-                    n.scopes().col().set(0,(void*)&ntyscope);
-                }
-                else
-                    n.scopes() << aliased.type_scope();
-            }
-        } else {
-            if(is_live(o.value())) {
-                if(!is_live(n.value())) {
-                    n.value(make_value());
-                }
-                n.value().copy(o.value());
-            }
-        }
-    
-        types[n.pool][n.idx].qset(node_value_table_offset,
-            types[o.pool][o.idx].qget(node_value_table_offset), sizeof(Ptr));
-        types[n.pool][n.idx].qset(node_node_table_offset,
-            types[o.pool][o.idx].qget(node_node_table_offset), sizeof(Ptr));
-    
-        n.parent(o.parent_ptr());
-        n.owner(o.owner_ptr());
-        n.in_scope(o.in_scope_ptr());
-        n.opt_str() = o.opt_str().to_std();
-    }
 
     Ptr last_source_ptr = {0,0,0};
 
@@ -785,6 +826,16 @@ namespace Acorn {
             return Context(result, index);
         }
     };
+
+    uint32_t error_id = reg_id("ERROR");
+    inline bool check_errors(Context& ctx, std::string info = "", bool attach_to_node = true) {
+        if(!ERROR_FLAG) return false;
+        ctx.out = make_node(error_id);
+        ctx.out.name(info+ERROR_MSG);
+        if(attach_to_node && is_live(ctx.node)) ctx.node.quals().push(ctx.out);
+        ctx.flag = true;
+        return true;
+    }
 
     using Handler = std::function<void(Context&)>;
 
@@ -831,8 +882,7 @@ namespace Acorn {
                 return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
             }
             std::string content = string(ptr).to_std();
-            content.erase(std::remove(content.begin(), content.end(), '\0'), content.end());
-            return Ptr_as_string(ptr)+"> \""+content+"\"";
+            return Ptr_as_string(ptr)+"> \""+escape_string(content)+"\"";
         } else if(tag==ptr_id) {
             return Ptr_as_string(*(Ptr*)data);
         } else if(tag==ptr_id||tag==node_id||tag==value_id) {
@@ -860,29 +910,7 @@ namespace Acorn {
             return labels[tag]+"?";
         }
     }
-
-    std::string pad_str(const std::string& s, uint32_t width) {
-        std::string to_return = s;
-        while(width>to_return.length()) to_return+=" ";
-        return to_return;
-    }
-
-    std::string center_pad(const std::string& s, uint32_t width) {
-        if(s.length() >= width) return s;
-        uint32_t total_pad = width - s.length();
-        uint32_t left_pad = total_pad / 2;
-        uint32_t right_pad = total_pad - left_pad;
-        return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
-    }
-
-    uint32_t digit_count(uint32_t n) {
-        if(n == 0) return 1;
-        uint32_t digits = 0;
-        while(n > 0) { n /= 10; digits++; }
-        return digits;
-    }
     
-
     std::string disassemble(uint32_t instr) {
         if(instr==0) return "NULL";
         if(instr==0xD65F03C0) return "ret";
@@ -1104,6 +1132,8 @@ namespace Acorn {
     }
 
     std::string value_info(Value value) {
+        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" while another error was active")); return "";})
+
         std::string to_return = "";
         to_return += cyan("["+Ptr_as_string(value)+"]")+
         + "(type: " + green(labels[value.type()])
@@ -1128,12 +1158,13 @@ namespace Acorn {
     }
     
     std::string node_info(Node node) {
+        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
+
         std::string to_return = "";
-        
         to_return += blue(Ptr_as_string(node)+" ")
         + labels[node.type()]
         + (node.sub_type()==0?"":":"+labels[node.sub_type()])
-        + (node.name().length()==0?"":" "+green(node.name().to_std())+" ") 
+        + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()))+" ") 
         + (is_live(node.value())?value_info(node.value()):"")
         // + (node->x!=-1.0f?"("+std::to_string((int)node->x)+","+std::to_string((int)node->y)+")":"")
         + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
@@ -1147,6 +1178,7 @@ namespace Acorn {
     #define ACORN_MUTE_MUTED_QUALS 0
 
     std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
+        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
         std::string indent(depth * 2, ' ');
         std::string to_return = "";
         
@@ -1240,6 +1272,9 @@ namespace Acorn {
 
         add_template(ptr_id);
         add_template(string_id); 
+
+        // writeFile("mixos-acorn/tests/printout2.txt","");
+        // make_wrapper_for_layout(layouts[node_id],"Node","mixos-acorn/tests/printout2.txt");
     }
 
     Node scan_for_node(const std::string& label, Node from) {
@@ -1279,6 +1314,68 @@ namespace Acorn {
         print("CHILDREN WITH 2 NODES: ",types[children_store_id].column_count());
         c.name("C");
         print(c.name().to_std());
+    }
+
+    void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
+        n.type(o.type());
+        n.sub_type(o.sub_type());
+        n.name(o.name().to_std());
+        // n.x(o.x());
+        // n.y(o.y());
+        // n.z(o.z());
+        n.mute(o.mute());
+        n.is_scope(o.is_scope());
+    
+        n.children().clear();
+        for(int i = 0; i < o.children().length(); i++) {
+            Node newc = make_node();
+            deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
+            n.children() << newc;
+        }
+    
+        n.quals().clear();
+        for(int i = 0; i < o.quals().length(); i++) {
+            Node newq = make_node();
+            deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
+            n.quals() << newq;
+        }
+    
+        n.scopes().clear();
+        for(int i = 0; i < o.scopes().length(); i++) {
+            Node news = make_node();
+            deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
+            n.scopes() << news;
+        }
+    
+        if(value_alias_table.hasKey(o.value().idx)) {
+            Value aliased = value_alias_table.get(o.value().idx);
+            n.value(aliased);
+            if(is_live(aliased.type_scope())) {
+                if(!n.scopes().empty()) {
+                    Node ntyscope = aliased.type_scope();
+                    n.scopes().col().set(0,(void*)&ntyscope);
+                }
+                else
+                    n.scopes() << aliased.type_scope();
+            }
+        } else {
+            if(is_live(o.value())) {
+                if(!is_live(n.value())) {
+                    n.value(make_value());
+                }
+                n.value().copy(o.value(),true);
+            }
+        }
+    
+        types[n.pool][n.idx].qset(node_value_table_offset,
+            types[o.pool][o.idx].qget(node_value_table_offset), sizeof(Ptr));
+        types[n.pool][n.idx].qset(node_node_table_offset,
+            types[o.pool][o.idx].qget(node_node_table_offset), sizeof(Ptr));
+    
+        n.parent(o.parent_ptr());
+        n.owner(o.owner_ptr());
+        n.in_scope(o.in_scope_ptr());
+        n.opt_str() = o.opt_str().to_std();
     }
         
     struct Unit : public q_object {
@@ -1368,6 +1465,7 @@ namespace Acorn {
         inline void standard_process(Context& ctx, uint32_t type) {
             newline(active_stage->label+": "+node_info(ctx.node));
             active_stage->run(type)(ctx);
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Marked "+Ptr_as_string(ctx.node)+" as error")); mark_error(ctx.node);})
             endline();
         }
 
@@ -1408,6 +1506,7 @@ namespace Acorn {
         }
 
         void standard_sub_process(Context& ctx) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a sub_process while an error was flagged")); return;})
             int i = 0;
             node_col children = ctx.node.children();
             Context sub_ctx(children,i);
@@ -1420,6 +1519,9 @@ namespace Acorn {
                 } else {
                     process_node(sub_ctx, sub_ctx.result.get(i), sub_ctx.result.get(i-1));
                 }
+
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+
                 i++;
             }
             ctx.flag = sub_ctx.flag;
@@ -1471,6 +1573,7 @@ namespace Acorn {
         }
 
         void backwards_sub_process(Context& ctx) { 
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a backwards sub_process while an error was flagged")); return;})
             node_col children = ctx.node.children();
             int i = children.length()-1;
             Context sub_ctx(children,i);
@@ -1482,12 +1585,14 @@ namespace Acorn {
                 } else {
                     process_node(sub_ctx, sub_ctx.result.get(i), sub_ctx.result.get(i+1));
                 }
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                 i--;
             }
             ctx.flag = sub_ctx.flag;
         }
     
         void standard_direct_pass(Node root, list<uint32_t>* buffer = nullptr) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a direct pass while an error was flagged")); return;})
             node_col children = root.children();
             newline("Direct pass over "+std::to_string(children.length())+" nodes");
             int i = 0;
@@ -1498,17 +1603,20 @@ namespace Acorn {
                 ctx.node = ctx.result.get(i);
                 standard_process(ctx);
                 ctx.left = ctx.result.get(i);
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                 i++;
             }
     
             node_col scopes = root.scopes();
             for(int i = 0; i<scopes.length(); i++) {
                 standard_direct_pass(scopes.get(i),buffer);
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
             }
             endline();
         }
-    
+
         void standard_resolving_pass(Node root) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a resolving pass while an error was flagged")); return;})
             node_col children = root.children();
             newline("Resolving pass over "+std::to_string(children.length())+" nodes");
             int i = 0;
@@ -1518,6 +1626,7 @@ namespace Acorn {
                 if(!ctx.result[i].scopes().empty()) {
                     ctx.node = ctx.result[i];
                     standard_process(ctx);
+                    DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                     ctx.left = ctx.result[i];
                 }
                 i++;
@@ -1527,6 +1636,7 @@ namespace Acorn {
                 if(ctx.result[i].scopes().empty()) {
                     ctx.node = ctx.result[i];
                     standard_process(ctx);
+                    DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                     ctx.left = ctx.result[i];
                 }
                 i++;
@@ -1536,6 +1646,7 @@ namespace Acorn {
                 if(!ctx.result[i].scopes().empty()) {
                     standard_sub_process_node(ctx.result[i]);
                 }
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                 i++;
             }
             i = 0;
@@ -1544,6 +1655,7 @@ namespace Acorn {
                     for(int s = 0;s<ctx.result[i].scopes().length();s++) {
                         if(ctx.result[i].scopes()[s].owner().idx==ctx.result[i].idx) {
                             standard_resolving_pass(ctx.result[i].scopes()[s]);
+                            DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                         }
                     }
                 }
@@ -1551,10 +1663,61 @@ namespace Acorn {
             }
             endline();
         }
+
+        void standard_backwards_pass(Node root) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a backwards pass while an error was flagged")); return;})
+            node_col children = root.children();
+            newline("Backwards pass over "+std::to_string(children.length())+" nodes");
+            int i = 0;
+            Context ctx(children,i);
+            ctx.root = root;
+            i = ctx.result.length()-1;
+            while(i >= 0) {
+                ctx.node = ctx.result.get(i);
+                standard_process(ctx);
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                node_col scopes = ctx.result.get(i).scopes();
+                for(int i = 0; i<scopes.length(); i++) {
+                    if(is_live(scopes.get(i).owner())&&scopes.get(i).owner().idx==ctx.result.get(i).idx) {
+                        standard_backwards_pass(scopes.get(i));
+                        DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                    }
+                }
+                ctx.left = ctx.result.get(i);
+                i--;
+            }
+            endline();
+        }
+
+        void memory_backwards_pass(Node root) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a memory backwards pass while an error was flagged")); return;})
+            node_col children = root.children();
+            newline("Backwards pass over "+std::to_string(children.length())+" nodes");
+            int i = 0;
+            Context ctx(children,i);
+            ctx.root = root;
+            i = ctx.result.length()-1;
+            while(i >= 0) {
+                ctx.node = ctx.result.get(i);
+                node_col scopes = ctx.result.get(i).scopes();
+                for(int i = 0; i<scopes.length(); i++) {
+                    if(is_live(scopes.get(i).owner())&&scopes.get(i).owner().idx==ctx.result.get(i).idx) {
+                        memory_backwards_pass(scopes.get(i));
+                        DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                    }
+                }
+                standard_process(ctx);
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                ctx.left = ctx.result.get(i);
+                i--;
+            }
+            endline();
+        }
     };
 
     //Returns true if flagged for a return/break
     bool Unit::standard_travel_pass(Node root, Context* sub) {
+        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
         node_col children = root.children();
         newline("Travel pass over "+std::to_string(children.length())+" nodes");
         int i = 0;
@@ -1569,6 +1732,7 @@ namespace Acorn {
             ctx.node = ctx.result.get(i);
             standard_process(ctx);
             ctx.left = ctx.result.get(i);
+            DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
             if(ctx.flag) { //This is the return/break process
                 endline();
                 return true;

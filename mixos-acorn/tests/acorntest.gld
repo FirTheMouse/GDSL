@@ -1,10 +1,5 @@
-##
-
-print("PRECOMPILE");
-
-##
-
-int i = 4;
-if(i<=4) {
-    print("RIGHT");
+int i = 3;
+if(i<6) {
+    print(i,": ");
+    MISTAKE;
 }

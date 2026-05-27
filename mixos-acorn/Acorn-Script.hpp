@@ -3,7 +3,22 @@
 #include "../mixos-acorn/Acorn-Compiler.hpp"
 #include "../ext/g_lib/core/thread.hpp"
 
+#include <csignal>
 namespace Acorn {
+
+    void signal_handler(int signal) {
+        ERROR_FLAG = true;
+        ERROR_MSG = "Console interrupt";
+    }
+
+    void setup_signals() {
+        struct sigaction sa;
+        sa.sa_handler = signal_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGINT, &sa, nullptr);
+    }
+
     struct Acorn_Script : public virtual Compiler_Unit {
         Acorn_Script() {init();}
 
@@ -28,6 +43,11 @@ namespace Acorn {
         uint32_t for_id = make_tokenized_keyword("for");
         uint32_t if_id = make_tokenized_keyword("if");
         uint32_t else_id = make_tokenized_keyword("else");
+
+        uint32_t live_qual = add_qualifer("live");
+        uint32_t gatekeeper_qual = add_qualifer("gatekeeper");
+        uint32_t assigned_qual = add_qualifer("assigned");
+        uint32_t constant_qual = add_qualifer("constant");
 
         uint32_t to_string_id = make_tokenized_keyword("to_string");
         uint32_t to_type_id = make_tokenized_keyword("to_type");
@@ -88,13 +108,48 @@ namespace Acorn {
         });
 
         uint32_t increment_int = overload_type(int_id,"++int","INCREMENT_INT",make_value(int_id,4),[this](Context& ctx){
+            standard_sub_process(ctx);
             ctx.node.value(ctx.node.children()[0].value());
             int inced = *(int*)ctx.node.value().get()+1;
             ctx.node.value().set((void*)&inced);
         });
 
+        uint32_t valueGetStr_id = overload_type(value_id,".\"getStr\"","VALUE_GETSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Value v = (Value&)*(Ptr*)ctx.node.children()[0].value().get();
+            ctx.node.value(v);
+        });
+
+        void e_stage_assignment_handler(Context& ctx) {
+            Node left = ctx.node.children()[0];
+            Node right = ctx.node.children()[1];
+            if(left.has_qual(live_qual)) { //Transfer liveness
+                ctx.node.value().quals().push((make_node(live_qual)));
+                if(!right.has_qual(live_qual)) {
+                    right.value().quals().push(make_node(live_qual));
+                }
+            }
+
+            int const_at = left.value().find_qual(constant_qual);
+            if(const_at==-1) { //A value is constant if it's only asigned once
+                if(!left.has_qual(assigned_qual)) {
+                    left.value().quals().push(make_node(constant_qual));
+                }
+            } else {
+                left.value().quals().removeAt(const_at);
+            }
+
+            if(!left.has_qual(assigned_qual)) {
+                left.value().quals().push(make_node(assigned_qual));
+            }
+        };
+        void m_stage_assignment_handler(Context& ctx) {
+            standard_sub_process(ctx); //Not sure what to do with this yet
+        };
+
 
         void init() override {
+            setup_signals();
             overload_type(ptr_id,".\"get\"",ptr_get_id,make_value(0)); //The value with no type means to take the subtype and subsize from left
             overload_type(ptr_id,".\"take\"",ptr_take_id,make_value(0));
             overload_type(ptr_id,".\"push\"",ptr_push_id);
@@ -628,6 +683,7 @@ namespace Acorn {
             };
             x_handlers[while_id] = [this](Context& ctx) {
                 while(true) {
+                    DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute while while another error was flagged")); return;})
                     process_node(ctx, ctx.node.children()[0]);
                     if(!(*(bool*)ctx.node.children()[0].value().get()))break;
                     if(standard_travel_pass(ctx.node.scopes()[0],ctx.sub)) {
@@ -649,21 +705,70 @@ namespace Acorn {
                 }
             };  
 
+
+            e_handlers[equals_id] = [this](Context& ctx){
+                e_stage_assignment_handler(ctx);
+            };
+
+            e_handlers[print_id] = [this](Context& ctx){
+                ctx.node.value().quals().push(make_node(gatekeeper_qual));
+                value_col subvals = ctx.node.value().sub_values();
+                gather_all_values_in_scope(subvals,ctx.node);
+                fire_quals(ctx,ctx.node.value());
+            };
+
+            e_handlers[to_prefix_id(gatekeeper_qual)] = [this](Context& ctx){
+                for(int i=0;i<ctx.value.sub_values().length();i++) {
+                    Value v = ctx.value.sub_values().get(i);
+                    if(!v.has_qual(live_qual)) {v.quals().push(make_node(live_qual));}
+                }
+            };
+
+
+            //WORK IN PROGRESS
+            m_handlers.default_function = [this](Context& ctx){
+                standard_sub_process(ctx);
+                if(is_live(ctx.node.value())&&ctx.node.value().type()!=0) {
+                    if(!is_live(ctx.node.value().data_ptr())&&ctx.node.value().has_qual(live_qual)) {
+                        Ptr ticket = get_ticket(data_store_id,ctx.node.value().size(),ctx.node.value().type());
+                        resolve_to_col(ctx.node.value()).qset(value_data_offset,(void*)&ticket,sizeof(Ptr));
+                    }
+                }
+            };
+            m_handlers[equals_id] = [this](Context& ctx){
+                m_stage_assignment_handler(ctx);
+            };
+            m_handlers[var_decl_id] = [this](Context& ctx){
+                if(is_live(ctx.node.value())&&ctx.node.value().type()!=0) {
+                    if(is_live(ctx.node.value().data_ptr())) {
+                        recycle_column(ctx.node.value().data_ptr());
+                    }
+                }
+            };
+
+            m_handlers[literal_id] = [this](Context& ctx){
+                std::string name = ctx.node.name().to_std();
+                uint32_t vtype = ctx.node.value().type();
+                Ptr ticket = get_ticket(data_store_id,ctx.node.value().size(),ctx.node.value().type());
+                resolve_to_col(ctx.node.value()).qset(value_data_offset,(void*)&ticket,sizeof(Ptr));
+                if(vtype==int_id) {
+                    int as_int = std::stoi(name);
+                    ctx.node.value().set((void*)&as_int);
+                } else if(vtype==string_id) {
+
+                }
+            };
+
+
             x_handlers[make_tokenized_keyword("rectify")] = [this](Context& ctx){
                 ctx.sub->source.col_ptr = ctx.sub->sub->source.col_ptr;
             };
-
 
             a_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
                 print("==A STAGE==");
                 print(node_to_string(ctx.root));
             };
             t_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
-                // static int t = 0;
-                // t+=1;
-                // if(t>2) {
-                //     span->print_all();
-                // }
                 print("==T STAGE==");
                 print(node_to_string(ctx.root));
             };
@@ -671,11 +776,22 @@ namespace Acorn {
                 print("==R STAGE==");
                 print(node_to_string(ctx.root));
             };
+            e_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                print("==E STAGE==");
+                print(node_to_string(ctx.root));
+            };
+            m_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                print("==M STAGE==");
+                print(node_to_string(ctx.root));
+            };
             x_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
                 print("==X STAGE==");
                 print(node_to_string(ctx.root));
             };
 
+            r_handlers[make_tokenized_keyword("MISTAKE")] = [this](Context& ctx){
+                print(ctx.node.value().reg());
+            };
         }
 
         virtual Node process(std::string path) override {
@@ -696,28 +812,53 @@ namespace Acorn {
             }
         }
 
+        bool post_mortem_printed = false;
+        void post_mortem(Node root) {
+            if(post_mortem_printed) return; 
+            else post_mortem_printed = true;
+            span->print_all();
+            print("==END SPAN PRINT==");
+            ERROR_FLAG = false;
+            print(node_to_string(root,0,0,true));
+            //dump_unit(true);
+            ERROR_FLAG = true;
+            print(red("FINISHED WITH ERROR: "),ERROR_MSG);
+        }
+
         void compile(Node root) {
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_stage(a_handlers);
             standard_direct_pass(root);
 
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             lemmatize_stages();
             a_pass_resolve_keywords(root.children());
             for(int i=0;i<root.children().length();i++) {
                 place_node_in_scope(root.children()[i],root);
             }
 
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_stage(n_handlers);
             standard_direct_pass(root);
 
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_stage(s_handlers);
             standard_direct_pass(root);
             
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_stage(t_handlers);
             standard_resolving_pass(root);
 
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_stage(r_handlers);
             standard_resolving_pass(root);
 
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+            start_stage(e_handlers);
+            standard_backwards_pass(root);
+
+            // start_stage(m_handlers);
+            // memory_backwards_pass(root);
         }
     
 
@@ -725,17 +866,14 @@ namespace Acorn {
         virtual void run(Node root) override {
             compile(root);
 
-            //span->print_all();
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             print(node_to_string(root,0,0,true));
 
             start_stage(x_handlers);
             standard_travel_pass(root);
-
-            // print("AFTER");
-            // print(node_to_string(root,0,0,true));
             
+            DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             dump_unit(true);
-            // span->print_all();
         }
 
 

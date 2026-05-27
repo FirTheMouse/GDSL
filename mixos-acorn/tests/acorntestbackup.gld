@@ -42,3 +42,17 @@ print(n.name,"/",m.name);
 nodes.push(n); nodes.push(m);
 nodes.get(0) = m;
 print(nodes.get(0).name,"/",nodes.get(1).name,"/",n.name,"/",m.name);
+
+
+
+
+int a = 5;
+print(a);
+int b = 6;
+print(b);
+string s = "wub";
+print(s);
+int c = 7;
+int d = 8;
+d = b;
+print(b," : ",c);

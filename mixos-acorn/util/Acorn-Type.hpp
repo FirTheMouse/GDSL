@@ -2,7 +2,29 @@
 
 #include "ext/g_lib/util/util.hpp"
 
+#define ACORN_DEBUG 1
+
 namespace Acorn {
+
+    bool ERROR_FLAG = false;
+    std::string ERROR_MSG = "";
+
+    template<typename... Args>
+    void throw_error(Args&&... args) {
+        std::ostringstream oss;
+        (oss << ... << args);
+        ERROR_MSG = oss.str();
+        ERROR_FLAG = true;
+        print(red("ERROR: "),ERROR_MSG);
+    }
+
+    #if ACORN_DEBUG
+        #define DEBUG_ONLY(x) x
+    #else
+        #define DEBUG_ONLY(x)
+    #endif
+
+
     struct Col {
         Col(uint32_t _size = 1) : element_size(_size) {}
         uint8_t* storage = nullptr;
@@ -52,9 +74,18 @@ namespace Acorn {
             memset(&storage[old_size], 0, element_size);
         }
         
-        inline void* sget(uint32_t index) {return &storage[index * element_size];}
-        inline void* qget(uint32_t offset) {return &storage[offset];}
-        inline void* iget(uint32_t index, uint32_t offset) {return &storage[index * element_size + offset];}
+        inline void* sget(uint32_t index) {
+            DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
+            return &storage[index * element_size];
+        }
+        inline void* qget(uint32_t offset) {
+            DEBUG_ONLY(if(offset>=size) {throw_error(red("col:qget "),"offset ",offset," out of bounds for size ",size);return nullptr;})
+            return &storage[offset];
+        }
+        inline void* iget(uint32_t index, uint32_t offset) {
+            DEBUG_ONLY(if(index*element_size+offset>=size) {throw_error(red("col:iget "),"index ",index," plus offset ",offset," out of bounds for size ",size);return nullptr;})
+            return &storage[index * element_size + offset];
+        }
         inline void* get(uint32_t index) {
             if(heterogenous) {
                 return qget(index);
@@ -137,9 +168,13 @@ namespace Acorn {
         uint32_t pool = 0; //Pool it's at
         uint32_t idx = 0; //Column OR type if a node/value
         uint32_t sidx = 0; //Row
+
+        inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
+        inline bool operator!=(const Ptr& other) const {return !(*this == other);}
     };
 
     static const Ptr deadptr = {0,0,0};
+    static Ptr dead_ref = {0,0,0};
 
 
     class Type {
@@ -581,6 +616,7 @@ namespace Acorn {
         //Columns
         for(uint32_t i = 0; i < col_count; i++) {
             Col col;
+            read_col(in,col);
             t.columns.push(col);
         }
 

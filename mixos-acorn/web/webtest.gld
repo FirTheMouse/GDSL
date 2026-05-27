@@ -15,7 +15,7 @@
     register text;
     "text" {
         in naming {
-            node.name = result.take(index+1).name;
+            node.children.push(result.take(index+1));
         }
         in resolving {
             gather_props;
@@ -24,7 +24,7 @@
             source.append("<p");
             emit_inline_html;
             source.append(">");
-            source.append(node.name);
+            source.append(node.children.get(0).value.getStr);
             source.append("</p>");
             emit_contents;
         }
@@ -47,11 +47,41 @@
         }
     }
 
+    register style;
+    "style" {
+        in naming {
+            node.children.push(result.take(index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            source.append("<style");
+            emit_inline_html;
+            source.append(">");
+            source.append(node.children.get(0).name);
+            source.append("</style>");
+        }
+    }
+
     "FUNC_DECL" {
         in resolving {
             gather_props;
         }
         in htmlemiting {
+            if(node.value.type==to_type("inlined")) {return;}
+            if(node.value.type==to_type("invisible")) {return;}
+            source.append("<div");
+            emit_inline_html;
+            source.append(">");
+            emit_contents;
+            source.append("</div>");
+        }
+    }
+    "FUNC_CALL" {
+        in htmlemiting {
+            if(node.value.type==to_type("inlined")) {return;}
+            if(node.value.type==to_type("invisible")) {return;}
             source.append("<div");
             emit_inline_html;
             source.append(">");
@@ -65,7 +95,7 @@
         in executing {
             source.append("<html><body>");
             emit_contents;
-            source.append("<body></html>");
+            source.append("</body></html>");
         }
     }
 
@@ -108,25 +138,87 @@ while(0<1) {
             }
         ";
 
+        inlined background_theme {
+            "background-color" : "blue";
+        } 
+
         div twub {
-            "background-color" : "black";
+            background_theme;
             text "wub" {
                 "color" : "purple";
                 "onclick" : "post('wub')";
             }
+
+            div temp(string clr, string word)  {
+                text word {
+                    "color" : clr;
+                }
+            }
+
+            temp("red","RED");
+            temp("green","GREEN");
+        }
+
+        script "
+            function showTooltip(addr, e) {
+                fetch(window.location.pathname, {
+                    method: \"TIP\",
+                    body: addr
+                })
+                .then(r => r.text())
+                .then(html => {
+                    const tip = document.getElementById('tooltip');
+                    tip.innerHTML = html;
+                    tip.style.display = 'block';
+                });
+            }
+
+            function moveTooltip(e) {
+                const tip = document.getElementById('tooltip');
+                let x = e.clientX + 14, y = e.clientY + 14;
+                if (x + tip.offsetWidth > window.innerWidth) x = e.clientX - tip.offsetWidth - 14;
+                if (y + tip.offsetHeight > window.innerHeight) y = e.clientY - tip.offsetHeight - 14;
+                tip.style.left = x + 'px';
+                tip.style.top = y + 'px';
+            }
+
+            function hideTooltip() {
+                document.getElementById('tooltip').style.display = 'none';
+            }
+        ";
+
+        style "
+            #tooltip {
+                position: fixed;
+                z-index: 999;
+                display: none;
+                pointer-events: none;
+                background: white;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1.7;
+                max-width: 420px;
+            }
+        ";
+
+        div tooltip {
+            "id" : "tooltip";
         }
 
         div qwob {
-            "background-color" : "blue";
+            background_theme;
             text "wubria" {
                 "color" : "red";
                 "id" : "wubria";
-                "onclick" : "fragthree('wubria','add','NOT')";
+                "onmouseenter" : "showTooltip('1|0|0', event)";
+                "onmousemove" : "moveTooltip(event)";
+                "onmouseleave" : "hideTooltip()";
             }
         }
     }
-
-    print("REQ: ",req);
 
     Node page = handle.scopes.get(0);
 
@@ -151,13 +243,21 @@ while(0<1) {
             print("CONTENT: ",content); 
             Node to_edit = find_node(target,page);
             if(instr=="add") {
-                to_edit.name.append(content);
+                to_edit.children.get(0).value.getStr.append(content);
                 ctxsource("");
                 htmlemit to_edit;
-                response_body.clear();
+                response_body.clear;
                 response_body.append(ctxsource);
                 ctxsource.clear();
             }
+        }
+    }
+    if(method=="TIP") {
+        if(body_start>=0) {
+            string src = req.slice(body_start+4,req.length);
+            print("SRC: ",src);
+            response_body.clear;
+            response_body.append(display_node(src));
         }
     }
 

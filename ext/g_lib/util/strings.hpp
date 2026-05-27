@@ -38,6 +38,52 @@ inline std::string add_commas(int num) {
     return s; 
   }
 
+
+    std::string pad_str(const std::string& s, uint32_t width) {
+        std::string to_return = s;
+        while(width>to_return.length()) to_return+=" ";
+        return to_return;
+    }
+
+    std::string center_pad(const std::string& s, uint32_t width) {
+        if(s.length() >= width) return s;
+        uint32_t total_pad = width - s.length();
+        uint32_t left_pad = total_pad / 2;
+        uint32_t right_pad = total_pad - left_pad;
+        return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
+    }
+
+    uint32_t digit_count(uint32_t n) {
+        if(n == 0) return 1;
+        uint32_t digits = 0;
+        while(n > 0) { n /= 10; digits++; }
+        return digits;
+    }
+
+    std::string escape_string(const std::string& content, bool compact_spaces = true) {
+        std::string escaped;
+        int space_count = 0;
+        for(char c : content) {
+            if(compact_spaces) {
+                if(c == ' ') {
+                    if(space_count==1) {escaped.pop_back(); escaped += "..."; space_count++; continue;}
+                    else if(space_count>1) {continue;}
+                    else {space_count++;}
+                } else {
+                    space_count = 0;
+                }
+            }
+            switch(c) {
+                case '\n': escaped += "\\n"; break;
+                case '\t': escaped += "\\t"; break;
+                case '\r': escaped += "\\r"; break;
+                case '"':  escaped += "\\\""; break;
+                case '\\': escaped += "\\\\"; break;
+                default:   escaped += c; break;
+            }
+        }
+        return escaped;
+    }
   
 namespace sgen {
     struct namebase {

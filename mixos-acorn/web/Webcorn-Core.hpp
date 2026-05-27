@@ -19,8 +19,8 @@ namespace Acorn {
 
         uint32_t property_id = reg_id("property");
         uint32_t properties_id = reg_id("properties");
-        uint32_t inlined_id = reg_id("inlined");
-        uint32_t invisible_id = reg_id("invisible");
+        uint32_t inlined_id = reg_id("inlined"); uint32_t suffix_inlined_id = reg_id("suffix_inlined"); uint32_t prefix_inlined_id = reg_id("prefix_inlined");
+        uint32_t invisible_id = reg_id("invisible"); uint32_t suffix_invisible_id = reg_id("suffix_invisible"); uint32_t prefix_invisible_id = reg_id("prefix_invisible");
         uint32_t component_id = reg_id("component"); uint32_t suffix_component_id = reg_id("suffix_component"); uint32_t prefix_component_id = reg_id("prefix_component");
 
         uint32_t find_node_id = make_tokenized_keyword("find_node");
@@ -34,7 +34,7 @@ namespace Acorn {
             "tabindex", "contenteditable", "draggable", "hidden",
             "onclick", "onchange", "onsubmit", "oninput",
             "onfocus", "onblur", "onkeydown", "onkeyup",
-            "onmouseenter", "onmouseleave", "onload",
+            "onmouseenter", "onmouseleave", "onload", "onmouseover",
             "role","lang","colspan", "rowspan", "scope",
             "rows", "cols", "autocorrect", "autocapitalize", "spellcheck", "wrap",
             "autocomplete", "autofocus", "enctype", "novalidate", "pattern", "size",
@@ -141,7 +141,7 @@ namespace Acorn {
                                 Node owner = ref.owner();
                                 scope.children_col().set(i,(void*)&owner);
                             } else {
-                                //instantiate_template(c,ref->owner);
+                                instantiate_template(c,ref.owner(),ctx);
                             }
                         } else {
                             print("ACTUAL FUNC CALL");
@@ -170,8 +170,6 @@ namespace Acorn {
                 }
             }
         }
-
-
 
         Node webcorn_node_scan(const std::string& label, Node from) {
             if(!from.scopes().empty()) {
@@ -215,15 +213,22 @@ namespace Acorn {
             return deadptr;
         }
 
+        map<std::string,uint32_t> routes;
+        map<uint32_t,Node> route_nodes;
+
         void init() override {
             set_binding_powers(colon_id,4,6);
             register_type("div",component_id,0);
+            register_type("inlined",inlined_id,0);
+            register_type("invisible",invisible_id,0);
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 if(ctx.node.type()==func_call_id) {
-                    //instantiate_template(ctx.node,ctx.node.value().type_scope().owner(),ctx);
-                    sync_args(ctx);
+                    if(ctx.node.value().type()!=component_id) {
+                        //instantiate_template(ctx.node,ctx.node.value().type_scope().owner(),ctx);
+                        sync_args(ctx);
+                    }
                 } else {
                     Node scope = ctx.node.scopes()[0];
                     if(!is_live(scope.value())) {
@@ -234,12 +239,9 @@ namespace Acorn {
                 if(ctx.node.value().type()==component_id) {
                     standard_gather_from_scope(ctx);    
                     if(!ctx.node.scopes().empty()) {
-                        // for(auto c : ctx.node->children) {
-                        //     if(c->type==var_decl_id||c->type==func_decl_id) {
-                        //         ctx.node->quals << make<Node>(template_id);
-                        //         break;
-                        //     }
-                        // }
+                        if(ctx.node.type()==func_decl_id&&!ctx.node.children().empty()) {
+                            ctx.node.value().type(invisible_id);
+                        }
                         for(int i=0;i<ctx.node.scopes().length();i++) {
                             Node s = ctx.node.scopes()[i];
                             if(ctx.node.value().type()==invisible_id) {
@@ -256,17 +258,6 @@ namespace Acorn {
                 }
             };
             r_handlers[func_call_id] = r_handlers[func_decl_id];
-            // html_handlers[func_decl_id] = [this](Context& ctx){
-            //     if(ctx.node->value->type==inlined_id) return;
-            //     if(ctx.node->value->type==invisible_id) return;
-            //     if(ctx.node->has_qual(template_id)) return;
-            //     if(ctx.node->scope()) {
-            //         for(auto s : ctx.node->scopes) { 
-            //             ctx.source = html_encode_node(s);
-            //         }
-            //     }   
-            // };
-            // html_handlers[func_call_id] = html_handlers[func_decl_id];
 
             x_handlers[make_tokenized_keyword("gather_props")] = [this](Context& ctx){
                 ctx.node = ctx.sub->node;
@@ -277,6 +268,25 @@ namespace Acorn {
                 if(ctx.sub->node.scopes().empty()) return;
                 ctx.node = ctx.sub->node.scopes()[0];
                 emit_inline_html(ctx);
+            };
+
+            uint32_t display_node_id = make_tokenized_keyword("display_node");
+            r_handlers[display_node_id] = [this](Context& ctx){
+                ctx.node.value(make_value(string_id,sizeof(Ptr),0,char_id,1));
+                Ptr ticket = get_ticket(data_store_id,1,char_id);
+                string contents(ticket);
+                
+
+
+                ctx.node.value().set((void*)&ticket);
+            };
+            x_handlers[display_node_id] = [this](Context& ctx){
+                string addr(*(Ptr*)ctx.node.children()[0].value().get());
+                string output(*(Ptr*)ctx.node.value().get());
+
+                
+
+                output = ("<p>"+addr.to_std()+"</p>");
             };
 
             r_handlers[find_node_id] = [this](Context& ctx){
@@ -345,6 +355,11 @@ namespace Acorn {
                 memset(&client_addr, 0, sizeof(client_addr));
                 socklen_t client_len = sizeof(client_addr);
                 int client_fd = accept(fd, (struct sockaddr*)&client_addr, &client_len);
+                if(client_fd == -1) {
+                    if(ERROR_FLAG) return;
+                    throw_error("accept failed: ", strerror(errno));
+                    return;
+                }
                 ctx.node.value().set((void*)&client_fd);
             };
         

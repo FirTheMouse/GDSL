@@ -148,6 +148,7 @@ namespace Acorn {
     
     size_t node_id = reg_id("node"); size_t prefix_node_id = reg_id("prefix_node"); size_t suffix_node_id = reg_id("suffix_node");
     size_t value_id = reg_id("value"); size_t prefix_value_id = reg_id("prefix_value"); size_t suffix_value_id = reg_id("suffix_value");
+    //size_t context_id = reg_id("context"); size_t prefix_context_id = reg_id("prefix_context"); size_t suffix_context_id = reg_id("suffix_context");
 
     size_t var_decl_id = reg_id("VAR_DECL");
     size_t func_call_id = reg_id("FUNC_CALL");
@@ -383,7 +384,7 @@ namespace Acorn {
         inline void removeAt(uint32_t idx)   {DEBUG_ONLY(if(safety_check("col_ptr:removeAt")){return;}) col().removeAt(idx);}
         inline void clear()                  {DEBUG_ONLY(if(safety_check("col_ptr:clear")){return;}) col().clear();}
     
-        inline T get(uint32_t idx)           {DEBUG_ONLY(if(safety_check("col_ptr:get")){return T(deadptr);}) return T(*(Ptr*)col().get(idx));}
+        inline T get(uint32_t idx)           {DEBUG_ONLY(if(safety_check("col_ptr:get")){return T(deadptr);}) void* ptr = col().get(idx); DEBUG_ONLY(if(safety_check("col_ptr:get:cast")){return T(deadptr);}) return T(*(Ptr*)ptr);}
         inline T operator[](uint32_t idx)    {return get(idx);}
         inline T last()                      {DEBUG_ONLY(if(safety_check("col_ptr:last")){return T(deadptr);}) return get(length()-1);}
     
@@ -868,6 +869,7 @@ namespace Acorn {
 
 
     std::string tag_to_str(uint32_t tag, void* data) {
+        DEBUG_ONLY(if(ERROR_FLAG) {return "ERROR";})
         if(tag==int_id) {
             return std::to_string(*(int*)data);
         } else if(tag==float_id) {
@@ -994,7 +996,7 @@ namespace Acorn {
         return "   ?   ";
     }
 
-    std::string print_columnar_table(list<list<std::string>>& lines) {
+    std::string print_columnar_table(list<list<std::string>> lines) {
         list<uint32_t> widths;
         uint32_t longest_row = 0;
         for(int l=0;l<lines.length();l++) {
@@ -1052,7 +1054,7 @@ namespace Acorn {
         return to_return;
     }
 
-    std::string type_to_string(TypePool& t) {
+    list<list<std::string>> type_to_lines(TypePool& t) {
         list<list<std::string>> lines;
         list<uint32_t> dtypes;
         for(int c=0;c<t.column_count();c++) {
@@ -1092,7 +1094,11 @@ namespace Acorn {
             }
             lines << subline;
         }
-        return print_columnar_table(lines);
+        return lines;
+    }
+
+    std::string type_to_string(TypePool& t) {
+        return print_columnar_table(type_to_lines(t));
     }
 
     void print_column(Col& col) {
@@ -1137,9 +1143,13 @@ namespace Acorn {
         std::string to_return = "";
         to_return += cyan("["+Ptr_as_string(value)+"]")+
         + "(type: " + green(labels[value.type()])
-        + (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"")
-        + (is_live(value.data_ptr())?", value: "+gray(tag_to_str(value.type(),value.get()))+" @"+Ptr_as_string(value.data_ptr()):"")
-        + (value.sub_type()!=0?", sub_type: "+labels[value.sub_type()]:"")
+        + (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"");
+        if(is_live(value.data_ptr())) { //For post-mortems we want to see the adress, so it needs to be computed first, before the error
+            std::string ptr_addr = Ptr_as_string(value.data_ptr());
+            to_return += ", value: "+gray(tag_to_str(value.type(),value.get()))+" @"+ptr_addr;
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" but the value was invalid")); return to_return;})
+        }
+        to_return += (value.sub_type()!=0?", sub_type: "+labels[value.sub_type()]:"")
         + (is_live(value.type_scope())?", type_scope: "+blue(Ptr_as_string(value.type_scope())):"")
         + (value.size()!=0?", size: "+std::to_string(value.size()):"")
         + (value.sub_size()!=0?", sub_size: "+std::to_string(value.sub_size()):"")
@@ -1418,6 +1428,11 @@ namespace Acorn {
     
         Stage* active_stage;
     
+        void start_logged_stage(Stage& stage) {
+            newline(stage.label);
+            active_stage = &stage;
+        }
+
         void start_stage(Stage& stage) {
             active_stage = &stage;
         }

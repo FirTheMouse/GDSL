@@ -1,8 +1,8 @@
 #pragma once
-#include "../mixos-acorn/Acorn-Core.hpp"
+#include "../mixos-acorn/Acorn-Blackfeather.hpp"
 
 namespace Acorn {
-    struct Compiler_Unit : public virtual Unit {
+    struct Compiler_Unit : public virtual Blackfeather_Unit {
         Compiler_Unit() {init();}
         
 
@@ -829,6 +829,8 @@ namespace Acorn {
             print_handlers[char_id] = [](Context& ctx) {ctx.source = std::string(1,*(char*)ctx.value.get());};
             print_handlers[bool_id] = [](Context& ctx) {ctx.source = (*(bool*)ctx.value.get()) ? "TRUE" : "FALSE";};
             print_handlers[string_id] = [this](Context& ctx) {ctx.source = string((*(Ptr*)ctx.value.get()));};
+            print_handlers[node_id] = [this](Context& ctx) {ctx.source = node_to_string((Node&)(*(Ptr*)ctx.value.get()));};
+            print_handlers[value_id] = [this](Context& ctx) {ctx.source = value_info((Value&)(*(Ptr*)ctx.value.get()));};
                 
             t_handlers[float_id] = [this](Context& ctx) {
                 float stof = std::stof(ctx.node.name().to_std());
@@ -1130,12 +1132,15 @@ namespace Acorn {
                     }
                     memcpy(temp, types[dataptr.pool][dataptr.idx].get(0), elem_size);
                     if(types[dataptr.pool][dataptr.idx].length() <= loc) {
-                        types[dataptr.pool][dataptr.idx].push(temp);
+                        //These shouldn't be getting out of sync in the first place, in the future investigate this deeper
+                        while(types[dataptr.pool][dataptr.idx].length() <= loc) types[dataptr.pool][dataptr.idx].push(temp);
                     } else {
                         types[dataptr.pool][dataptr.idx].set(loc, temp);
                     }
                     dataptr.sidx = loc;
                     resolve_to_col(sval).qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
+                } else {
+                    log(yellow(Ptr_as_string(sval)+" is not live, and can not be descended"));
                 }
             }
         }
@@ -1263,12 +1268,15 @@ namespace Acorn {
                     memcpy(snap.data(), rv.get(), rv.size());
                     temps << snap;
                 }
+                DEBUG_ONLY(if(ERROR_FLAG) {log(red("ABORTING FUNCTION CALL BEFORE DESCENT")); return;})
                 descend_call_scope(ctx);
                 for(int i=0;i<ctx.node.children().length();i++) {
                     Node leftterm = ctx.node.children()[i].children()[0];
                     leftterm.value().set(temps[i].data());
                 }
+                DEBUG_ONLY(if(ERROR_FLAG) {log(red("ABORTING FUNCTION CALL BEFORE PASS")); return;})
                 standard_travel_pass(scope,ctx.sub);
+                DEBUG_ONLY(if(ERROR_FLAG) {log(red("ABORTING FUNCTION CALL BEFORE ASCENT")); return;})
                 ascend_call_scope(ctx);
             };
 
@@ -1405,10 +1413,13 @@ namespace Acorn {
             };
             x_handlers[plus_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
+                void* p1 = ctx.node.children()[0].value().get();
+                void* p2 = ctx.node.children()[1].value().get();
+                DEBUG_ONLY(if(ERROR_FLAG){return;})
                 int result =      
-                    *(int*)ctx.node.children()[0].value().get()
+                    *(int*)p1
                     +
-                    *(int*)ctx.node.children()[1].value().get()
+                    *(int*)p2
                 ;
                 ctx.node.value().set((void*)&result);
             };

@@ -205,3 +205,291 @@ while(0<1) {
 }
 
 
+
+
+
+BACKUP 2
+
+
+##
+    int emit_contents {
+        if(node.scopes.length>0) {
+            Node scope = node.scopes.get(0);
+            for(int i=0;i<scope.children.length;i=i+1) {
+                Node child = scope.children.get(i);
+                htmlemit child;
+            }
+        }
+    }
+
+
+    newstage htmlemiting;
+
+    register text;
+    "text" {
+        in naming {
+            node.children.push(result.take(index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            source.append("<p");
+            emit_inline_html;
+            source.append(">");
+            source.append(node.children.get(0).value.getStr);
+            source.append("</p>");
+            emit_contents;
+        }
+    }
+
+    register script;
+    "script" {
+        in naming {
+            node.children.push(result.take(index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            source.append("<script");
+            emit_inline_html;
+            source.append(">");
+            source.append(node.children.get(0).name);
+            source.append("</script>");
+        }
+    }
+
+    register style;
+    "style" {
+        in naming {
+            node.children.push(result.take(index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            source.append("<style");
+            emit_inline_html;
+            source.append(">");
+            source.append(node.children.get(0).name);
+            source.append("</style>");
+        }
+    }
+
+    "FUNC_DECL" {
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            if(node.value.type==to_type("inlined")) {return;}
+            if(node.value.type==to_type("invisible")) {return;}
+            source.append("<div");
+            emit_inline_html;
+            source.append(">");
+            emit_contents;
+            source.append("</div>");
+        }
+    }
+    "FUNC_CALL" {
+        in htmlemiting {
+            if(node.value.type==to_type("inlined")) {return;}
+            if(node.value.type==to_type("invisible")) {return;}
+            source.append("<div");
+            emit_inline_html;
+            source.append(">");
+            emit_contents;
+            source.append("</div>");
+        }
+    }
+
+    register emit_block;
+    "emit_block" {
+        in executing {
+            source.append("<html><body>");
+            emit_contents;
+            source.append("</body></html>");
+        }
+    }
+
+    register aboveasbelow;
+    "aboveasbelow" {
+        in executing {
+            result.get(index-1).value.data(result.get(index+1));
+        }
+    }
+
+##
+
+Node twig = compile(read_file("mixos-acorn/web/thistle.twg"));
+print("Running twig: ");
+execut twig;
+
+int fd = socket;
+bind(fd,8080);
+listen(fd);
+while(0<1) {
+    int cfd = accept(fd);
+    string req = read(cfd);
+    ctxsource(""); //Initilize
+    Node handle;
+    aboveasbelow;
+    emit_block {
+        script "
+            function post(body) {
+                fetch(window.location.pathname, {
+                    method: \"POST\",
+                    body: body
+                })
+            }
+
+            function fragthree(target, instruction, content) {
+                fetch(window.location.pathname, {
+                    method: \"FRAG\",
+                    body: target+\" \"+instruction+\" \"+content
+                })
+                .then(r => r.text())
+                .then(html => {
+                    document.getElementById(target).outerHTML = html;
+                });
+            }
+        ";
+
+        inlined background_theme {
+            "background-color" : "blue";
+        } 
+
+        div twub {
+            background_theme;
+            text "wub" {
+                "color" : "purple";
+                "onclick" : "post('wub')";
+            }
+
+            div temp(string clr, string word)  {
+                text word {
+                    "color" : clr;
+                }
+            }
+
+            temp("red","RED");
+            temp("green","GREEN");
+        }
+
+        script "
+            function showTooltip(addr, e) {
+                fetch(window.location.pathname, {
+                    method: \"TIP\",
+                    body: addr
+                })
+                .then(r => r.text())
+                .then(html => {
+                    const tip = document.getElementById('tooltip');
+                    tip.innerHTML = html;
+                    tip.style.display = 'block';
+                });
+            }
+
+            function moveTooltip(e) {
+                const tip = document.getElementById('tooltip');
+                let x = e.clientX + 14, y = e.clientY + 14;
+                if (x + tip.offsetWidth > window.innerWidth) x = e.clientX - tip.offsetWidth - 14;
+                if (y + tip.offsetHeight > window.innerHeight) y = e.clientY - tip.offsetHeight - 14;
+                tip.style.left = x + 'px';
+                tip.style.top = y + 'px';
+            }
+
+            function hideTooltip() {
+                document.getElementById('tooltip').style.display = 'none';
+            }
+        ";
+
+        style "
+            #tooltip {
+                position: fixed;
+                z-index: 999;
+                display: none;
+                pointer-events: none;
+                background: white;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1.7;
+                max-width: 420px;
+            }
+        ";
+
+        div tooltip {
+            "id" : "tooltip";
+        }
+
+        div qwob {
+            background_theme;
+            text "wubria" {
+                "color" : "red";
+                "id" : "wubria";
+                "onmouseenter" : "showTooltip('1|0|0', event)";
+                "onmousemove" : "moveTooltip(event)";
+                "onmouseleave" : "hideTooltip()";
+            }
+        }
+    }
+
+    Node page = handle.scopes.get(0);
+
+    string response_body = "";
+    response_body.append(ctxsource);
+
+    string first_line = req.substr(0, req.find("\r\n"));
+    string method = first_line.substr(0, first_line.find(" "));
+    string path = first_line.slice(" ", 1, 2);
+    print("Method: ",method);
+    print("Path: ",path);
+    int body_start = req.find("\r\n\r\n");
+    if(method=="FRAG") {
+        if(body_start>=0) {
+            string src = req.slice(body_start+4,req.length);
+            print("SRC: ",src);
+            string target = src.slice(0,src.find(" "));
+            string instr = src.slice(" ",1,2);
+            string content = src.slice(src.find(" ",0,2)+1,src.length);
+            print("TARGET: ",target); 
+            print("INSTR: ",instr); 
+            print("CONTENT: ",content); 
+            Node to_edit = find_node(target,page);
+            if(instr=="add") {
+                to_edit.children.get(0).value.getStr.append(content);
+                ctxsource("");
+                htmlemit to_edit;
+                response_body.clear;
+                response_body.append(ctxsource);
+                ctxsource.clear();
+            }
+        }
+    }
+    if(method=="TIP") {
+        if(body_start>=0) {
+            string src = req.slice(body_start+4,req.length);
+            print("SRC: ",src);
+            response_body.clear;
+            response_body.append(display_node(src));
+        }
+    }
+
+    string response = "";
+        response.append("HTTP/1.1 200 OK\r\n");
+        response.append("Content-Type: text/html\r\n");
+        response.append("Content-Length: ");
+        response.append(to_string(response_body.length));
+        response.append("\r\n\r\n");
+        response.append(response_body);
+        print("RESPONSE: ",response);
+    write(cfd,response); 
+    close(cfd);
+
+    response_body.clear();
+    response.clear;  
+    ctxsource.clear;
+}

@@ -3,21 +3,11 @@
 #include "../mixos-acorn/Acorn-Compiler.hpp"
 #include "../ext/g_lib/core/thread.hpp"
 
-#include <csignal>
+
 namespace Acorn {
 
-    void signal_handler(int signal) {
-        ERROR_FLAG = true;
-        ERROR_MSG = "Console interrupt";
-    }
+    list<Node> post_mortem_roots;
 
-    void setup_signals() {
-        struct sigaction sa;
-        sa.sa_handler = signal_handler;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        sigaction(SIGINT, &sa, nullptr);
-    }
 
     struct Acorn_Script : public virtual Compiler_Unit {
         Acorn_Script() {init();}
@@ -43,6 +33,10 @@ namespace Acorn {
         uint32_t for_id = make_tokenized_keyword("for");
         uint32_t if_id = make_tokenized_keyword("if");
         uint32_t else_id = make_tokenized_keyword("else");
+
+        uint32_t read_file_id = make_tokenized_keyword("read_file");
+        uint32_t write_file_id = make_tokenized_keyword("write_file");
+        uint32_t compile_id = make_tokenized_keyword("compile");
 
         uint32_t live_qual = add_qualifer("live");
         uint32_t gatekeeper_qual = add_qualifer("gatekeeper");
@@ -98,11 +92,13 @@ namespace Acorn {
         });
         uint32_t check_lessthan_int = overload_type(int_id,"<int","CHECK_LT_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
+            DEBUG_ONLY(if(ERROR_FLAG) {return;});
             bool result = (*(int*)ctx.node.children()[0].value().get()<*(int*)ctx.node.children()[1].value().get());
             ctx.node.value().set((void*)&result);
         });
         uint32_t check_greaterthan_int = overload_type(int_id,">int","CHECK_GT_INT",make_value(bool_id,1),[this](Context& ctx){
             x_handlers.run(check_lessthan_int)(ctx);
+            DEBUG_ONLY(if(ERROR_FLAG) {return;});
             bool result = !*(bool*)ctx.node.value().get();
             ctx.node.value().set((void*)&result);
         });
@@ -123,6 +119,11 @@ namespace Acorn {
         void e_stage_assignment_handler(Context& ctx) {
             Node left = ctx.node.children()[0];
             Node right = ctx.node.children()[1];
+            if(is_live(left.value())&&is_live(right.value())) {
+                log(red("Unable to do e stage assignment handler because one of the values is missing"));
+                return;
+            }
+
             if(left.has_qual(live_qual)) { //Transfer liveness
                 ctx.node.value().quals().push((make_node(live_qual)));
                 if(!right.has_qual(live_qual)) {
@@ -149,7 +150,6 @@ namespace Acorn {
 
 
         void init() override {
-            setup_signals();
             overload_type(ptr_id,".\"get\"",ptr_get_id,make_value(0)); //The value with no type means to take the subtype and subsize from left
             overload_type(ptr_id,".\"take\"",ptr_take_id,make_value(0));
             overload_type(ptr_id,".\"push\"",ptr_push_id);
@@ -348,6 +348,8 @@ namespace Acorn {
                     start_stage(x_handlers);
                     standard_travel_pass(root);
 
+                    post_mortem_roots << root;
+
                     ctx.source = oldsrc;
 
                     // for(int i=0;i<root.children().length();i++) {
@@ -539,8 +541,7 @@ namespace Acorn {
 
             r_handlers[labels_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node.value(make_value());
-                ctx.node.value().setup(string_id,sizeof(Ptr));
+                ctx.node.value(make_value(string_id,sizeof(Ptr),0,char_id,1));
                 Ptr ticket(data_store_id,types[data_store_id].note_value("labelstorage",sizeof(char),char_id),0);
                 ctx.node.value().set((void*)&ticket);
                 resolve_overload(ctx);
@@ -550,7 +551,7 @@ namespace Acorn {
                     standard_sub_process(ctx);
                     string label(*(Ptr*)ctx.node.value().get());
                     uint32_t p = *(uint32_t*)ctx.node.children()[0].value().get();
-                    label.push(labels[p]); 
+                    label = labels[p]; 
                 }
             };
 
@@ -642,28 +643,9 @@ namespace Acorn {
                 types[handler_type_id][target_type].set(stage_id,(void*)&target_scope);
             };
 
-            x_handlers[invoke_stage_id] = [this](Context& ctx){
-                std::string stage_name = ctx.node.name().to_std();
-                if(!stages.hasKey(stage_name)) {
-                    if(!stages.hasKey(stage_name+"ing")) {
-                        print(red("invoke_stage_id:x_handler unknown stage "+stage_name));
-                        return;
-                    } else {
-                        stage_name+="ing";
-                    }
-                }
-                g_ptr<Stage> stage = stages.get(stage_name);
-                standard_sub_process(ctx);
-                Node left = ctx.node.children()[0];
-                if(left.value().type()==node_id) {
-                    left = Node(*(Ptr*)left.value().get());
-                }
-                ctx.node = left;
-                stage->run(left.type())(ctx);
-            };
-
             x_handlers[if_id] = [this](Context& ctx) {
                 process_node(ctx, ctx.node.children()[0]);
+                DEBUG_ONLY(if(ERROR_FLAG) {return;});
                 if(*(bool*)ctx.node.children()[0].value().get()) {
                     ctx.flag = standard_travel_pass(ctx.node.scopes()[0],ctx.sub);
                 }
@@ -696,6 +678,7 @@ namespace Acorn {
                 process_node(ctx, ctx.node.children()[0]);
                 while(true) {
                     process_node(ctx, ctx.node.children()[1]);
+                    DEBUG_ONLY(if(ERROR_FLAG) {return;})
                     if(!(*(bool*)ctx.node.children()[1].value().get()))break;
                     if(standard_travel_pass(ctx.node.scopes()[0],ctx.sub)) {
                         ctx.flag = true;
@@ -704,6 +687,40 @@ namespace Acorn {
                     process_node(ctx, ctx.node.children()[2]);
                 }
             };  
+
+            r_handlers[read_file_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(string_id,sizeof(Ptr),0,char_id,1));
+                Ptr ticket = get_ticket(name_store_id,1,char_id);
+                ctx.node.value().set((void*)&ticket);
+                resolve_overload(ctx);
+            };
+            x_handlers[read_file_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = *(Ptr*)ctx.node.value().get();
+                string output(ptr);
+                Ptr cptr = *(Ptr*)ctx.node.children()[0].value().get();
+                DEBUG_ONLY(if(ERROR_FLAG){return;})
+                output = readFile(string(cptr).to_std());
+            };
+
+            r_handlers[compile_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node.value(make_value(node_id,sizeof(Ptr)));
+                Ptr ticket = make_node();
+                ctx.node.value().set((void*)&ticket);
+                resolve_overload(ctx);
+            };
+            x_handlers[compile_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node& node = (Node&)(*(Ptr*)ctx.node.value().get());
+                std::string source = string(*(Ptr*)ctx.node.children()[0].value().get()).to_std();
+                Node root = process(source);
+                compile(root);
+                start_stage(x_handlers);
+                node.copy(root);
+                post_mortem_roots << root;
+            };
 
 
             e_handlers[equals_id] = [this](Context& ctx){
@@ -726,38 +743,38 @@ namespace Acorn {
 
 
             //WORK IN PROGRESS
-            m_handlers.default_function = [this](Context& ctx){
-                standard_sub_process(ctx);
-                if(is_live(ctx.node.value())&&ctx.node.value().type()!=0) {
-                    if(!is_live(ctx.node.value().data_ptr())&&ctx.node.value().has_qual(live_qual)) {
-                        Ptr ticket = get_ticket(data_store_id,ctx.node.value().size(),ctx.node.value().type());
-                        resolve_to_col(ctx.node.value()).qset(value_data_offset,(void*)&ticket,sizeof(Ptr));
-                    }
-                }
-            };
-            m_handlers[equals_id] = [this](Context& ctx){
-                m_stage_assignment_handler(ctx);
-            };
-            m_handlers[var_decl_id] = [this](Context& ctx){
-                if(is_live(ctx.node.value())&&ctx.node.value().type()!=0) {
-                    if(is_live(ctx.node.value().data_ptr())) {
-                        recycle_column(ctx.node.value().data_ptr());
-                    }
-                }
-            };
+            m_handlers.default_function = [this](Context& ctx){}; //Doing nothing for now
+            // m_handlers.default_function = [this](Context& ctx){
+            //     standard_sub_process(ctx);
+            //     if(is_live(ctx.node.value())&&ctx.node.value().type()!=0) {
+            //         if(!is_live(ctx.node.value().data_ptr())&&ctx.node.value().has_qual(live_qual)) {
+            //             Ptr ticket = get_ticket(data_store_id,ctx.node.value().size(),ctx.node.value().type());
+            //             resolve_to_col(ctx.node.value()).qset(value_data_offset,(void*)&ticket,sizeof(Ptr));
+            //         }
+            //     }
+            // };
+            // m_handlers[equals_id] = [this](Context& ctx){
+            //     m_stage_assignment_handler(ctx);
+            // };
+            // m_handlers[var_decl_id] = [this](Context& ctx){
+            //     if(is_live(ctx.node.value())&&ctx.node.value().type()!=0) {
+            //         if(is_live(ctx.node.value().data_ptr())) {
+            //             recycle_column(ctx.node.value().data_ptr());
+            //         }
+            //     }
+            // };
+            // m_handlers[literal_id] = [this](Context& ctx){
+            //     std::string name = ctx.node.name().to_std();
+            //     uint32_t vtype = ctx.node.value().type();
+            //     Ptr ticket = get_ticket(data_store_id,ctx.node.value().size(),ctx.node.value().type());
+            //     resolve_to_col(ctx.node.value()).qset(value_data_offset,(void*)&ticket,sizeof(Ptr));
+            //     if(vtype==int_id) {
+            //         int as_int = std::stoi(name);
+            //         ctx.node.value().set((void*)&as_int);
+            //     } else if(vtype==string_id) {
 
-            m_handlers[literal_id] = [this](Context& ctx){
-                std::string name = ctx.node.name().to_std();
-                uint32_t vtype = ctx.node.value().type();
-                Ptr ticket = get_ticket(data_store_id,ctx.node.value().size(),ctx.node.value().type());
-                resolve_to_col(ctx.node.value()).qset(value_data_offset,(void*)&ticket,sizeof(Ptr));
-                if(vtype==int_id) {
-                    int as_int = std::stoi(name);
-                    ctx.node.value().set((void*)&as_int);
-                } else if(vtype==string_id) {
-
-                }
-            };
+            //     }
+            // };
 
 
             x_handlers[make_tokenized_keyword("rectify")] = [this](Context& ctx){
@@ -792,12 +809,27 @@ namespace Acorn {
             r_handlers[make_tokenized_keyword("MISTAKE")] = [this](Context& ctx){
                 print(ctx.node.value().reg());
             };
-        }
 
-        virtual Node process(std::string path) override {
-            Node root = tokenize(path);
-            unit_root = root;
-            return root;
+
+            x_handlers[invoke_stage_id] = [this](Context& ctx){
+                std::string stage_name = ctx.node.name().to_std();
+                if(!stages.hasKey(stage_name)) {
+                    if(!stages.hasKey(stage_name+"ing")) {
+                        print(red("invoke_stage_id:x_handler unknown stage "+stage_name));
+                        return;
+                    } else {
+                        stage_name+="ing";
+                    }
+                }
+                g_ptr<Stage> stage = stages.get(stage_name);
+                standard_sub_process(ctx);
+                Node left = ctx.node.children()[0];
+                if(left.value().type()==node_id) {
+                    left = Node(*(Ptr*)left.value().get());
+                }
+                ctx.node = left;
+                stage->run(left.type())(ctx);
+            };
         }
 
         void lemmatize_stages() {
@@ -812,50 +844,62 @@ namespace Acorn {
             }
         }
 
+        virtual Node process(std::string path) override {
+            Node root = tokenize(path);
+            unit_root = root;
+            return root;
+        }
+
         bool post_mortem_printed = false;
         void post_mortem(Node root) {
             if(post_mortem_printed) return; 
             else post_mortem_printed = true;
-            span->print_all();
-            print("==END SPAN PRINT==");
-            ERROR_FLAG = false;
-            print(node_to_string(root,0,0,true));
-            //dump_unit(true);
-            ERROR_FLAG = true;
             print(red("FINISHED WITH ERROR: "),ERROR_MSG);
+            post_mortem_roots.insert(root,0);
+            ERROR_FLAG = false;
+            launch_blackfeather(post_mortem_roots);
+            ERROR_FLAG = true;
         }
 
         void compile(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            start_stage(a_handlers);
+            start_logged_stage(a_handlers);
             standard_direct_pass(root);
+            endline();
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             lemmatize_stages();
-            a_pass_resolve_keywords(root.children());
+            newline("Resolving keywords");
+                a_pass_resolve_keywords(root.children());
+            endline();
             for(int i=0;i<root.children().length();i++) {
                 place_node_in_scope(root.children()[i],root);
             }
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            start_stage(n_handlers);
+            start_logged_stage(n_handlers);
             standard_direct_pass(root);
+            endline();
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            start_stage(s_handlers);
+            start_logged_stage(s_handlers);
             standard_direct_pass(root);
+            endline();
             
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            start_stage(t_handlers);
+            start_logged_stage(t_handlers);
             standard_resolving_pass(root);
+            endline();
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            start_stage(r_handlers);
+            start_logged_stage(r_handlers);
             standard_resolving_pass(root);
+            endline();
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            start_stage(e_handlers);
+            start_logged_stage(e_handlers);
             standard_backwards_pass(root);
+            endline();
 
             // start_stage(m_handlers);
             // memory_backwards_pass(root);
@@ -867,13 +911,16 @@ namespace Acorn {
             compile(root);
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            print(node_to_string(root,0,0,true));
+            //print(node_to_string(root,0,0,true));
 
-            start_stage(x_handlers);
+            start_logged_stage(x_handlers);
             standard_travel_pass(root);
+            endline();
             
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-            dump_unit(true);
+            //dump_unit(true);
+
+            launch_blackfeather(root);
         }
 
 

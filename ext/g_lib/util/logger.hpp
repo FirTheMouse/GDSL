@@ -184,82 +184,41 @@ struct SeqLine : public q_object
 class Span : public Object
 {
 public:
-    Span() {
-        line_root = make<SeqLine>("Root",false);
-    };
+    Span() {line_root = make<SeqLine>("Root",false);};
 
     map<std::string, Log::Line> timers;
     map<std::string, int> counters;
     bool print_on_line_end = false;
     bool log_everything = false;
 
-    void start_timer(const std::string &label)
-    {
-        if (timers.hasKey(label))
-        {
+    void start_timer(const std::string &label) {
+        if (timers.hasKey(label)) {
             Log::Line &timer = timers.get(label);
             timer.start();
-        }
-        else
-        {
+        } else {
             Log::Line timer;
             timer.start();
             timers.put(label, timer);
         }
     }
 
-    double end_timer(const std::string &label)
-    {
-        if (timers.hasKey(label))
-        {
+    double end_timer(const std::string &label) {
+        if (timers.hasKey(label)) {
             Log::Line &timer = timers.get(label);
             return timer.end();
         }
         return 0.0;
     }
-
-    double get_time(const std::string &label)
-    {
-        if (timers.hasKey(label))
-        {
-            return timers.get(label).total_time_;
-        }
-        else
-        {
-            return -1.0;
-        }
+    double get_time(const std::string &label) {
+        if (timers.hasKey(label)) {return timers.get(label).total_time_;}
+        else {return -1.0;}
     }
+    inline std::string timer_string(const std::string &label) {return label + ": " + ftime(get_time(label));}
+    void print_timers() {for (auto label : timers.keySet()) {print(timer_string(label));}}
 
-    std::string timer_string(const std::string &label)
-    {
-        return label + ": " + ftime(get_time(label));
-    }
-
-    void print_timers()
-    {
-        for (auto label : timers.keySet())
-        {
-            print(timer_string(label));
-        }
-    }
-
-    void increment(const std::string &label, int by = 1)
-    {
-        counters.getOrPut(label, 0) += by;
-    }
-
-    int get_count(const std::string &label)
-    {
-        return counters.getOrDefault(label, 0);
-    }
-
-    void print_counters()
-    {
-        for (auto label : counters.keySet())
-        {
-            print(label, ": ", get_count(label));
-        }
-    }
+    inline void increment(const std::string &label, int by = 1) {counters.getOrPut(label, 0) += by;}
+    inline int get_count(const std::string &label) {return counters.getOrDefault(label, 0);}
+    void print_counters() {for (auto label : counters.keySet())  { print(label, ": ", get_count(label)); }}
 
     g_ptr<SeqLine> line_root = nullptr;
     g_ptr<SeqLine> on_line = nullptr;

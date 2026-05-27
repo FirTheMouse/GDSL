@@ -60,7 +60,7 @@ inlined socket_btn_theme {
                 button load_btn {
                     "onclick" : "load_file('pebblesave.gld')";
                     "padding" : "8px 16px";
-                    "background-color" : "rgb(68, 137, 50)";
+                    "background-color" : "rgb(50, 66, 137)";
                     "border" : "none";
                     "border-radius" : "4px";
                     "font-family" : "monospace";

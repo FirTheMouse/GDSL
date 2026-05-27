@@ -102,9 +102,9 @@ int main(int argc, char* argv[]) {
     // // Acorn::JIT_Acorn(3);
 
 
-    // g_ptr<Thistle_Unit> twig = make<Thistle_Unit>();
-    // root = twig->process(readFile("modules/tests/pebble.gld"));
-    // twig->run(root);
+    // g_ptr<GDSL::Thistle_Unit> twig = make<GDSL::Thistle_Unit>();
+    // g_ptr<GDSL::Node> twig_root = twig->process(readFile("modules/tests/pebble.gld"));
+    // twig->run(twig_root);
 
     // g_ptr<GDSL::Thistle_Unit> thistle = make<GDSL::Thistle_Unit>();
     // g_ptr<GDSL::Node> thistle_root = thistle->process(readFile("modules/tests/testpage.gld"));

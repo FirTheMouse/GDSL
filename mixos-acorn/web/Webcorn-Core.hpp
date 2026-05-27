@@ -25,6 +25,8 @@ namespace Acorn {
 
         uint32_t find_node_id = make_tokenized_keyword("find_node");
 
+        Stage& html_handlers = reg_stage("htmlemiting");
+
         _lookup is_structural{{
             "id", "class", "name", "type",
             "value", "placeholder", "checked", "disabled",
@@ -270,6 +272,19 @@ namespace Acorn {
                 emit_inline_html(ctx);
             };
 
+            x_handlers[make_tokenized_keyword("emit_contents")] = [this](Context& ctx){
+                Node node = ctx.sub->node;
+                if(node.scopes().length()>0) {
+                    Node scope = node.scopes().get(0);
+                    for(int i=0;i<scope.children().length();i++) {
+                        Node child = scope.children().get(i);
+                        start_stage(html_handlers);
+                        process_node(ctx,child);
+                        start_stage(x_handlers);
+                    }
+                }
+            };
+
             uint32_t display_node_id = make_tokenized_keyword("display_node");
             r_handlers[display_node_id] = [this](Context& ctx){
                 ctx.node.value(make_value(string_id,sizeof(Ptr),0,char_id,1));
@@ -291,18 +306,20 @@ namespace Acorn {
 
             r_handlers[find_node_id] = [this](Context& ctx){
                 ctx.node.value(make_value(node_id,sizeof(Ptr)));
+                resolve_overload(ctx);
             };
             x_handlers[find_node_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 std::string target = string(*(Ptr*)ctx.node.children()[0].value().get()).to_std();
                 Node& from = (Node&)(*(Ptr*)ctx.node.children()[1].value().get());
                 Node result = webcorn_node_scan(target,from);
                 ctx.node.value().set((void*)&result);
-                print("TARGET: ",target," FROM: ",node_info(from));
-                if(is_live(result)) {
-                    print("FOUND: ",node_to_string(result));
-                } else {
-                    print(red("COULD NOT FIND "+target));
-                }
+                // print("TARGET: ",target," FROM: ",node_info(from));
+                // if(is_live(result)) {
+                //     print("FOUND: ",node_to_string(result));
+                // } else {
+                //     print(red("COULD NOT FIND "+target));
+                // }
             };
 
             x_handlers[make_tokenized_keyword("webcorn")] = [this](Context& ctx){

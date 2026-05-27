@@ -60,6 +60,8 @@ inline std::string add_commas(int num) {
         return digits;
     }
 
+    bool is_str_num(const std::string& tocheck) {for(auto c : tocheck) {if(!std::isdigit(c)) return false;} return true;}
+
     std::string escape_string(const std::string& content, bool compact_spaces = true) {
         std::string escaped;
         int space_count = 0;

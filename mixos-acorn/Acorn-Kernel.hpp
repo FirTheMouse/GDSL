@@ -28,8 +28,8 @@ namespace Acorn {
 
             x_handlers[load_id] = [this](Context& ctx){
                 if(unit_root.idx==1) {
-                    ctx.node.value(make_value(string_id,sizeof(Ptr))); //Allocate a space to recive a value
-                    unit_root = ctx.node;
+                    ctx.node().value(make_value(string_id,sizeof(Ptr))); //Allocate a space to recive a value
+                    unit_root = ctx.node();
                     unit_root.idx = 0;
                     while(unit_root.idx==0) {
                         std::this_thread::sleep_for(std::chrono::nanoseconds(100));

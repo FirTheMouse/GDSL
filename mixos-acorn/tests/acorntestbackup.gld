@@ -56,3 +56,39 @@ int c = 7;
 int d = 8;
 d = b;
 print(b," : ",c);
+
+
+M stage torture test:
+
+int x = 0;
+string s = "title";
+while(x<10) {
+    int b = x*2;
+    if(b<8) {
+        print(b," is less than 8 ",s);
+    } else {
+        print(b," is more than 8",s);
+    }
+    x++;
+}
+string m = "M";
+print("And m: ",m);
+
+
+Full test:
+
+##
+register wub;
+"wub" {
+    in executing {
+        ctx.source+=" BONG"+" BING";
+        print(ctx.source);
+    }
+}
+##
+
+ctx.source = "twing";
+print(ctx.source);
+wub;
+print(ctx.source);
+wub;

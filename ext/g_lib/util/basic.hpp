@@ -14,8 +14,14 @@ void printnl(Args&&... args) {
 }
 
 
+static inline std::string lime(const std::string& text) {
+  return "\x1b[92m"+text+"\x1b[0m";
+}
 static inline std::string green(const std::string& text) {
   return "\x1b[32m"+text+"\x1b[0m";
+}
+static inline std::string pine(const std::string& text) {
+  return "\x1b[2;32m"+text+"\x1b[0m";
 }
 static inline std::string yellow(const std::string& text) {
   return "\x1b[33m"+text+"\x1b[0m";
@@ -47,6 +53,10 @@ static inline std::string dim_str(const std::string& text) {
 }
 static inline std::string underline_str(const std::string& text) {
   return "\x1b[4m"+text+"\x1b[0m";
+}
+
+static inline std::string italic_str(const std::string& s) {
+  return "\033[3m" + s + "\033[23m";
 }
 
 
@@ -100,6 +110,18 @@ namespace Log {
       void start() {
           start_ = std::chrono::steady_clock::now();
       }
+
+    double time_ns() {
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_).count();
+        return (double)duration;
+    }
+
+    double time_s() {
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration<double>(end - start_).count();
+        return duration;
+    }
 
       double end() {
           auto end = std::chrono::steady_clock::now();

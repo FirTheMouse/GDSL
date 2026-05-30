@@ -47,12 +47,12 @@ namespace Acorn {
         }
 
         void emit_inline_html(Context& ctx) {
-            if(ctx.node.mute()) return;
+            if(ctx.node().mute()) return;
             std::string s = "";
             list<std::string> structural_prop_labels; list<std::string> structural_prop_values;
             list<std::string> style_prop_labels; list<std::string> style_prop_values;
-            for(int q=0;q<ctx.node.quals().length();q++) {
-                Node qual = ctx.node.quals()[q];
+            for(int q=0;q<ctx.node().quals().length();q++) {
+                Node qual = ctx.node().quals()[q];
                 for(int i=0;i<qual.children().length();i++) {
                     Node c = qual.children()[i];
                     if(c.type()==property_id) {
@@ -103,7 +103,7 @@ namespace Acorn {
                 }  
                 s += "\""; 
             }
-            ctx.sub->source.push(s);
+            ctx.sub().source().push(s);
         }
 
        Node make_property(Node type, Node value, Node parent) {
@@ -115,7 +115,7 @@ namespace Acorn {
         }
 
         void standard_gather_from_scope(Context& ctx) {
-            Node node = ctx.node;
+            Node node = ctx.node();
             if(!node.scopes().empty()) {
                 Node scope = node.scopes()[0];
                 Node properties = make_node(properties_id);
@@ -226,31 +226,31 @@ namespace Acorn {
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-                if(ctx.node.type()==func_call_id) {
-                    if(ctx.node.value().type()!=component_id) {
-                        //instantiate_template(ctx.node,ctx.node.value().type_scope().owner(),ctx);
+                if(ctx.node().type()==func_call_id) {
+                    if(ctx.node().value().type()!=component_id) {
+                        //instantiate_template(ctx.node(),ctx.node().value().type_scope().owner(),ctx);
                         sync_args(ctx);
                     }
                 } else {
-                    Node scope = ctx.node.scopes()[0];
+                    Node scope = ctx.node().scopes()[0];
                     if(!is_live(scope.value())) {
                         scope.value(make_value()); 
                         scope.value().loc(0); //Set location for stack depth
                     }
                 }
-                if(ctx.node.value().type()==component_id) {
+                if(ctx.node().value().type()==component_id) {
                     standard_gather_from_scope(ctx);    
-                    if(!ctx.node.scopes().empty()) {
-                        if(ctx.node.type()==func_decl_id&&!ctx.node.children().empty()) {
-                            ctx.node.value().type(invisible_id);
+                    if(!ctx.node().scopes().empty()) {
+                        if(ctx.node().type()==func_decl_id&&!ctx.node().children().empty()) {
+                            ctx.node().value().type(invisible_id);
                         }
-                        for(int i=0;i<ctx.node.scopes().length();i++) {
-                            Node s = ctx.node.scopes()[i];
-                            if(ctx.node.value().type()==invisible_id) {
+                        for(int i=0;i<ctx.node().scopes().length();i++) {
+                            Node s = ctx.node().scopes()[i];
+                            if(ctx.node().value().type()==invisible_id) {
                                 s.type(invisible_id);
-                            // } else if(ctx.node->value->type==foldable_id) {
+                            // } else if(ctx.node()->value->type==foldable_id) {
                             //     s->type = foldable_id;
-                            // } else if(ctx.node->value->type==iframe_id) {
+                            // } else if(ctx.node()->value->type==iframe_id) {
                             //     s->type = iframe_id;
                             } else {
                                 s.type(component_id);
@@ -262,18 +262,18 @@ namespace Acorn {
             r_handlers[func_call_id] = r_handlers[func_decl_id];
 
             x_handlers[make_tokenized_keyword("gather_props")] = [this](Context& ctx){
-                ctx.node = ctx.sub->node;
+                ctx.node(ctx.sub().node());
                 standard_gather_from_scope(ctx);
             };
 
             x_handlers[make_tokenized_keyword("emit_inline_html")] = [this](Context& ctx){
-                if(ctx.sub->node.scopes().empty()) return;
-                ctx.node = ctx.sub->node.scopes()[0];
+                if(ctx.sub().node().scopes().empty()) return;
+                ctx.node(ctx.sub().node().scopes()[0]);
                 emit_inline_html(ctx);
             };
 
             x_handlers[make_tokenized_keyword("emit_contents")] = [this](Context& ctx){
-                Node node = ctx.sub->node;
+                Node node = ctx.sub().node();
                 if(node.scopes().length()>0) {
                     Node scope = node.scopes().get(0);
                     for(int i=0;i<scope.children().length();i++) {
@@ -287,17 +287,17 @@ namespace Acorn {
 
             uint32_t display_node_id = make_tokenized_keyword("display_node");
             r_handlers[display_node_id] = [this](Context& ctx){
-                ctx.node.value(make_value(string_id,sizeof(Ptr),0,char_id,1));
+                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));
                 Ptr ticket = get_ticket(data_store_id,1,char_id);
                 string contents(ticket);
                 
 
 
-                ctx.node.value().set((void*)&ticket);
+                ctx.node().value().set((void*)&ticket);
             };
             x_handlers[display_node_id] = [this](Context& ctx){
-                string addr(*(Ptr*)ctx.node.children()[0].value().get());
-                string output(*(Ptr*)ctx.node.value().get());
+                string addr(*(Ptr*)ctx.node().children()[0].value().get());
+                string output(*(Ptr*)ctx.node().value().get());
 
                 
 
@@ -305,15 +305,15 @@ namespace Acorn {
             };
 
             r_handlers[find_node_id] = [this](Context& ctx){
-                ctx.node.value(make_value(node_id,sizeof(Ptr)));
+                ctx.node().value(make_value(node_id,sizeof(Ptr)));
                 resolve_overload(ctx);
             };
             x_handlers[find_node_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                std::string target = string(*(Ptr*)ctx.node.children()[0].value().get()).to_std();
-                Node& from = (Node&)(*(Ptr*)ctx.node.children()[1].value().get());
+                std::string target = string(*(Ptr*)ctx.node().children()[0].value().get()).to_std();
+                Node& from = (Node&)(*(Ptr*)ctx.node().children()[1].value().get());
                 Node result = webcorn_node_scan(target,from);
-                ctx.node.value().set((void*)&result);
+                ctx.node().value().set((void*)&result);
                 // print("TARGET: ",target," FROM: ",node_info(from));
                 // if(is_live(result)) {
                 //     print("FOUND: ",node_to_string(result));
@@ -323,28 +323,28 @@ namespace Acorn {
             };
 
             x_handlers[make_tokenized_keyword("webcorn")] = [this](Context& ctx){
-                ctx.node.value(make_value(int_id,4));
+                ctx.node().value(make_value(int_id,4));
                 int server_fd = 6;
-                ctx.node.value().set((void*)&server_fd);
+                ctx.node().value().set((void*)&server_fd);
             };
 
             auto make_int_node = [this](Context& ctx){
-                ctx.node.value(make_value(int_id,4));
+                ctx.node().value(make_value(int_id,4));
             };
         
             uint32_t socket_id = make_tokenized_keyword("socket");
             r_handlers[socket_id] = make_int_node;
             x_handlers[socket_id] = [this](Context& ctx){
                 int fd = socket(AF_INET, SOCK_STREAM, 0);
-                ctx.node.value().set((void*)&fd);
+                ctx.node().value().set((void*)&fd);
             };
         
             uint32_t bind_id = make_tokenized_keyword("bind");
             r_handlers[bind_id] = make_int_node;
             x_handlers[bind_id] = [this](Context& ctx){
                 //Retrive fd and port from children
-                int fd = *(int*)ctx.node.children()[0].value().get();
-                int port = *(int*)ctx.node.children()[1].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
+                int port = *(int*)ctx.node().children()[1].value().get();
                 int opt = 1;
                 setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
                 struct sockaddr_in addr;
@@ -353,21 +353,21 @@ namespace Acorn {
                 addr.sin_port = htons(port);
                 addr.sin_addr.s_addr = INADDR_ANY;
                 int result = bind(fd, (struct sockaddr*)&addr, sizeof(addr));
-                ctx.node.value().set((void*)&result);
+                ctx.node().value().set((void*)&result);
             };
         
             uint32_t listen_id = make_tokenized_keyword("listen");
             r_handlers[listen_id] = make_int_node;
             x_handlers[listen_id] = [this](Context& ctx){
-                int fd = *(int*)ctx.node.children()[0].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
                 int result = listen(fd, 10);
-                ctx.node.value().set((void*)&result);
+                ctx.node().value().set((void*)&result);
             };
         
             uint32_t accept_id = make_tokenized_keyword("accept");
             r_handlers[accept_id] = make_int_node;
             x_handlers[accept_id] = [this](Context& ctx){
-                int fd = *(int*)ctx.node.children()[0].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
                 struct sockaddr_in client_addr;
                 memset(&client_addr, 0, sizeof(client_addr));
                 socklen_t client_len = sizeof(client_addr);
@@ -377,16 +377,16 @@ namespace Acorn {
                     throw_error("accept failed: ", strerror(errno));
                     return;
                 }
-                ctx.node.value().set((void*)&client_fd);
+                ctx.node().value().set((void*)&client_fd);
             };
         
             uint32_t read_id = make_tokenized_keyword("read");
             //Read returns a string, not an int
             r_handlers[read_id] = [this](Context& ctx){
-                ctx.node.value(make_value(string_id,sizeof(Ptr)));
+                ctx.node().value(make_value(string_id,sizeof(Ptr)));
             };
             x_handlers[read_id] = [this](Context& ctx){
-                int fd = *(int*)ctx.node.children()[0].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
                 char buffer[4096];
                 std::string request;
                 while(true) {
@@ -398,30 +398,30 @@ namespace Acorn {
                 }
                 Ptr ticket(name_store_id, types[name_store_id].note_value("request",sizeof(char),char_id), 0);
                 for(auto c : request) types[name_store_id][ticket.idx].push((void*)&c);
-                ctx.node.value().set((void*)&ticket);
+                ctx.node().value().set((void*)&ticket);
             };
         
             uint32_t write_id = make_tokenized_keyword("write");
             r_handlers[write_id] = make_int_node;
             x_handlers[write_id] = [this](Context& ctx){
-                int fd = *(int*)ctx.node.children()[0].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
                 //Second child is the string to write
-                Ptr strptr = *(Ptr*)ctx.node.children()[1].value().get();
+                Ptr strptr = *(Ptr*)ctx.node().children()[1].value().get();
                 Col& col = types[strptr.pool][strptr.idx];
                 int result = ::write(fd, col.storage, col.size);
-                ctx.node.value().set((void*)&result);
+                ctx.node().value().set((void*)&result);
             };
         
             uint32_t close_id = make_tokenized_keyword("close");
             r_handlers[close_id] = make_int_node;
             x_handlers[close_id] = [this](Context& ctx){
-                int fd = *(int*)ctx.node.children()[0].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
                 ::close(fd);
             };
 
             x_handlers[make_tokenized_keyword("respond")] = [this](Context& ctx){
-                int fd = *(int*)ctx.node.children()[0].value().get();
-                string str = *(Ptr*)ctx.node.children()[1].value().get();
+                int fd = *(int*)ctx.node().children()[0].value().get();
+                string str = *(Ptr*)ctx.node().children()[1].value().get();
                 print("RESPONDING TO:\n",str.to_std());
                 std::string body = "<html><body> <p> hello world </p>  <body></html>";
                 std::string response = 

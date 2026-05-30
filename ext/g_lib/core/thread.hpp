@@ -14,6 +14,13 @@
 #include "../util/util.hpp"
 #include "../core/q_object.hpp"
 
+template<typename... Args>
+void print_and_pause(float time, Args&&... args) {
+  (std::cout << ... << args) << std::endl;
+  Log::Line l; l.start();
+  while(l.time_s()<time) {std::this_thread::sleep_for(std::chrono::nanoseconds(100));}
+}
+
 class Thread : public q_object
 {
 public:

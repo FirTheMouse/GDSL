@@ -79,7 +79,7 @@ inline std::string add_commas(int num) {
                 case '\n': escaped += "\\n"; break;
                 case '\t': escaped += "\\t"; break;
                 case '\r': escaped += "\\r"; break;
-                case '"':  escaped += "\\\""; break;
+                //case '"':  escaped += "\\\""; break;
                 case '\\': escaped += "\\\\"; break;
                 default:   escaped += c; break;
             }
@@ -101,6 +101,7 @@ namespace sgen {
     };
 
     const namebase STANDARD("Ja|Be|Ma|Cer|Le,ck|de|ly|th|ch|un|el");
+    const namebase TRUE_RANDOM("a|A|b|B|c|C|d|D|e|E|f|F|g|G|h|H|i|I|j|J|k|K|l|L|m|M|n|N|o|O|p|P|q|Q|r|R|s|S|t|T|u|U|v|V|w|W|x|X|y|Y|z|Z|0|1|2|3|4|5|6|7|8|9|_|+|-|*|/|=|<|>|!|&|^|.|,|:|;|(|)|[|]|{|}|\"|#|@|~|`|\\");
     const namebase RANDOM(
         "A|a|B|b|C|c|D|d|E|e|F|f|G|g|H|h|I|i|J|j|K|k|L|l|M|m|N|n|O|o|P|p|Q|q|R|r|S|s|T|t|U|u|V|v|W|w|Y|y|X|x|Z|z,"
         "A|a|B|b|C|c|D|d|E|e|F|f|G|g|H|h|I|i|J|j|K|k|L|l|M|m|N|n|O|o|P|p|Q|q|R|r|S|s|T|t|U|u|V|v|W|w|Y|y|X|x|Z|z,"
@@ -146,5 +147,9 @@ namespace sgen {
         }
         return result;
     }
+}
+
+inline std::string rands() {
+    return sgen::randsgen(sgen::TRUE_RANDOM);
 }
 

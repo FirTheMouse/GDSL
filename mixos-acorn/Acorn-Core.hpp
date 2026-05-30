@@ -20,6 +20,9 @@ namespace Acorn {
     inline uint64_t Ptr_to_key(Ptr p) {
         return ((uint64_t)p.pool << 32) | (uint64_t)p.idx;
     }
+    inline Ptr key_to_Ptr(uint64_t key) {
+        return Ptr{(uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF), 0};
+    }
 
     void mark_error(Ptr ptr) {marked_ptrs << ptr;}
 
@@ -966,8 +969,8 @@ namespace Acorn {
         Handler prefix = nullptr;
         Handler suffix = nullptr;
         Handler stagend = nullptr;
+        Handler logger = nullptr;
     };  
-
 
     std::string tag_to_str(uint32_t tag, void* data) {
         DEBUG_ONLY(if(ERROR_FLAG) {return "ERROR";})
@@ -1512,7 +1515,7 @@ namespace Acorn {
         func(root);
         for(int i=0;i<root.children().length();i++) walk_nodenet(root.children()[i],func);
         for(int i=0;i<root.quals().length();i++) walk_nodenet(root.quals()[i],func);
-        for(int i=0;i<root.scopes().length();i++) walk_nodenet(root.scopes()[i],func);
+        for(int i=0;i<root.scopes().length();i++) if(root.scopes()[i].owner()==root) walk_nodenet(root.scopes()[i],func);
         if(is_live(root.value())) {
             for(int i=0;i<root.value().quals().length();i++) walk_nodenet(root.value().quals()[i],func);
         }
@@ -1522,7 +1525,8 @@ namespace Acorn {
         Unit() {init();}
 
         map<std::string,g_ptr<Stage>> stages;
-        Node unit_root;
+        Node unit_root = deadptr;
+        std::string unit_label = "";
     
         Stage& reg_stage(std::string label) {
             g_ptr<Stage> new_stage = make<Stage>();
@@ -1559,6 +1563,12 @@ namespace Acorn {
     
         Stage* active_stage;
         list<Watcher> watchers;
+        std::string GLOBAL_MSG = "";
+        void log_to_watcher(Context& ctx, const std::string& msg) {
+            GLOBAL_MSG = msg;
+            for(auto& w : watchers) {if(w.logger) w.logger(ctx);}
+            GLOBAL_MSG = "";
+        }
     
         void start_logged_stage(Stage& stage) {
             active_stage = &stage;

@@ -1,5 +1,6 @@
 # Build folders
 /build/
+/mixos-acorn/flipbooks/
 cmake-build-*/
 
 # CMake generated files

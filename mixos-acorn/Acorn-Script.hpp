@@ -4,7 +4,7 @@
 #include "../ext/g_lib/core/thread.hpp"
 
 
-#define LOBOTOMIZE_M_STAGE 0
+#define LOBOTOMIZE_M_STAGE 1
 
 namespace Acorn {
     struct Acorn_Script : public virtual Compiler_Unit {
@@ -507,12 +507,22 @@ namespace Acorn {
 
                     std::string oldsrc = ctx.source().to_std(); //Remember to just fix the source in context (when I'm not trying to ship a prototype)
 
+                    // list<Watcher> watcher_daycare; //We don't log things like precompiling stages (for now)
+                    // watcher_daycare << watchers;
+                    // watchers.clear();
+
+                    std::string oldlabel = unit_label;
+                    unit_label = oldlabel+"pc";
+
                     Node root = process(ctx.node().name().to_std());
                     ctx.node().name().col().clear(); //To avoid stinking up the nodenet and memory dump
                     compile(root,false);
                     start_logged_stage(x_handlers);
                     standard_travel_pass(root);
                     end_logged_stage();
+
+                    unit_label = oldlabel;
+                    //watchers << watcher_daycare; //Restore watchers
 
                     ctx.node().scopes() << root;
 
@@ -976,8 +986,6 @@ namespace Acorn {
                 ctx.node(left);
                 stage->run(left.type())(ctx);
             };
-
-            setup_resolution_trace_flipbook();
         }
 
         void lemmatize_stages() {
@@ -1014,26 +1022,11 @@ namespace Acorn {
 
         void print_stage_header(const std::string& label) {print_and_pause(0.7f,"\n\n\n\n\n\n\n\n=="+label+" STAGE==\n\n\n\n\n\n\n\n");} 
 
-        #define ANIMATE 0
-
         void compile(Node root, bool prune = true) {
-            #if ANIMATE
-            flip_speed = 0.025f;
-            print_stage_header("A");
-            setup_resolution_trace_flipbook();
-            #endif
-
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(a_handlers);
             standard_direct_pass(root);
             end_logged_stage();
-
-            #if ANIMATE
-            flip_speed = 0.1f;
-            end_resolution_flipbook();
-            print_stage_header("N");
-            setup_resolution_trace_flipbook();
-            #endif
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             lemmatize_stages();
@@ -1049,44 +1042,20 @@ namespace Acorn {
             standard_direct_pass(root);
             end_logged_stage();
 
-            #if ANIMATE
-            end_resolution_flipbook();
-            print_stage_header("S");
-            setup_resolution_trace_flipbook();
-            #endif
-
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(s_handlers);
             standard_direct_pass(root);
             end_logged_stage();
             
-            #if ANIMATE
-            end_resolution_flipbook();
-            print_stage_header("T");
-            setup_resolution_trace_flipbook();
-            #endif
-
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(t_handlers);
             standard_resolving_pass(root);
             end_logged_stage();
 
-            #if ANIMATE
-            end_resolution_flipbook();
-            print_stage_header("R");
-            setup_resolution_trace_flipbook();
-            #endif
-
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(r_handlers);
             standard_resolving_pass(root);
             end_logged_stage();
-
-            #if ANIMATE
-            end_resolution_flipbook();
-            print_stage_header("M");
-            setup_resolution_trace_flipbook();
-            #endif
 
             //No E stage for now while testing
             // DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
@@ -1104,10 +1073,6 @@ namespace Acorn {
             start_logged_stage(m_handlers);
             memory_backwards_pass(root);
             end_logged_stage();
-
-            #if ANIMATE
-            end_resolution_flipbook();
-            #endif
         }
     
 
@@ -1118,23 +1083,13 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //print(node_to_string(root,0,0,true));
 
-            #if ANIMATE
-            flip_speed = 0.025f;
-            print_stage_header("EXECUTE");
-            setup_resolution_trace_flipbook();
-            #endif
-
             start_logged_stage(x_handlers);
             standard_travel_pass(root);
             end_logged_stage();
 
-            #if ANIMATE
-            end_resolution_flipbook();
-            #endif
-            
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);
-            
+
             launch_blackfeather(root);
         }
 

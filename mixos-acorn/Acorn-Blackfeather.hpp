@@ -29,6 +29,15 @@ char read_key() {
     return c;
 }
 
+
+constexpr const char* strip_path(const char* path) {
+    const char* last = path;
+    for(const char* p = path; *p; p++) {
+        if(*p == '/' || *p == '\\') last = p+1;
+    }
+    return last;
+}
+
 //q = -100
 //^ = 2
 //v = -2
@@ -78,6 +87,8 @@ namespace Acorn {
             setup_signals();
         }
 
+        #define LOG_W(ctx, msg) DEBUG_ONLY(log_to_watcher(ctx, std::string(msg) + " [" + strip_path(__FILE__) + ":" + std::to_string(__LINE__) + "]"))
+
         void stamp_onto_page(Node node, list<std::string>& lines) {
             if(node.x()>=0.0f&&node.y()>=0.0f) {
                 // print("STAMPING: ",node_info(node));
@@ -123,69 +134,56 @@ namespace Acorn {
             else             {r=c;g=0;b=x;}
             return rgb(num, (int)((r+m)*255), (int)((g+m)*255), (int)((b+m)*255));
         }
-        std::string colorize_numbers(const std::string& line) {
-            if(line.empty()) {return "";}
-            std::string out = "";
-            int i = 0;
-            while(i < line.length()) {
-                if(std::isdigit(line[i])) {
-                    std::string num = "";
-                    while(i < line.length() && std::isdigit(line[i])) {
-                        num += line[i++];
-                    }
-                    int idx = std::stoi(num);
-                    out+=idx_to_color(num,idx);
-                } else {
-                    out += line[i++];
-                }
-            }
-            return out;
-        }
-        void stamp_lifetimes(Node node, list<std::string>& lines) {
+    
+        //Remember to preserve and reverse the x/y of each node after
+        void collect_stamps_by_data(Node node, list<Node>& nodes, map<uint64_t,bool>& visited, map<uint64_t,std::pair<float,float>>& reversions) {
+            uint64_t key = Ptr_to_key(node);
+            if(visited.getOrDefault(key, false)) return;
+            visited.put(key, true);
             if(is_live(node.value())&&is_live(node.value().data_ptr())) {
-                int x = 0;
-                int y = 0;
-                if(node.x()>=0.0f&&node.y()>=0.0f) {
-                    x = (int)node.x();
-                    y = (int)node.y();
-                } else if(!node.quals().empty()) {
+
+                if((node.x()<0.0f||node.y()<0.0f)&&!node.quals().empty()) {
                     Node q = node.quals()[0];
-                    x = (int)q.x();
-                    y = (int)q.y();
+                    reversions.put(key,std::make_pair<float,float>(node.x(),node.y()));
+                    node.x(q.x());
+                    node.y(q.y());
                 }
+                int x = (int)node.x();
+                int y = (int)node.y();
                 if(x>=0.0f&&y>=0.0f) {
-                    std::string to_stamp = std::to_string(node.value().data_ptr().idx);
-                    while(y>=lines.length()) {lines << "";}
-                    while((x+to_stamp.length())>=lines[y].length()) lines[y]+=" ";
-                    for(char c : to_stamp) lines[y][x++] = c;
+                    int insert_at = nodes.length();
+                    for(int i=0;i<nodes.length();i++) {
+                        int ny = (int)nodes[i].y();
+                        int nx = (int)nodes[i].x();
+                        if(y<ny||(y==ny&&x<nx)) {
+                            insert_at = i;
+                            break;
+                        }
+                    }
+                    nodes.insert(node, insert_at);
                 }
             }
-            for(int i=0;i<node.children().length();i++) stamp_lifetimes(node.children()[i],lines);
-            for(int i=0;i<node.scopes().length();i++) stamp_lifetimes(node.scopes()[i],lines);
+            for(int i=0;i<node.children().length();i++) collect_stamps_by_data(node.children()[i],nodes,visited,reversions);
+            for(int i=0;i<node.scopes().length();i++) if(node.scopes()[i].owner()==node) collect_stamps_by_data(node.scopes()[i],nodes,visited,reversions);
         }
-        std::string nodenet_to_lifetimes(Node root) {
-            list<std::string> lifetime_lines;
-            stamp_lifetimes(root,lifetime_lines);
-            list<std::string> main_lines;
-            stamp_onto_page(root,main_lines);
-            std::string out = "";
-            list<std::string> lines;
-            for(int i=0;i<main_lines.length();i++) {
-                lines << main_lines[i]+"\n";
-                if(i<lifetime_lines.length()) {
-                    if(!lifetime_lines[i].empty())
-                        lines << colorize_numbers(lifetime_lines[i])+"\n";
-                }
+        void collect_stamps_unsorted(Node node, list<Node>& nodes) {
+            if(node.x()>=0.0f&&node.y()>=0.0f) {
+                int x = (int)node.x();
+                int y = (int)node.y();
+                nodes << node;
             }
-            for(auto l : lines) {
-                out += l;
+            for(int i=0;i<node.children().length();i++) collect_stamps_unsorted(node.children()[i],nodes);
+            for(int i=0;i<node.quals().length();i++) collect_stamps_unsorted(node.quals()[i],nodes);
+            for(int i=0;i<node.scopes().length();i++) if(node.scopes()[i].owner()==node) collect_stamps_unsorted(node.scopes()[i],nodes);
+            if(is_live(node.value())) {
+                for(int i=0;i<node.value().quals().length();i++) collect_stamps_unsorted(node.value().quals()[i],nodes);
             }
-            return out;
         }
-
-
-
-        void collect_stamps(Node node, list<Node>& nodes) {
+        void collect_stamps(Node node, list<Node>& nodes, map<uint64_t,bool>& visited) {
+            uint64_t key = Ptr_to_key(node);
+            if(visited.getOrDefault(key, false)) return;
+            visited.put(key, true);
+            
             if(node.x()>=0.0f&&node.y()>=0.0f) {
                 int x = (int)node.x();
                 int y = (int)node.y();
@@ -200,36 +198,68 @@ namespace Acorn {
                 }
                 nodes.insert(node, insert_at);
             }
-            for(int i=0;i<node.children().length();i++) collect_stamps(node.children()[i],nodes);
-            for(int i=0;i<node.quals().length();i++) collect_stamps(node.quals()[i],nodes);
-            for(int i=0;i<node.scopes().length();i++) collect_stamps(node.scopes()[i],nodes);
+            for(int i=0;i<node.children().length();i++) collect_stamps(node.children()[i],nodes,visited);
+            for(int i=0;i<node.quals().length();i++) collect_stamps(node.quals()[i],nodes,visited);
+            for(int i=0;i<node.scopes().length();i++) if(node.scopes()[i].owner()==node) collect_stamps(node.scopes()[i],nodes,visited);
             if(is_live(node.value())) {
-                for(int i=0;i<node.value().quals().length();i++) collect_stamps(node.value().quals()[i],nodes);
+                for(int i=0;i<node.value().quals().length();i++) collect_stamps(node.value().quals()[i],nodes,visited);
             }
         }
-        list<std::string> fstamp(Node root, std::function<std::string(Node,int&)> format) {
+
+        struct Stamper {
+            Stamper() {}
+            Stamper(std::function<std::string(Node,list<int>&)> _format, std::function<list<Node>(Node)> _collect) 
+            : format(_format), collect(_collect)
+            {}
+            std::function<std::string(Node,list<int>&)> format;
+            std::function<list<Node>(Node)> collect;
+        };
+
+        list<std::string> fstamp(Node root, Stamper stamper) {
             list<std::string> lines;
             list<int> offsets;
-            list<Node> stamps;
-            collect_stamps(root,stamps);
+            list<Node> stamps = stamper.collect(root);
             for(int i=0;i<stamps.length();i++) {
                 Node stamp = stamps[i];
+                float px = stamp.x();
+                float py = stamp.y();
+
+                std::string to_stamp = stamper.format(stamp,offsets);
                 int x = (int)stamp.x();
                 int y = (int)stamp.y();
-                while(y>=offsets.length()) {offsets<<0;}
-                x+=offsets[y];
-                std::string to_stamp = format(stamp,offsets[y]);
                 while(y>=lines.length()) {lines << "";}
                 while((x+to_stamp.length())>=lines[y].length()) lines[y]+=" ";
                 for(char c : to_stamp) lines[y][x++] = c;
+ 
+                stamp.x(px); //Because some stampers will modify the position of the stamp, we need to restore it after
+                stamp.y(py); 
             }
             return lines;
         }
-        std::string fnodenet_to_string(Node root,std::function<std::string(Node,int&)> format) {
-            list<std::string> lines = fstamp(root,format);
+        std::string fnodenet_to_string(Node root, Stamper stamper) {
+            list<std::string> lines = fstamp(root,stamper);
             std::string out = "";
             for(auto l : lines) {
                 out+=l+"\n";
+            }
+            return out;
+        }
+
+        std::string fmultiline_nodenet(Node root,list<Stamper> stampers) {
+            list<list<std::string>> stamps;
+            size_t len = 0;
+            for(auto s : stampers) {
+                list<std::string> stamp = fstamp(root,s);
+                if(stamp.length()>len) len = stamp.length();
+                stamps << stamp;
+            }
+            std::string out = "";
+            for(int i=0;i<len;i++) {
+                for(auto s : stamps) {
+                    if(i<s.length()&&!s[i].empty()) {
+                        out+=s[i]+"\n";
+                    }
+                }
             }
             return out;
         }
@@ -271,42 +301,40 @@ namespace Acorn {
             return nullptr;
         }
       
-        int page_num = 0;
-        void setup_resolution_flipbook() {
-            Watcher w;
+        void setup_stamp_res_flipbook() {
+            Watcher w("stamp_res");
             w.stagestart = [this](Context& ctx){
-                g_ptr<Flipbook> b = make<Flipbook>("resolution_"+active_stage->label);
+                g_ptr<Flipbook> b = make<Flipbook>("stamp_res_"+active_stage->label+"_"+unit_label);
                 b->open();
                 flipbooks << b;
             };
-            w.stagend = [this](Context& ctx){
-                g_ptr<Flipbook> b = get_flipbook("resolution_"+active_stage->label);
-                if(b) b->close();
-                ptr_colors.clear();
-                page_num = 0;
-            };
-            
             w.prefix = [this](Context& ctx) {
-                g_ptr<Flipbook> b = get_flipbook("resolution_"+active_stage->label);    
+                g_ptr<Flipbook> b = get_flipbook("stamp_res_"+active_stage->label+"_"+unit_label);    
                 b->add_page(
-                    blue(std::to_string(page_num++))+"> "+node_info(ctx.node())
-                    +"\n"
-                    +fnodenet_to_string(unit_root,[&ctx](Node n, int& offset){
+                    "\n\n\n\n\n\n"+
+                    fnodenet_to_string(unit_root,Stamper{[&ctx](Node n, list<int>& offsets){
                         std::string s1 = n.name().to_std();
                         std::string s2 = s1;
                         if(n==ctx.node()) {
                             s2 = blue(s2);
                         } else {
                             if(n.resolved()) {
-                                s2 = green(s2);
+                                s2 = gray(s2);
                             } else {
-                                s2 = red(s2);
+                                s2 = white(s2);
                             }
                         }
-                        offset+=s2.length()-s1.length();
+                        while((int)n.y()>=offsets.length()) {offsets<<0;}
+                        n.x(n.x()+offsets[(int)n.y()]);
+                        offsets[(int)n.y()]+=s2.length()-s1.length();
                         s1 = s2;
                         return s1;
-                }));
+                },[this](Node n){
+                        list<Node> stamps;
+                        map<uint64_t,bool> visited;
+                        collect_stamps(n,stamps,visited);
+                        return stamps;
+                }})+blue(std::to_string(b->len+1)));
             };
             w.suffix = [this](Context& ctx) {
                 ctx.node().resolved(true);
@@ -314,62 +342,48 @@ namespace Acorn {
                     Node q = ctx.node().quals()[i]; 
                     if(q.mute()) {q.resolved(true);}
                 }
-
-                g_ptr<Flipbook> b = get_flipbook("resolution_"+active_stage->label); 
-                b->add_page(
-                    cyan(std::to_string(page_num++))+"> "+node_info(ctx.node())
-                    +"\n"
-                    +fnodenet_to_string(unit_root,[&ctx](Node n, int& offset){
-                        std::string s1 = n.name().to_std();
-                        std::string s2 = s1;
-                        if(n==ctx.node()) {
-                            s2 = cyan(s2);
-                        } else {
-                            if(n.resolved()) {
-                                s2 = green(s2);
-                            } else {
-                                s2 = red(s2);
-                            }
-                        }
-                        offset+=s2.length()-s1.length();
-                        s1 = s2;
-                        return s1;
-                }));
+            };
+            w.stagend = [this](Context& ctx){
+                g_ptr<Flipbook> b = get_flipbook("stamp_res_"+active_stage->label+"_"+unit_label);
+                if(b) b->close();
+                walk_nodenet(unit_root,[](Node n){n.resolved(false);});
             };
             watchers << w;
         }
 
-        void setup_resolution_trace_flipbook() {
-            Watcher w("resolution_trace_flipbook");
+        void setup_trace_res_flipbook() {
+            Watcher w("trace_res");
             w.stagestart = [this](Context& ctx){
-                g_ptr<Flipbook> b = make<Flipbook>("resolution_trace_"+active_stage->label);
+                g_ptr<Flipbook> b = make<Flipbook>("trace_res_"+active_stage->label+"_"+unit_label);
                 b->open();
                 flipbooks << b;
             };
-            w.stagend = [this](Context& ctx){
-                g_ptr<Flipbook> b = get_flipbook("resolution_trace_"+active_stage->label);
-                if(b) b->close();
-                ptr_colors.clear();
-                page_num = 0;
-            };
-    
             w.prefix = [this](Context& ctx) {                
                 ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = white("> "+s);}; //Ptr on
-                g_ptr<Flipbook> b = get_flipbook("resolution_trace_"+active_stage->label);    
-                b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(page_num++)));
+                g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);    
+                b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(b->len+1)));
                 ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = pine("~ "+s);}; //Ptr resolving
             };
             w.suffix = [this](Context& ctx) {
-                // ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = green("> "+s);}; //Ptr finished resolving
-                // g_ptr<Flipbook> b = get_flipbook("resolution_trace_"+active_stage->label);    
-                // b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(page_num++)));
-                // for(int i=0;i<ctx.node().quals().length();i++)  {
-                //     Node q = ctx.node().quals()[i]; 
-                //     if(q.mute()) {
-                //         ptr_colors[Ptr_to_key(q)] = [](std::string& s){s = gray(s);};
-                //     }
-                // }
+                ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = green("> "+s);}; //Ptr finished resolving
+                g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);      
+                b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(b->len+1)));
+                for(int i=0;i<ctx.node().quals().length();i++)  {
+                    Node q = ctx.node().quals()[i]; 
+                    if(q.mute()) {
+                        ptr_colors[Ptr_to_key(q)] = [](std::string& s){s = gray(s);};
+                    }
+                }
                 ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = gray(". "+s);}; //Ptr resolved
+            };
+            w.logger = [this](Context& ctx) {
+                g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);  
+                b->add_page("\n\n\n\n\n\n\n"+node_to_string(is_live(ctx.root())?ctx.root():ctx.node())+"\n"+blue(std::to_string(b->len+1))+": "+GLOBAL_MSG);
+            };
+            w.stagend = [this](Context& ctx){
+                g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);
+                if(b) b->close();
+                ptr_colors.clear();
             };
             watchers << w;
         }
@@ -385,15 +399,15 @@ namespace Acorn {
                 int key = read_arrow();
                 if(key == 1 && on_page < book.length()-1) {on_page++; next = book[on_page];} //>
                 if(key == -1 && on_page > 0) {on_page--; next = book[on_page];} //<
-                if(key == -2 && on_page-5 > 0) {on_page-=5; next = book[on_page];} //v
-                if(key == 2 && on_page+5 < book.length()-1) {on_page+=5; next = book[on_page];} //^
+                if(key == -2) {if(on_page-5 > 0) {on_page-=5;} else {on_page=0;} next = book[on_page];} //v
+                if(key == 2) {if(on_page+5 < book.length()-1) {on_page+=5;} else {on_page=book.length()-1;} next = book[on_page];} //^
                 if(key == -100) break;
             }
             print("Exited navigation");
         }
 
 
-        float flip_speed = 0.1f;
+        float flip_speed = 0.07f;
         int flip_pages(list<std::string> book, int start_page = 0, int flip_to = -1) {
             if(book.empty()) return 0;
             if(flip_to==-1) flip_to = book.length()-1;
@@ -477,20 +491,23 @@ namespace Acorn {
                                 for(auto r : roots) {
                                     print(nodenet_to_string(r));
                                 }
-                            } else if(cmds[2]=="lifetimes") {
-                                for(auto r : roots) {
-                                    print(nodenet_to_lifetimes(r));
-                                }
                             } else if(cmds[2]=="test") {
-                                print(fnodenet_to_string(roots[0],[](Node n, int& offset){
+                                print(fnodenet_to_string(roots[0],Stamper{[](Node n, list<int>& offsets){
                                     std::string to_return = n.name().to_std();
                                     if(n.mute()) {
                                         std::string nreturn = gray(to_return);
-                                        offset+=nreturn.length()-to_return.length();
+                                        while((int)n.y()>=offsets.length()) {offsets<<0;}
+                                        n.x(n.x()+offsets[(int)n.y()]);
+                                        offsets[(int)n.y()]+=nreturn.length()-to_return.length();
                                         to_return = nreturn;
                                     }
                                     return to_return;
-                                }));
+                                },[this](Node n){
+                                    list<Node> stamps;
+                                    map<uint64_t,bool> visited;
+                                    collect_stamps(n,stamps,visited);
+                                    return stamps;
+                                }}));
                             } else {
                                 if(!is_str_num(cmds[2])) {is_invalid = true; continue;}
                                 int root_id = std::stoi(cmds[2]);
@@ -504,7 +521,53 @@ namespace Acorn {
                             echo = true;
                         } else if(cmds[1]=="live") {
                             for(auto r : roots) {
-                                print(nodenet_to_lifetimes(r));
+                                //print(nodenet_to_lifetimes(r));
+                                print(fmultiline_nodenet(r,{
+                                    Stamper{[this](Node n, list<int>& offsets){
+                                        while((int)n.y()>=offsets.length()) {offsets<<0;}
+                                        n.x(n.x()+offsets[(int)n.y()]);
+                                        return n.name().to_std();
+                                    },[this](Node n){
+                                        list<Node> stamps;
+                                        map<uint64_t,bool> visited;
+                                        collect_stamps(n,stamps,visited);
+                                        return stamps;
+                                    }},
+                                    Stamper{[this](Node n, list<int>& offsets){
+                                        std::string to_return = "";
+                                        if(is_live(n.value())&&is_live(n.value().data_ptr())) {
+                                            int idx = n.value().data_ptr().idx;
+                                            to_return = std::to_string(idx);
+                                            std::string nreturn = idx_to_color(std::to_string(idx),idx);
+                                            uint32_t padlen = n.name().length();
+                                            if((n.x()<0.0f||n.y()<0.0f)&&!n.quals().empty()) {
+                                                Node q = n.quals()[0];
+                                                n.x(q.x()); n.y(q.y());
+                                                padlen = q.name().length();
+                                            }
+                                            while((int)n.y()>=offsets.length()) {offsets<<0;}
+                                            n.x(n.x()+offsets[(int)n.y()]);
+                                            offsets[(int)n.y()]+=nreturn.length()-to_return.length();
+
+                                            uint32_t visible_len = std::to_string(idx).length();
+                                            nreturn = center_pad_known(nreturn, visible_len, padlen);
+
+                                            to_return = nreturn;
+                                        }   
+                                        return to_return;
+                                    },[this](Node n){
+                                        list<Node> stamps;
+                                        map<uint64_t,bool> visited;
+                                        map<uint64_t,std::pair<float,float>> reversions;
+                                        collect_stamps_by_data(n,stamps,visited,reversions);
+                                        for(auto e : reversions.entrySet()) {
+                                            Node n(key_to_Ptr(e.key));
+                                            n.x(e.value.first);
+                                            n.y(e.value.second);
+                                        }
+                                        return stamps;
+                                    }},
+                                }));
                             }
                             echo = true;
                         }

@@ -52,6 +52,13 @@ inline std::string add_commas(int num) {
         uint32_t right_pad = total_pad - left_pad;
         return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
     }
+    std::string center_pad_known(const std::string& s, uint32_t s_visible_len, uint32_t width) {
+        if(s_visible_len >= width) return s;
+        uint32_t total_pad = width - s_visible_len;
+        uint32_t left_pad = total_pad / 2;
+        uint32_t right_pad = total_pad - left_pad;
+        return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
+    }
 
     uint32_t digit_count(uint32_t n) {
         if(n == 0) return 1;

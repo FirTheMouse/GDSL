@@ -962,7 +962,8 @@ namespace Acorn {
 
         void resolve_overload(Context& ctx) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to resolve overloads while another error was flagged")); return;})
-            standard_sub_process(ctx);
+            //LOG_W(ctx," resolving overloads");
+            standard_sub_process(ctx); //Consider not doing this
             if(ctx.index()==0&&is_live(ctx.node().value())) { //If we're the left term
                 if(layouts.hasKey(ctx.node().value().type())) {
                     map<uint64_t,type_and_value>& overload = layouts[ctx.node().value().type()].overload;
@@ -970,6 +971,9 @@ namespace Acorn {
                     bool has_overload = false;
                     uint64_t typekey = 0;
                     if(ctx.result().length()>1) {
+                        ctx.index() = 1; //Because process node will just blindly carry index
+                        process_node(ctx,ctx.result().get(1));
+                        ctx.index() = 0;
                         if(is_live(ctx.result().get(1).value())) {
                             right_type = ctx.result().get(1).value().type();
                         } else {
@@ -1379,6 +1383,13 @@ namespace Acorn {
                 ;
                 ctx.node().value().set((void*)&result);
             };
+
+
+            // r_handlers[plus_equals_id] = [this](Context& ctx){
+            //     if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
+            //     standard_sub_process(ctx);
+            //     resolve_overload(ctx);
+            // };
 
             r_handlers[plus_id] = [this](Context& ctx){
                 if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;

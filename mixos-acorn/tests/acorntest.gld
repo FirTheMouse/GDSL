@@ -1,10 +1,15 @@
-int fibonacci(int n) {
-    if(n < 2) {
-        return n;
+##
+register wub;
+"wub" {
+    in executing {
+        ctx.source+=" BONG"+" BING"+" TWING";
+        print(ctx.source);
     }
-    int a = fibonacci(n-1);
-    int b = fibonacci(n-2);
-    return a + b;
 }
-int fib5 = fibonacci(5);
-print(fib5);
+##
+
+ctx.source = "twing";
+print(ctx.source);
+wub;
+print(ctx.source);
+wub;

@@ -35,6 +35,8 @@ int main(int argc, char* argv[]) {
     // // Acorn::test_acorn();
  
     g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    acorn->setup_trace_res_flipbook();
+    //acorn->setup_stamp_res_flipbook();
     acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     // acorn->silence_blackfeather = true;

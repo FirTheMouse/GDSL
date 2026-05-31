@@ -130,6 +130,19 @@ inline std::string readFile(const std::string& filename) {
     writeFile(filename, text);
   }
 
+inline std::ifstream openReadStream(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if(!in) throw std::runtime_error("Can't read from file: " + path);
+    return std::move(in);
+}
+
+inline std::ofstream openWriteStream(const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    if(!out) throw std::runtime_error("Can't write to file: " + path);
+    return std::move(out);
+}
+
+
   template<typename T>
   inline void write_raw(std::ostream& out, const T& val) {
       out.write(reinterpret_cast<const char*>(&val), sizeof(T));

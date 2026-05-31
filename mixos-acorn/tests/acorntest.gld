@@ -1,11 +1,4 @@
-##
-register wub;
-"wub" {
-    in executing {
-        execut(ctx.node.children.get(0));
-        print(ctx.node.children.get(0).value.getStr);
-    }
-}
-##
-
-wub("two");
+string s = "hello world";
+print("Just hello: ",s.slice(0,s.find(" ")));
+print("Just world: ",s.slice(s.find(" ")+1,s.length));
+print("Last l: ",s.substr(s.find("l",0,3),2));

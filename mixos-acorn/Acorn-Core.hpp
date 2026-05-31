@@ -15,6 +15,7 @@ namespace Acorn {
     template<typename T>
     struct TCol : Col {
         TCol() : Col(sizeof(T)) {}
+        TCol(Col c) : Col(c) {} 
         T& get(uint32_t idx) {return *(T*)Col::sget(idx);}
         void set(uint32_t idx, T val) {Col::set(idx,(void*)&val);}
         T& operator[](uint32_t idx) {return *(T*)Col::sget(idx);}
@@ -24,6 +25,39 @@ namespace Acorn {
     using TypeCol     = TCol<Col>;
     using TypeTypeCol = TCol<TypeCol>;
     TypeTypeCol types;
+
+    inline void* resolve_ptr(const Ptr& ptr) {
+        return types[ptr.pool][ptr.idx].get(ptr.sidx);
+    }
+
+    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {
+        return types[ptr.pool][idx].get(ptr.sidx);
+    }
+
+    inline Ptr& resolve_to_ptr(const Ptr& ptr) {
+        return *(Ptr*)types[ptr.pool][ptr.idx].get(ptr.sidx);
+    }
+
+    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {
+        return *(Ptr*)types[ptr.pool][idx].get(ptr.sidx);
+    }
+
+    inline Col& resolve_to_col(const Ptr& ptr) {
+        return types[ptr.pool][ptr.idx];
+    }
+
+    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {
+        return types[ptr.pool][idx];
+    }
+
+    inline Col& to_col(const Ptr& ptr) {
+        return types[ptr.pool][ptr.idx];
+    }
+
+    inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
+        Ptr ticket{type_id,create_column(types[type_id],size,tag),0};
+        return ticket;
+    }
 
     std::string tag_to_str(uint32_t tag, void* data);
 
@@ -44,12 +78,64 @@ namespace Acorn {
 
     void mark_error(Ptr ptr) {marked_ptrs << ptr;}
 
+
+    struct string : Ptr {
+        string() {}
+        string(Ptr p) {pool=p.pool;idx=p.idx;sidx=p.sidx;}
+        inline Col& col() {DEBUG_ONLY(if(idx>=types[pool].length()) {throw_error("invalid string col: ",idx," for type ",pool);}) return types[pool][idx]; }
+        inline char at(uint32_t idx) {return *(char*)col()[idx];}
+        inline uint32_t length() {return col().length();}
+        inline void push(char c) { col().push(&c); }
+        inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) col().push(&s[i]);}
+        inline void push(const std::string& s) { push(s.data(), s.length()); }
+        inline void operator=(const std::string& s){ col().clear(); push(s);}
+        inline void operator=(string s){ col().clear(); push((const char*)s.col().storage, s.length());}
+        inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
+        inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
+        std::string to_std() {Col& c = col(); DEBUG_ONLY(if(ERROR_FLAG) {return ERROR_MSG;}); return std::string((char*)c.storage, length());}
+        inline int find(string look_for, int start_at, int nth_of = 1) {
+            int found_at = -1;
+            for(int i=start_at;i<col().length();i++) {
+                bool match = true;
+                for(int s=0;s<look_for.length();s++) {
+                    if(*(char*)col()[i+s]!=look_for[s]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if(match) {
+                    if(--nth_of<=0) {
+                        found_at = i; break;
+                    }
+                }
+            }
+            return found_at;
+        }
+    };
+    string get_string_ticket();
+
     struct type_and_value {
         uint32_t type;
         Ptr value;
     };
 
+    uint32_t offsets_col = 0;
+    uint32_t tags_col = offsets_col + 1;
+    uint32_t sizes_col = tags_col + 1;
+    uint32_t labels_col = sizes_col + 1;
+    uint32_t subtags_col = labels_col + 1;
+    uint32_t subsizes_col = subtags_col + 1;
+    uint32_t ptrs_col = subsizes_col + 1;
+
+    uint32_t overloads_col = ptrs_col + 1;
+
     struct _layout {
+        _layout() {}
+        _layout(Ptr p) : impl(p) {}
+        Ptr impl = deadptr;
+        map<std::string,uint32_t> label_to_index;
+        uint32_t total_size = 0;
+
         list<uint32_t> offsets;
         list<uint32_t> tags;
         list<uint32_t> sizes;
@@ -59,10 +145,21 @@ namespace Acorn {
         list<uint32_t> subsizes;
         list<Ptr> ptrs;
 
-        map<std::string,uint32_t> label_to_index;
-        map<uint64_t,type_and_value> overload;
+        Col overloads = Col(sizeof(type_and_value));
 
-        uint32_t total_size = 0;
+        void add_overload(uint64_t key, uint32_t type, Ptr value) {
+            type_and_value tnv{type, value};
+            overloads.put(key,(void*)&tnv);
+            resolve_to_col(impl,impl.idx+overloads_col).put(key,(void*)&tnv);
+        }
+        bool has_overload(uint64_t key) {
+            return overloads.hasKey(key);
+        }
+        type_and_value get_overload(uint64_t key) {
+            return *(type_and_value*)overloads.get(key);
+        }
+
+
         uint32_t add_prop(uint32_t tag, uint32_t size, const std::string& label, uint32_t subtag = 0, uint32_t subsize = 0, Ptr ptr = {0,0,0}) {
             label_to_index.put(label,offsets.length());
             offsets << total_size;
@@ -72,6 +169,17 @@ namespace Acorn {
             subtags << subtag;
             subsizes << subsize;
             ptrs << ptr;
+
+            resolve_to_col(impl,impl.idx+offsets_col).push((void*)&total_size);
+            resolve_to_col(impl,impl.idx+tags_col).push((void*)&tag);
+            resolve_to_col(impl,impl.idx+sizes_col).push((void*)&size);
+            string label_ptr = get_string_ticket();
+            label_ptr = label;
+            resolve_to_col(impl,impl.idx+labels_col).push((void*)&label_ptr);
+            resolve_to_col(impl,impl.idx+subtags_col).push((void*)&subtag);
+            resolve_to_col(impl,impl.idx+subsizes_col).push((void*)&subsize);
+            resolve_to_col(impl,impl.idx+ptrs_col).push((void*)&ptr);
+
             uint32_t old_size = total_size;
             total_size += size;
             return old_size;
@@ -80,10 +188,10 @@ namespace Acorn {
             for(int i=0;i<offsets.length();i++) {
                 print(i,": ",labels[i],": ",offsets[i],", ",Acorn::labels[tags[i]],", ",Acorn::labels[subtags[i]],"[",sizes[i],"]");
             }
-            for(auto e : overload.entrySet()) {
-                auto keyl = decode_key(e.key);
-                print(Acorn::labels[keyl.first]," ",Acorn::labels[keyl.second],"(",keyl.second,"): ",Acorn::labels[e.value.type]);
-            }
+            // for(auto e : overload.entrySet()) {
+            //     auto keyl = decode_key(e.key);
+            //     print(Acorn::labels[keyl.first]," ",Acorn::labels[keyl.second],"(",keyl.second,"): ",Acorn::labels[e.value.type]);
+            // }
         }
     };
     map<uint32_t,_layout> layouts;
@@ -144,16 +252,27 @@ namespace Acorn {
         note_value(t,"UNDEFINED",0,0);
         t.get(0).push_default(); //UNDEFINED cell
         note_value(t,"stages",sizeof(Ptr),ptr_id);
+        t.get(1).put("Layouts",(void*)&deadptr); //Layouts label
         note_value(t,"ptr",sizeof(Ptr),ptr_id);
+        t.get(2).push_default(); //Layout of Ptr
         types.push(t);
         return at;
     }
 
-    uint32_t handler_type_id = init_handler_type(); 
+    uint32_t handler_type_id = init_handler_type();
+    
+    uint32_t init_layout_type() {
+        TypeCol t;
+        uint32_t at = types.length();
+        types.push(t);
+        return at;
+    }
+    uint32_t layout_type_id = init_layout_type(); 
 
     uint32_t reg_id(const std::string& label) {
         uint32_t at = types[handler_type_id].length();
         note_value(types[handler_type_id],label,sizeof(Ptr),ptr_id);
+        types[handler_type_id][at].push_default();
         labels.put(at,label);
         return at;
     }
@@ -164,6 +283,7 @@ namespace Acorn {
     uint32_t bool_id = reg_id("bool"); uint32_t prefix_bool_id = reg_id("prefix_bool"); uint32_t suffix_bool_id = reg_id("suffix_bool");
     uint32_t string_id = reg_id("string"); uint32_t prefix_string_id = reg_id("prefix_string"); uint32_t suffix_string_id = reg_id("suffix_string");
     uint32_t char_id = reg_id("char"); uint32_t prefix_char_id = reg_id("prefix_char"); uint32_t suffix_char_id = reg_id("suffix_char");
+    uint32_t ptr4_id = reg_id("ptr4"); uint32_t prefix_ptr4_id = reg_id("prefix_ptr4"); uint32_t suffix_ptr4_id = reg_id("suffix_ptr4");
     size_t list_id = reg_id("list");
     size_t map_id = reg_id("map");
     size_t weakptr_id = reg_id("weakptr");
@@ -190,6 +310,19 @@ namespace Acorn {
 
     size_t tombstone_col = 0; 
     size_t refs_col = 0;
+
+    Ptr add_layout_to_col(uint32_t type) {
+        Ptr p = {layout_type_id,note_value(types[layout_type_id],labels[type]+" Offsets",4,int_id),0};
+        note_value(types[layout_type_id],"Tags",4,int_id);
+        note_value(types[layout_type_id],"Sizes",4,int_id);
+        note_value(types[layout_type_id],"Labels",sizeof(Ptr),string_id);
+        note_value(types[layout_type_id],"Subtags",4,int_id);
+        note_value(types[layout_type_id],"Subsizes",4,int_id);
+        note_value(types[layout_type_id],"Ptrs",sizeof(Ptr),ptr_id);
+        note_value(types[layout_type_id],"Overloads",sizeof(Ptr4),ptr4_id);
+        types[handler_type_id][type].set(0,(void*)&p);
+        return p;
+    }
 
     uint32_t make_store_type() {
         uint32_t at = add_type();
@@ -245,22 +378,26 @@ namespace Acorn {
     uint32_t init_value_type();
     uint32_t init_context_type();
 
+    uint32_t name_store_id = make_store_type();
     uint32_t node_type_id = init_node_type();
     uint32_t value_type_id = init_value_type();
     uint32_t context_type_id = init_context_type();
-    uint32_t name_store_id = make_store_type();
     uint32_t children_store_id = make_store_type();
     uint32_t quals_store_id = make_store_type();
     uint32_t node_table_store_id = make_store_type(); 
     uint32_t value_table_store_id = make_store_type(); 
     uint32_t scopes_store_id = make_store_type(); 
     uint32_t opt_str_store_id = make_store_type();
-
     uint32_t data_store_id = make_store_type();
     uint32_t sub_value_store_id = make_store_type();
 
+    string get_string_ticket() {
+        return get_ticket(name_store_id,1,char_id);
+    }
+
     _layout& add_template(uint32_t for_type) {
-        _layout temp;
+        Ptr p = add_layout_to_col(for_type);
+        _layout temp(p);
         layouts[for_type] = temp;
         return layouts.get(for_type);
     }
@@ -331,73 +468,6 @@ namespace Acorn {
         context_source_offset = ctemp.add_prop(string_id,sizeof(Ptr),"source",char_id,1);
         return at;
     }
-
-    inline void* resolve_ptr(const Ptr& ptr) {
-        return types[ptr.pool][ptr.idx].get(ptr.sidx);
-    }
-
-    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {
-        return types[ptr.pool][idx].get(ptr.sidx);
-    }
-
-    inline Ptr& resolve_to_ptr(const Ptr& ptr) {
-        return *(Ptr*)types[ptr.pool][ptr.idx].get(ptr.sidx);
-    }
-
-    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {
-        return *(Ptr*)types[ptr.pool][idx].get(ptr.sidx);
-    }
-
-    inline Col& resolve_to_col(const Ptr& ptr) {
-        return types[ptr.pool][ptr.idx];
-    }
-
-    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {
-        return types[ptr.pool][idx];
-    }
-
-    inline Col& to_col(const Ptr& ptr) {
-        return types[ptr.pool][ptr.idx];
-    }
-
-    inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
-        Ptr ticket{type_id,create_column(types[type_id],size,tag),0};
-        return ticket;
-    }
-
-    struct string : Ptr {
-        string() {}
-        string(Ptr p) {pool=p.pool;idx=p.idx;sidx=p.sidx;}
-        inline Col& col() {DEBUG_ONLY(if(idx>=types[pool].length()) {throw_error("invalid string col: ",idx," for type ",pool);}) return types[pool][idx]; }
-        inline char at(uint32_t idx) {return *(char*)col()[idx];}
-        inline uint32_t length() {return col().length();}
-        inline void push(char c) { col().push(&c); }
-        inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) col().push(&s[i]);}
-        inline void push(const std::string& s) { push(s.data(), s.length()); }
-        inline void operator=(const std::string& s){ col().clear(); push(s);}
-        inline void operator=(string s){ col().clear(); push((const char*)s.col().storage, s.length());}
-        inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
-        inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
-        std::string to_std() {Col& c = col(); DEBUG_ONLY(if(ERROR_FLAG) {return ERROR_MSG;}); return std::string((char*)c.storage, length());}
-        inline int find(string look_for, int start_at, int nth_of = 1) {
-            int found_at = -1;
-            for(int i=start_at;i<col().length();i++) {
-                bool match = true;
-                for(int s=0;s<look_for.length();s++) {
-                    if(*(char*)col()[i+s]!=look_for[s]) {
-                        match = false;
-                        break;
-                    }
-                }
-                if(match) {
-                    if(--nth_of<=0) {
-                        found_at = i; break;
-                    }
-                }
-            }
-            return found_at;
-        }
-    };
 
     #define NAMED_PTRS 1
 
@@ -996,6 +1066,10 @@ namespace Acorn {
             return Ptr_as_string(*(Ptr*)data);
         } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id) {
             return Ptr_as_string(*(Ptr*)data);
+        } else if(tag==ptr4_id) {
+            Ptr4 p = *(Ptr4*)data;
+            std::string s = labels[p.midx]+"> "+Ptr_as_string(p.ptr);
+            return s;
         } else if(tag==list_id||tag==col_id) {
             Ptr ptr = *(Ptr*)data;
             std::string s = Ptr_as_string(ptr)+"> [";
@@ -1189,7 +1263,7 @@ namespace Acorn {
                     } else if(col.label=="stages") { //From the handler type
                         std::string cell_label = ""; //col.get_cell_label(r);
                         if(!cell_label.empty()) line+=cell_label;
-                        else line+="UNAMED STAGE";
+                        else line+="REIMPLMENT CELL KEYS LATER";
                     } else if(!dtypes.empty()&&dtypes[r]!=0&&col.label=="data") {
                         Ptr p = *(Ptr*)col[r];
                         line+=Ptr_as_string(p)+"> "+tag_to_str(dtypes[r],resolve_ptr(p));
@@ -1378,6 +1452,7 @@ namespace Acorn {
         labels[ptr_id] = "Ptr";
 
         types[handler_type_id].label = "handlers";
+        types[layout_type_id].label = "layouts";
         types[node_type_id].label = "nodes";
         types[value_type_id].label = "values";
         types[context_type_id].label = "contexts";
@@ -1390,6 +1465,8 @@ namespace Acorn {
         types[opt_str_store_id].label = "opt_str";
         types[data_store_id].label = "data";
         types[sub_value_store_id].label = "sub_value";
+
+
 
         add_template(ptr_id);
         add_template(string_id); 
@@ -1914,5 +1991,148 @@ namespace Acorn {
         endline();
         deep_recycle_context(ctx);
         return false;
+    }
+
+
+    static void write_qcol(std::ostream& out, QCol& col) {
+        write_raw<uint32_t>(out, col.size);
+        out.write((const char*)col.storage, col.size);
+    }
+
+    static QCol read_qcol(std::istream& in) {
+        QCol col;
+        uint32_t size = read_raw<uint32_t>(in);
+        col.resize(size);
+        in.read((char*)col.storage, col.size);
+        return col;
+    }
+
+    static void write_ccol(std::ostream& out, CCol& col) {
+        write_qcol(out,col);
+        write_raw<uint32_t>(out, col.element_size);
+        write_raw<uint32_t>(out, col.tag);
+        write_raw<uint32_t>(out, col.hash);
+        write_raw<bool>(out, col.live);
+    }
+
+    static CCol read_ccol(std::istream& in) {
+        CCol col = read_qcol(in);
+        col.element_size = read_raw<uint32_t>(in);
+        col.tag = read_raw<uint32_t>(in);
+        col.hash = read_raw<uint32_t>(in);
+        col.live = read_raw<bool>(in);
+        return col;
+    }
+
+    static void write_col(std::ostream& out, Col& col) {
+        write_ccol(out,col);
+        write_raw<bool>(out, col.heterogenous);
+        write_qcol(out,col.cells);
+        write_qcol(out,col.label);
+    }
+
+    static Col read_col(std::istream& in) {
+        Col col = read_ccol(in);
+        col.heterogenous = read_raw<bool>(in);
+        col.cells = read_qcol(in);
+        col.label = read_qcol(in);
+        return col;
+    }
+
+    static void write_TypeCol(std::ostream& out, TypeCol& type) {
+        write_col(out, type);
+        for(int c = 0; c < type.length(); c++) {
+            Col& col = type[c];
+            write_col(out, col);
+        }
+    }
+    
+    static TypeCol read_TypeCol(std::istream& in) {
+        TypeCol type = read_col(in);
+        for(uint32_t i = 0; i < type.length(); i++) {
+            Col col = read_col(in);
+            type.set(i,col);
+        }
+        return type;
+    }
+
+    static void write_TypeTypeCol(std::ostream& out, TypeTypeCol& col) {
+        write_col(out, col);
+        for(int i = 0; i < col.length(); i++) {
+            write_TypeCol(out,col[i]);
+        }
+    }
+
+    static TypeTypeCol read_TypeTypeCol(std::istream& in) {
+        TypeTypeCol col = read_col(in);
+        for(uint32_t p = 0; p < col.length(); p++) {
+            col.set(p,read_TypeCol(in));
+        }
+        return col;
+    }
+
+    void init_from_disk(std::istream& in) {
+        labels.clear();
+        layouts.clear();
+
+        TypeCol& h = types[handler_type_id];
+        for(int i = 0; i < h.length(); i++) {
+            Col& handler_col = h[i];
+
+            labels.put(i,handler_col.label.to_std());
+
+            if(handler_col.empty()) continue;
+            Ptr lptr = *(Ptr*)handler_col.sget(0);
+            if(!is_live(lptr)) continue;
+    
+            _layout l(lptr);
+    
+            Col& offsets_c  = resolve_to_col(lptr, lptr.idx + offsets_col);
+            Col& tags_c     = resolve_to_col(lptr, lptr.idx + tags_col);
+            Col& sizes_c    = resolve_to_col(lptr, lptr.idx + sizes_col);
+            Col& labels_c   = resolve_to_col(lptr, lptr.idx + labels_col);
+            Col& subtags_c  = resolve_to_col(lptr, lptr.idx + subtags_col);
+            Col& subsizes_c = resolve_to_col(lptr, lptr.idx + subsizes_col);
+            Col& ptrs_c     = resolve_to_col(lptr, lptr.idx + ptrs_col);
+            l.overloads     = resolve_to_col(lptr, lptr.idx + overloads_col);
+    
+            uint32_t count = offsets_c.size / sizeof(uint32_t);
+            for(uint32_t f = 0; f < count; f++) {
+                uint32_t offset  = *(uint32_t*)offsets_c.sget(f);
+                uint32_t tag     = *(uint32_t*)tags_c.sget(f);
+                uint32_t size    = *(uint32_t*)sizes_c.sget(f);
+                Ptr      label_p = *(Ptr*)labels_c.sget(f);
+                uint32_t subtag  = *(uint32_t*)subtags_c.sget(f);
+                uint32_t subsize = *(uint32_t*)subsizes_c.sget(f);
+                Ptr      ptr     = *(Ptr*)ptrs_c.sget(f);
+    
+                std::string label_str = string(label_p).to_std();
+                l.label_to_index.put(label_str, l.offsets.length());
+                l.offsets  << offset;
+                l.tags     << tag;
+                l.sizes    << size;
+                l.labels   << label_str;
+                l.subtags  << subtag;
+                l.subsizes << subsize;
+                l.ptrs     << ptr;
+            }
+            l.total_size = l.offsets.length() > 0 
+                ? l.offsets.last() + l.sizes.last() 
+                : 0;
+                
+            layouts[i] = l;
+        }
+    }
+
+    void save_acorn(const std::string& path) {
+        auto out = openWriteStream(path);
+        write_TypeTypeCol(out,types);
+
+    }
+    void load_acorn(const std::string& path) {
+        auto in = openReadStream(path);
+        types = read_TypeTypeCol(in);
+        init_from_disk(in);
+        ERROR_FLAG = false;
     }
 }

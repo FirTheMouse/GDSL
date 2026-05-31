@@ -24,6 +24,15 @@ namespace Acorn {
         #define DEBUG_ONLY(x)
     #endif
 
+    uint32_t hashBytes(const void* data, uint32_t size) {
+        uint32_t hash = 5381;
+        const uint8_t* bytes = (const uint8_t*)data;
+        for(uint32_t i = 0; i < size; i++) {
+            hash = ((hash << 5) + hash) + bytes[i];
+        }
+        return hash;
+    }
+
     struct Ptr {
         Ptr() {}
         Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
@@ -33,6 +42,13 @@ namespace Acorn {
 
         inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
+    };
+
+    struct Ptr4 {
+        Ptr4() {}
+        Ptr4(uint32_t _midx, Ptr p) : midx(_midx), ptr(p) {}
+        uint32_t midx = 0;
+        Ptr ptr;
     };
 
     static const Ptr deadptr = {0,0,0};
@@ -95,6 +111,8 @@ namespace Acorn {
     };
 
     struct QString : QCol {
+        QString() {}
+        QString(QCol q) : QCol(q) {}
         char& at(uint32_t idx) {return *(char*)qget(idx);}
         char& operator[](uint32_t idx) {return *(char*)qget(idx);}
         void push(char c) {QCol::push((void*)&c,1);}
@@ -121,27 +139,17 @@ namespace Acorn {
         return os;
     }
 
-    struct ColCell {
-        uint32_t hash = 0;
-        uint32_t index = 0;
-    };
-    struct QCellCol : QCol {
-        ColCell& get(uint32_t idx) {return *(ColCell*)qget(idx*sizeof(ColCell));}
-        ColCell& operator[](uint32_t idx) {return *(ColCell*)qget(idx*sizeof(ColCell));}
-        void push(ColCell c) {QCol::push((void*)&c,sizeof(ColCell));}
-        uint32_t length() {return size/sizeof(ColCell);}
-    };
 
-    struct Col : QCol {
-        Col(uint32_t _size = 1) : element_size(_size) {}
-        uint32_t element_size;
+    struct CCol : QCol {
+        CCol() {}
+        CCol(uint32_t _size) : element_size(_size) {}
+        CCol(QCol q) : QCol(q) {}
+        uint32_t element_size = 1;
         uint32_t tag = 0;
         uint32_t hash = 0;
+        uint32_t index = 0;
         bool live = true;
-        bool heterogenous = false;
 
-        QString label;
-        QCellCol cells;
         inline uint32_t length() {return size / element_size;}
         void push(const void* element) {
             QCol::push(element,element_size);
@@ -157,6 +165,29 @@ namespace Acorn {
             DEBUG_ONLY(if(index*element_size+offset>=size) {throw_error(red("col:iget "),"index ",index," plus offset ",offset," out of bounds for size ",size);return nullptr;})
             return &storage[index * element_size + offset];
         }
+        inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
+        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
+        void removeAt(uint32_t index) {QCol::removeAt(index,element_size);}
+        void pop(void* out) {QCol::pop(out,element_size);}
+    };
+
+    struct QCellCol : QCol {
+        QCellCol() {}
+        QCellCol(QCol q) : QCol(q) {}
+        CCol& get(uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
+        CCol& operator[](uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
+        void push(CCol c) {QCol::push((void*)&c,sizeof(CCol));}
+        uint32_t length() {return size/sizeof(CCol);}
+    };
+
+    struct Col : CCol {
+        Col() {}
+        Col(uint32_t _size) :  CCol(_size) {}
+        Col(CCol q) : CCol(q) {}
+        bool heterogenous = false;
+        QString label;
+        QCellCol cells;
+        
         inline void* get(uint32_t index) {
             if(heterogenous) {
                 return qget(index);
@@ -167,38 +198,46 @@ namespace Acorn {
         inline void* operator[](uint32_t index) {return get(index);}
         inline void* last() {return get(size-1);}
 
-        void put(const std::string& key, const void* element) {
-            ColCell c{hashString(key), length()};
-            cells.push(c);
+        void qput(const void* element, const void* key, uint32_t size, uint32_t tag) {
+            CCol c;
+            c.element_size = size; 
+            c.tag = tag;
+            c.hash = hashBytes(key, size);
+            c.index = length();
+            c.push(key);
             push(element);
+            cells.push(c);
         }
-        bool hasKey(const std::string& key) {
-            uint32_t h = hashString(key);
+        void* get(const void* key, uint32_t size) {
+            uint32_t h = hashBytes(key, size);
             for(int i = 0; i < cells.length(); i++) {
-                if(cells.get(i).hash == h) return true;
-            }
-            return false;
-        }
-        void* get(const std::string& key) {
-            uint32_t h = hashString(key);
-            for(int i = 0; i < cells.length(); i++) {
-                ColCell& c = cells.get(i);
-                if(c.hash == h) return sget(c.index);
+                CCol& c = cells[i];
+                if(c.hash == h) {
+                    if(memcmp(c.storage, key, size) == 0) { //Collison check against the stored key
+                        return sget(c.index);
+                    }
+                }
             }
             return nullptr;
         }
-        inline void* operator[](const std::string& key) {return get(key);}
-
-        inline void set(const std::string& key, const void* element) {
-            if(!hasKey(key)) {print(red("acorntype:col:set does not have key "+key+"!"));} 
-            else {memcpy(get(key), element, element_size);}
+        bool hasKey(const void* key, uint32_t size) {
+            uint32_t h = hashBytes(key, size);
+            for(int i = 0; i < cells.length(); i++) {
+                CCol& c = cells[i];
+                if(c.hash == h && memcmp(c.storage, key, size) == 0) return true;
+            }
+            return false;
         }
 
-        inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
-        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
-
-        void removeAt(uint32_t index) {QCol::removeAt(index,element_size);}
-        void pop(void* out) {QCol::pop(out,element_size);}
+        void put(const std::string& str, const void* element, uint32_t tag = 0) {qput(element,str.data(),str.length(),tag);}
+        void* get(const std::string& str) {return get(str.data(), str.length());}
+        bool hasKey(const std::string& str) {return hasKey(str.data(), str.length());}
+        void put(uint64_t u64, const void* element, uint32_t tag = 0) {qput(element,(void*)&u64,8,tag);}
+        void* get(uint64_t u64) {return get((void*)&u64, 8);}
+        bool hasKey(uint64_t u64) {return hasKey((void*)&u64, 8);}
+        void put(Ptr p, const void* element, uint32_t tag = 0) {qput(element, (void*)&p, sizeof(Ptr), tag);}
+        void* get(Ptr p) {return get((void*)&p, sizeof(Ptr));}
+        bool hasKey(Ptr p) {return hasKey((void*)&p, sizeof(Ptr));}
     };
 
     //Convience for ergonomic white/blacklist things

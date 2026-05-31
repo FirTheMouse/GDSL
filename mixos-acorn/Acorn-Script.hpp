@@ -301,7 +301,7 @@ namespace Acorn {
                             ptr.sidx = index;
                             types[value.pool][value.idx].qset(value_data_offset,(void*)&ptr,sizeof(Ptr)); //Setting the data_ptr itself
                         } else {
-                            value.set(col.get(index)); //Setting what the data_ptr points to
+                            value.set(col.get((uint32_t)index)); //Setting what the data_ptr points to
                         }
                     } else {
                         print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
@@ -322,7 +322,7 @@ namespace Acorn {
                 }
                 if(cv.type()==int_id) {
                     int index = *(int*)cv.get();
-                    ctx.node().value().set(col.get(index));
+                    ctx.node().value().set(col.get((uint32_t)index));
                     col.removeAt(index);
                 }
             };
@@ -1077,7 +1077,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);
 
-            launch_blackfeather(root);
+            //launch_blackfeather(root);
         }
 
 

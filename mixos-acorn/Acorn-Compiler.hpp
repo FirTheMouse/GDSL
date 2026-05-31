@@ -940,7 +940,7 @@ namespace Acorn {
                 }
             }
 
-            layouts[type].overload.put(make_overload_key(root_type,right_type),type_and_value{overload_to,value});
+            layouts[type].add_overload(make_overload_key(root_type,right_type),overload_to,value);
             recycle_node(expr);
 
         }
@@ -967,7 +967,7 @@ namespace Acorn {
             standard_sub_process(ctx); //Consider not doing this
             if(ctx.index()==0&&is_live(ctx.node().value())) { //If we're the left term
                 if(layouts.hasKey(ctx.node().value().type())) {
-                    map<uint64_t,type_and_value>& overload = layouts[ctx.node().value().type()].overload;
+                    _layout& l = layouts[ctx.node().value().type()];
                     uint32_t right_type = 0;
                     bool has_overload = false;
                     uint64_t typekey = 0;
@@ -983,15 +983,15 @@ namespace Acorn {
                         }
                     } else {
                         typekey = make_overload_key(ctx.root().type(),0);
-                        has_overload = overload.hasKey(typekey);
+                        has_overload = l.has_overload(typekey);
                     }
 
                     if(right_type!=0) {
                         typekey = make_overload_key(ctx.root().type(),right_type);
-                        has_overload = overload.hasKey(typekey);
+                        has_overload = l.has_overload(typekey);
                         if(!has_overload) {
                             typekey = make_overload_key(ctx.root().type(),any_id);
-                            has_overload = overload.hasKey(typekey);
+                            has_overload = l.has_overload(typekey);
                         }
                     } else if(!has_overload) {
                         if(ctx.result().length()>1) {
@@ -999,11 +999,11 @@ namespace Acorn {
                         }
                         if(right_type!=0) {
                             typekey = make_overload_key(ctx.root().type(),right_type);
-                            has_overload = overload.hasKey(typekey);
+                            has_overload = l.has_overload(typekey);
                         }
                     }
                     if(has_overload) {
-                        type_and_value& tnv = overload.get(typekey);
+                        type_and_value tnv = l.get_overload(typekey);
                         ctx.root().type(tnv.type);
                         if(is_live(tnv.value)) {
                             Value& value = (Value&)tnv.value;
@@ -1073,7 +1073,7 @@ namespace Acorn {
                     if(types[dataptr.pool][dataptr.idx].empty()) {
                         types[dataptr.pool][dataptr.idx].push_default();
                     }
-                    memcpy(temp, types[dataptr.pool][dataptr.idx].get(0), elem_size);
+                    memcpy(temp, types[dataptr.pool][dataptr.idx].get((uint32_t)0), elem_size);
                     if(types[dataptr.pool][dataptr.idx].length() <= loc) {
                         //These shouldn't be getting out of sync in the first place, in the future investigate this deeper
                         while(types[dataptr.pool][dataptr.idx].length() <= loc) types[dataptr.pool][dataptr.idx].push(temp);

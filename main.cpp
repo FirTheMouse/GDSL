@@ -32,18 +32,30 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
 
-    // Acorn::init_type_pool();
+    Acorn::init_type_pool();
     // // Acorn::test_acorn();
  
-    // // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    // // acorn->setup_trace_res_flipbook();
-    // // //acorn->setup_stamp_res_flipbook();
-    // // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    //acorn->setup_trace_res_flipbook();
+    //acorn->setup_stamp_res_flipbook();
+    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
-    //webcorn->setup_trace_res_flipbook();
-    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    // //webcorn->setup_trace_res_flipbook();
+    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
+
+    // Acorn::init_type_pool();
+    // Acorn::save_acorn("basesave.wub");
+    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // Acorn::Node root = acorn->process(readFile("mixos-acorn/tests/acorntest.gld"));
+    // Acorn::save_acorn("savetest.wub");
+    // acorn->run(root);
+    // Acorn::load_acorn("basesave.wub");
+    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    // Acorn::load_acorn("savetest.wub");
+    // acorn->run(root);
     
 
     // Acorn::Acorn_Kernel kernel;

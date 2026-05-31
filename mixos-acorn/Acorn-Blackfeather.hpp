@@ -264,6 +264,14 @@ namespace Acorn {
             return out;
         }
 
+        std::string dump_col(Col& col, std::function<std::string(Col&)> format) {
+            return format(col);
+        }
+
+        list<list<std::string>> dump_TypeTypeCol(TypeTypeCol& col) {
+            
+        }
+
         struct Flipbook : q_object {
             Flipbook() {}
             Flipbook(std::string _label) : label(_label) {}

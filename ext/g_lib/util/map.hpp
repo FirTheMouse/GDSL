@@ -133,6 +133,15 @@ static inline uint32_t hashString(const std::string& str) {
     return hash;
 }
 
+static inline uint32_t mix32(uint64_t x) {
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return (uint32_t)x;
+}
+
 template<typename K,typename V>
 class map
 {
@@ -153,14 +162,6 @@ public:
 
     size_t size() {return size_;}
 
-    static inline uint32_t mix32(uint64_t x) {
-        x ^= x >> 33;
-        x *= 0xff51afd7ed558ccdULL;
-        x ^= x >> 33;
-        x *= 0xc4ceb9fe1a85ec53ULL;
-        x ^= x >> 33;
-        return (uint32_t)x;
-    }
 
     uint32_t mix96(uint32_t a, uint32_t b, uint32_t c) {
         uint64_t combined = ((uint64_t)a << 32) | b;

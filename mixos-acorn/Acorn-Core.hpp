@@ -11,7 +11,19 @@ namespace Acorn {
     struct Value;
 
     map<uint32_t,std::string> labels;
-    list<TypePool> types;
+
+    template<typename T>
+    struct TCol : Col {
+        TCol() : Col(sizeof(T)) {}
+        T& get(uint32_t idx) {return *(T*)Col::sget(idx);}
+        void set(uint32_t idx, T val) {Col::set(idx,(void*)&val);}
+        T& operator[](uint32_t idx) {return *(T*)Col::sget(idx);}
+        void push(T t){Col::push((void*)&t);}
+    };
+    
+    using TypeCol     = TCol<Col>;
+    using TypeTypeCol = TCol<TypeCol>;
+    TypeTypeCol types;
 
     std::string tag_to_str(uint32_t tag, void* data);
 
@@ -22,6 +34,12 @@ namespace Acorn {
     }
     inline Ptr key_to_Ptr(uint64_t key) {
         return Ptr{(uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF), 0};
+    }
+    uint64_t make_overload_key(uint32_t root, uint32_t right) {
+        return ((uint64_t)root << 32) | right;
+    }
+    inline std::pair<uint32_t,uint32_t> decode_key(uint64_t key) {
+        return std::make_pair<uint32_t,uint32_t>((uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF));
     }
 
     void mark_error(Ptr ptr) {marked_ptrs << ptr;}
@@ -36,12 +54,12 @@ namespace Acorn {
         list<uint32_t> tags;
         list<uint32_t> sizes;
         list<std::string> labels;
-        map<std::string,uint32_t> label_to_index;
 
         list<uint32_t> subtags;
         list<uint32_t> subsizes;
         list<Ptr> ptrs;
 
+        map<std::string,uint32_t> label_to_index;
         map<uint64_t,type_and_value> overload;
 
         uint32_t total_size = 0;
@@ -61,6 +79,10 @@ namespace Acorn {
         void print_out() { //Make to_string later
             for(int i=0;i<offsets.length();i++) {
                 print(i,": ",labels[i],": ",offsets[i],", ",Acorn::labels[tags[i]],", ",Acorn::labels[subtags[i]],"[",sizes[i],"]");
+            }
+            for(auto e : overload.entrySet()) {
+                auto keyl = decode_key(e.key);
+                print(Acorn::labels[keyl.first]," ",Acorn::labels[keyl.second],"(",keyl.second,"): ",Acorn::labels[e.value.type]);
             }
         }
     };
@@ -96,7 +118,7 @@ namespace Acorn {
         });
     }
 
-    bool is_live(Ptr p) {return p.pool!=0||p.idx!=0;}
+    bool is_live(Ptr p) {return (p.pool!=0||p.idx!=0)&&p.pool<types.length();}
 
     uint32_t undefined_id = 0;
     uint32_t stages_id = 1;
@@ -106,8 +128,8 @@ namespace Acorn {
 
     uint32_t add_type() {
         uint32_t at = types.length();
-        TypePool to_return;
-        types << to_return;
+        TypeCol to_return;
+        types.push(to_return);
         return at;
     }
 
@@ -117,21 +139,21 @@ namespace Acorn {
     }
 
     uint32_t init_handler_type() {
-        TypePool t;
+        TypeCol t;
         uint32_t at = types.length();
-        t.note_value("UNDEFINED",0,0);
-        t.add_row(0); //The nullptr
-        t.note_value("stages",sizeof(Ptr),ptr_id);
-        t.note_value("ptr",sizeof(Ptr),ptr_id);
-        types << t;
+        note_value(t,"UNDEFINED",0,0);
+        t.get(0).push_default(); //UNDEFINED cell
+        note_value(t,"stages",sizeof(Ptr),ptr_id);
+        note_value(t,"ptr",sizeof(Ptr),ptr_id);
+        types.push(t);
         return at;
     }
 
     uint32_t handler_type_id = init_handler_type(); 
 
     uint32_t reg_id(const std::string& label) {
-        uint32_t at = types[handler_type_id].columns.length();
-        types[handler_type_id].note_value(label,sizeof(Ptr),ptr_id);
+        uint32_t at = types[handler_type_id].length();
+        note_value(types[handler_type_id],label,sizeof(Ptr),ptr_id);
         labels.put(at,label);
         return at;
     }
@@ -171,7 +193,6 @@ namespace Acorn {
 
     uint32_t make_store_type() {
         uint32_t at = add_type();
-        TypePool& t = types[at];
         return at;
     }
     
@@ -246,7 +267,7 @@ namespace Acorn {
 
     uint32_t init_node_type() {
         uint32_t at = add_type();
-        TypePool& t = types[at];
+        TypeCol& t = types[at];
 
         _layout& ntemp = add_template(node_id); //Node template
         node_type_offset = ntemp.add_prop(int_id,4,"type");
@@ -273,7 +294,7 @@ namespace Acorn {
 
     uint32_t init_value_type() {
         uint32_t at = add_type();
-        TypePool& t = types[at];
+        TypeCol& t = types[at];
 
         _layout& vtemp = add_template(value_id); //Value template
         value_type_offset = vtemp.add_prop(int_id,4,"type");
@@ -294,7 +315,7 @@ namespace Acorn {
 
     uint32_t init_context_type() {
         uint32_t at = add_type();
-        TypePool& t = types[at];
+        TypeCol& t = types[at];
         _layout& ctemp = add_template(context_id); //Context template
         context_node_offset = ctemp.add_prop(node_id,sizeof(Ptr),"node");
         context_qual_offset = ctemp.add_prop(node_id,sizeof(Ptr),"qual");
@@ -312,47 +333,42 @@ namespace Acorn {
     }
 
     inline void* resolve_ptr(const Ptr& ptr) {
-        return types[ptr.pool].columns[ptr.idx].get(ptr.sidx);
+        return types[ptr.pool][ptr.idx].get(ptr.sidx);
     }
 
     inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {
-        return types[ptr.pool].columns[idx].get(ptr.sidx);
+        return types[ptr.pool][idx].get(ptr.sidx);
     }
 
     inline Ptr& resolve_to_ptr(const Ptr& ptr) {
-        return *(Ptr*)types[ptr.pool].columns[ptr.idx].get(ptr.sidx);
+        return *(Ptr*)types[ptr.pool][ptr.idx].get(ptr.sidx);
     }
 
     inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {
-        return *(Ptr*)types[ptr.pool].columns[idx].get(ptr.sidx);
+        return *(Ptr*)types[ptr.pool][idx].get(ptr.sidx);
     }
 
     inline Col& resolve_to_col(const Ptr& ptr) {
-        return types[ptr.pool].columns[ptr.idx];
+        return types[ptr.pool][ptr.idx];
     }
 
     inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {
-        return types[ptr.pool].columns[idx];
+        return types[ptr.pool][idx];
     }
 
-    inline void set_ptr(const Ptr& ptr, void* to) {
-        types[ptr.pool].columns[ptr.idx].set(ptr.sidx,to);
-    }
-
-    inline void set_ptr(const Ptr& ptr, const uint32_t& idx, void* to) {
-        types[ptr.pool].columns[idx].set(ptr.sidx,to);
+    inline Col& to_col(const Ptr& ptr) {
+        return types[ptr.pool][ptr.idx];
     }
 
     inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
-        Ptr ticket{type_id,types[type_id].create_column(size,tag),0};
+        Ptr ticket{type_id,create_column(types[type_id],size,tag),0};
         return ticket;
     }
 
-    struct string {
+    struct string : Ptr {
         string() {}
-        string(Ptr ptr) : col_ptr(ptr) {}
-        Ptr col_ptr;
-        inline Col& col() {DEBUG_ONLY(if(col_ptr.idx>=types[col_ptr.pool].column_count()) {throw_error("invalid string col: ",col_ptr.idx," for type ",col_ptr.pool);}) return types[col_ptr.pool][col_ptr.idx]; }
+        string(Ptr p) {pool=p.pool;idx=p.idx;sidx=p.sidx;}
+        inline Col& col() {DEBUG_ONLY(if(idx>=types[pool].length()) {throw_error("invalid string col: ",idx," for type ",pool);}) return types[pool][idx]; }
         inline char at(uint32_t idx) {return *(char*)col()[idx];}
         inline uint32_t length() {return col().length();}
         inline void push(char c) { col().push(&c); }
@@ -363,7 +379,6 @@ namespace Acorn {
         inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
         inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
         std::string to_std() {Col& c = col(); DEBUG_ONLY(if(ERROR_FLAG) {return ERROR_MSG;}); return std::string((char*)c.storage, length());}
-
         inline int find(string look_for, int start_at, int nth_of = 1) {
             int found_at = -1;
             for(int i=start_at;i<col().length();i++) {
@@ -384,28 +399,16 @@ namespace Acorn {
         }
     };
 
-    struct Qstring : Col {
-        inline char at(uint32_t idx) {return *(char*)get(idx);}
-        inline void push(char c) { Col::push((void*)&c); }
-        inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) Col::push(&s[i]);}
-        inline void push(const std::string& s) { push(s.data(), s.length()); }
-        inline void operator=(const std::string& s){ clear(); push(s);}
-        inline void operator=(Qstring s){ clear(); push((const char*)s.storage, s.length());}
-        inline void operator=(const char* s) { clear(); push(s, strlen(s)); }
-        inline char& operator[](uint32_t idx) { return *(char*)get(idx); }
-        std::string to_std() {return std::string((char*)storage, length());}
-    };
-
     #define NAMED_PTRS 1
 
     std::string Ptr_as_string(Ptr p) {
-        if(ERROR_FLAG||(p.pool>=types.length()||p.idx>=types[p.pool].column_count()||marked_ptrs.has(p))) {
+        if(ERROR_FLAG||(p.pool>=types.length()||p.idx>=types[p.pool].length()||marked_ptrs.has(p))) {
             return red(std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx));
         }
 
         #if NAMED_PTRS
-            std::string plabel = types[p.pool].type_name=="bullets"?std::to_string(p.pool):types[p.pool].type_name;
-            std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label;
+            std::string plabel = types[p.pool].label.empty()?std::to_string(p.pool):types[p.pool].label.to_std();
+            std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label.to_std();
             std::string pstring = ""+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
             uint64_t key = Ptr_to_key(p);
         
@@ -493,7 +496,7 @@ namespace Acorn {
         }
     
         inline Ptr init_data() {
-            Ptr dataptr{data_store_id, types[data_store_id].create_column(size(), type()), 0};
+            Ptr dataptr{data_store_id, create_column(types[data_store_id], size(), type()), 0};
             types[data_store_id][dataptr.idx].push_default();
             types[pool][idx].qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
             return dataptr;
@@ -692,7 +695,7 @@ namespace Acorn {
     {
         Node n;
         n.pool = node_type_id;
-        n.idx = types[node_type_id].push_column(layouts[node_id].total_size,node_id);
+        n.idx = push_column(types[node_type_id], layouts[node_id].total_size,node_id);
         n.sidx = 0;
         Col& col = types[node_type_id][n.idx];
         col.heterogenous = true;
@@ -740,7 +743,7 @@ namespace Acorn {
     }
 
     void recycle_column(Ptr p) {
-        types[p.pool].recycle_column(p.idx);
+        recycle_column(types[p.pool], p.idx);
     }
 
     void recycle_node(Node n);
@@ -806,7 +809,7 @@ namespace Acorn {
     {
         Value v;
         v.pool = value_type_id;
-        v.idx = types[value_type_id].push_column(layouts[value_id].total_size, value_id);
+        v.idx = push_column(types[value_type_id], layouts[value_id].total_size, value_id);
         v.sidx = 0;
         Col& col = types[value_type_id][v.idx];
         col.heterogenous = true;
@@ -893,7 +896,7 @@ namespace Acorn {
     Context make_context(Ptr result = deadptr, Ptr source = deadptr) {
         Context c;
         c.pool = context_type_id;
-        c.idx = types[context_type_id].push_column(layouts[context_id].total_size, context_id);
+        c.idx = push_column(types[context_type_id], layouts[context_id].total_size, context_id);
         c.sidx = 0;
         Col& col = types[context_type_id][c.idx];
         col.heterogenous = true;
@@ -1007,9 +1010,9 @@ namespace Acorn {
             Ptr ptr = *(Ptr*)data;
             std::string s = Ptr_as_string(ptr)+"> [";
             Col& col = resolve_to_col(ptr);
-            for(auto e : col.cells.entrySet()) {
-                s+="{"+e.key+": "+tag_to_str(col.tag,col[e.value])+"}";
-            }
+            // for(auto e : col.cells.entrySet()) {
+            //     s+="{"+e.key+": "+tag_to_str(col.tag,col[e.value])+"}";
+            // }
             s+="]";
             return s;
         } else {
@@ -1158,13 +1161,13 @@ namespace Acorn {
         return to_return;
     }
 
-    list<list<std::string>> type_to_lines(TypePool& t) {
+    list<list<std::string>> type_to_lines(TypeCol& t) {
         list<list<std::string>> lines;
         list<uint32_t> dtypes;
-        for(int c=0;c<t.column_count();c++) {
-            Col& col = t.columns[c];
+        for(int c=0;c<t.length();c++) {
+            Col& col = t[c];
             list<std::string> subline;
-            subline << col.label+(col.live?"":" [FREE]");
+            subline << col.label.to_std()+(col.live?"":" [FREE]");
             if(col.heterogenous) {
                 if(layouts.hasKey(col.tag)) {
                     _layout& l = layouts.get(col.tag);
@@ -1184,7 +1187,7 @@ namespace Acorn {
                         if(col.label=="type"){dtypes << *(int*)col[r];} //Passing info down so values can print themselves out
                         line+=labels[*(int*)col[r]];
                     } else if(col.label=="stages") { //From the handler type
-                        std::string cell_label = col.get_cell_label(r);
+                        std::string cell_label = ""; //col.get_cell_label(r);
                         if(!cell_label.empty()) line+=cell_label;
                         else line+="UNAMED STAGE";
                     } else if(!dtypes.empty()&&dtypes[r]!=0&&col.label=="data") {
@@ -1201,7 +1204,7 @@ namespace Acorn {
         return lines;
     }
 
-    std::string type_to_string(TypePool& t) {
+    std::string type_to_string(TypeCol& t) {
         return print_columnar_table(type_to_lines(t));
     }
 
@@ -1231,7 +1234,7 @@ namespace Acorn {
 
         for(int t=0;t<types.length();t++) {
             std::string to_print = "";
-            to_print += "TYPE "+std::to_string(t)+" "+types[t].type_name+":\n";
+            to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+":\n";
             to_print += type_to_string(types[t]);
             to_print += "\n\n\n";
 
@@ -1304,7 +1307,7 @@ namespace Acorn {
         return to_return;
     }
 
-    // #define MUTE_TABLES 1
+    #define ACORN_MUTE_TABLES 1
 
     std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
         DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
@@ -1313,21 +1316,22 @@ namespace Acorn {
         
         to_return += indent + sigil + std::to_string(index) + ": " + node_info(node);
     
-        // #if !MUTE_TABLES 
-        // if(node->value_table.size()>0) {
-        //     to_return += "\n" + indent + "   Value table:";
-        //     for(auto [key,val] : node->value_table.entrySet()) {
-        //         to_return += "\n" + indent + "     Key: "+key+" | "+value_info(val);
-        //     }
-        // }
-
-        // if(node->node_table.size()>0) {
-        //     to_return += "\n" + indent + "   Node table:";
-        //     for(auto [key,val] : node->node_table.entrySet()) {
-        //         to_return += "\n" + indent + "     Key: "+key+" | "+node_info(val);
-        //     }
-        // }
-        // #endif
+        #if !ACORN_MUTE_TABLES 
+        if(node.value_table().length()>0) {
+            to_return += "\n" + indent + "   Value table:";
+            QCellCol cells = node.value_table().col().cells;
+            for(int i=0;i<cells.length();i++) {
+                to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+value_info(node.value_table().get(cells.get(i).index));
+            }
+        }
+        if(node.node_table().length()>0) {
+            to_return += "\n" + indent + "   Node table:";
+            QCellCol cells = node.node_table().col().cells;
+            for(int i=0;i<cells.length();i++) {
+                to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+node_info(node.node_table().get(cells.get(i).index));
+            }
+        }
+        #endif
     
 
 
@@ -1373,19 +1377,19 @@ namespace Acorn {
         labels[undefined_id] = "UDEFINED";
         labels[ptr_id] = "Ptr";
 
-        types[handler_type_id].type_name = "handlers";
-        types[node_type_id].type_name = "nodes";
-        types[value_type_id].type_name = "values";
-        types[context_type_id].type_name = "contexts";
-        types[name_store_id].type_name = "names";
-        types[children_store_id].type_name = "children";
-        types[quals_store_id].type_name = "quals";
-        types[node_table_store_id].type_name = "node table";
-        types[value_table_store_id].type_name = "value table";
-        types[scopes_store_id].type_name = "scopes";
-        types[opt_str_store_id].type_name = "opt_str";
-        types[data_store_id].type_name = "data";
-        types[sub_value_store_id].type_name = "sub_value";
+        types[handler_type_id].label = "handlers";
+        types[node_type_id].label = "nodes";
+        types[value_type_id].label = "values";
+        types[context_type_id].label = "contexts";
+        types[name_store_id].label = "names";
+        types[children_store_id].label = "children";
+        types[quals_store_id].label = "quals";
+        types[node_table_store_id].label = "node table";
+        types[value_table_store_id].label = "value table";
+        types[scopes_store_id].label = "scopes";
+        types[opt_str_store_id].label = "opt_str";
+        types[data_store_id].label = "data";
+        types[sub_value_store_id].label = "sub_value";
 
         add_template(ptr_id);
         add_template(string_id); 
@@ -1418,17 +1422,17 @@ namespace Acorn {
         Node n = make_node();
         Node m = make_node();
         n.name("NODE N"); m.name("NODE M");
-        print("NODES WITH 2 NODES: ",types[node_type_id].column_count());
-        print("NAMES WITH 2 NODES: ",types[name_store_id].column_count());
-        print("CHILDREN WITH 2 NODES: ",types[children_store_id].column_count());
+        print("NODES WITH 2 NODES: ",types[node_type_id].length());
+        print("NAMES WITH 2 NODES: ",types[name_store_id].length());
+        print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
         recycle_node(n);
-        print("NODES AFTER RECYCLE: ",types[node_type_id].column_count());
-        print("NAMES AFTER RECYCLE: ",types[name_store_id].column_count());
-        print("CHILDREN AFTER RECYCLE: ",types[children_store_id].column_count());
+        print("NODES AFTER RECYCLE: ",types[node_type_id].length());
+        print("NAMES AFTER RECYCLE: ",types[name_store_id].length());
+        print("CHILDREN AFTER RECYCLE: ",types[children_store_id].length());
         Node c = make_node();
-        print("NODES WITH 2 NODES: ",types[node_type_id].column_count());
-        print("NAMES WITH 2 NODES: ",types[name_store_id].column_count());
-        print("CHILDREN WITH 2 NODES: ",types[children_store_id].column_count());
+        print("NODES WITH 2 NODES: ",types[node_type_id].length());
+        print("NAMES WITH 2 NODES: ",types[name_store_id].length());
+        print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
         c.name("C");
         print(c.name().to_std());
     }
@@ -1614,12 +1618,7 @@ namespace Acorn {
         }
     
         virtual Node process(std::string path) {
-            Ptr obj = types[node_type_id].create();
-            Node n;
-            n.sidx = obj.sidx;
-            n.pool = node_type_id;
-            n.idx = 1;
-            return n;
+            return deadptr;
         }
     
         virtual void run(Node root) {
@@ -1698,7 +1697,7 @@ namespace Acorn {
         void backwards_sub_process(Context& ctx) { 
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a backwards sub_process while an error was flagged")); return;})
             node_col children = ctx.node().children();
-            Context sub_ctx = make_context(children);
+            Context sub_ctx = make_context(children,ctx.source_ptr());
             sub_ctx.root(ctx.node());
             sub_ctx.sub(ctx.sub());
             int& i = sub_ctx.index();

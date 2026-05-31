@@ -5,54 +5,88 @@
     register text;
     "text" {
         in naming {
-            node.children.push(result.take(index+1));
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
         }
         in resolving {
             gather_props;
         }
         in htmlemiting {
-            source.append("<p");
+            execut(ctx.node.children.get(0));
+            ctx.source.append("<p");
             emit_inline_html;
-            source.append(">");
-            source.append(node.children.get(0).value.getStr);
-            source.append("</p>");
+            ctx.source.append(">");
+            ctx.source.append(ctx.node.children.get(0).value.getStr);
+            ctx.source.append("</p>");
             emit_contents;
+        }
+    }
+
+    register input;
+    "input" {
+        in naming {
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            ctx.source.append("<input");
+            emit_inline_html;
+            ctx.source.append("/>");
+        }
+    }
+
+    register button;
+    "button" {
+        in naming {
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
+        }
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            execut(ctx.node.children.get(0));
+            ctx.source.append("<button");
+            emit_inline_html;
+            ctx.source.append(">");
+            emit_contents;
+            ctx.source.append("</button>");
         }
     }
 
     register script;
     "script" {
         in naming {
-            node.children.push(result.take(index+1));
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
         }
         in resolving {
             gather_props;
-            resolv(node.children.get(0));
+            resolv(ctx.node.children.get(0));
         }
         in htmlemiting {
-            source.append("<script");
+            ctx.source.append("<script");
             emit_inline_html;
-            source.append(">");
-            execut(node.children.get(0));
-            source.append(node.children.get(0).value.getStr);
-            source.append("</script>");
+            ctx.source.append(">");
+            execut(ctx.node.children.get(0));
+            ctx.source.append(ctx.node.children.get(0).value.getStr);
+            ctx.source.append("</script>");
         }
     }
 
     register style;
     "style" {
         in naming {
-            node.children.push(result.take(index+1));
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
         }
         in resolving {
             gather_props;
         }
         in htmlemiting {
-            source.append("<style");
+            ctx.source.append("<style");
             emit_inline_html;
-            source.append(">");
-            source.append(node.children.get(0).name);
-            source.append("</style>");
+            ctx.source.append(">");
+            ctx.source.append(ctx.node.children.get(0).name);
+            ctx.source.append("</style>");
         }
     }
 
@@ -61,48 +95,43 @@
             gather_props;
         }
         in htmlemiting {
-            if(node.value.type==to_type("inlined")) {return;}
-            if(node.value.type==to_type("invisible")) {return;}
-            source.append("<div");
+            if(ctx.node.value.type==to_type("inlined")) {return;}
+            if(ctx.node.value.type==to_type("invisible")) {return;}
+            ctx.source.append("<div");
             emit_inline_html;
-            source.append(">");
+            ctx.source.append(">");
             emit_contents;
-            source.append("</div>");
+            ctx.source.append("</div>");
         }
     }
     "FUNC_CALL" {
         in htmlemiting {
-            if(node.value.type==to_type("inlined")) {return;}
-            if(node.value.type==to_type("invisible")) {return;}
-            source.append("<div");
+            if(ctx.node.value.type==to_type("inlined")) {return;}
+            if(ctx.node.value.type==to_type("invisible")) {return;}
+            ctx.source.append("<div");
             emit_inline_html;
-            source.append(">");
+            ctx.source.append(">");
             emit_contents;
-            source.append("</div>");
+            ctx.source.append("</div>");
         }
     }
    
     register emit_block;
     "emit_block" {
         in executing {
-            source.append("<html><body>");
+            ctx.source.append("<html><body>");
             emit_contents;
-            source.append("</body></html>");
+            ctx.source.append("</body></html>");
         }
     }
-
-    register aboveasbelow;
-    "aboveasbelow" {
-        in executing {
-            result.get(index-1).value.data(result.get(index+1));
-        }
-    }
-
 ##
 
+print("Compiling");
 Node twig = compile(read_file("mixos-acorn/web/thistle.twg"));
+print("Compiled: ",twig);
 Node page = twig.children.get(0);
 execut twig;
+print("Finished execution");
 
 int fd = socket;
 bind(fd,8080);
@@ -130,13 +159,11 @@ while(0<1) {
     }
 
     string response_body = "";
-    response_body.clear; //Until we perfect temporary lifetimes
 
     if(method=="GET") {
-        ctxsource(""); //Initilize
-        ctxsource.clear;
+        ctx.source = "";
         htmlemit page;
-        response_body.append(ctxsource);
+        response_body.append(ctx.source);
     }
 
     if(method=="POST") {
@@ -147,10 +174,9 @@ while(0<1) {
         int body_start = req.find("\r\n\r\n");
         if(body_start>=0) {
             string src = req.slice(body_start+4,req.length);
-            ctxsource.clear;
-            ctxsource(src); //Initilize
+            ctx.source = src;
             frag page;
-            response_body.append(ctxsource);
+            response_body.append(ctx.source);
         }
     }
 
@@ -164,9 +190,4 @@ while(0<1) {
         print("RESPONSE: ",response);
     write(cfd,response); 
     close(cfd);
-
-    response_body.clear;
-    response.clear;  
-    req.clear;
-    ctxsource.clear;
 }

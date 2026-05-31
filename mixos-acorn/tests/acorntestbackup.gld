@@ -105,3 +105,24 @@ int fibonacci(int n) {
 }
 int fib5 = fibonacci(5);
 print(fib5);
+
+int factorial(int n) {
+    if(n < 2) {
+        return 1;
+    }
+    return n * factorial(n-1);
+}
+int fact5 = factorial(5);
+print(fact5);
+
+int sum_to(int n) {
+    int total = 0;
+    int i = 0;
+    while(i < n) {
+        total = total + i;
+        i++;
+    }
+    return total;
+}
+int sum10 = sum_to(10);
+print(sum10);

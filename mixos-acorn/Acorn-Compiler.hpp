@@ -357,30 +357,6 @@ namespace Acorn {
             return false;
         }
 
-        Value distribute_value(Node node, const std::string& label, Value val) {
-            if(node.value_table().hasKey(label)) {
-                Value table_value = node.value_table().get(label);
-                if(table_value.type() == 0) {
-                    table_value.copy(val,false);
-                    val = table_value;
-                }
-            } else {
-                node.value_table().put(label, val);
-            }
-            for(int c = 0;c<node.children().length();c++) {
-                Node child = node.children()[c];
-                if(!child.scopes().empty()) {
-                    for(int s = 0;s<node.children()[c].scopes().length();s++) {
-                        Node scope = child.scopes().get(s);
-                        if(scope.owner().idx==child.idx) {
-                            val = distribute_value(scope,label,val);
-                        }
-                    }
-                }
-            }
-            return val;
-        }
-
         // Value distribute_value(QNode& node, const std::string& label, Value val) {
         //     if(node.value_table().hasKey(label)) {
         //         Value table_value = node.value_table().get(label);
@@ -404,6 +380,30 @@ namespace Acorn {
         //     }
         //     return val;
         // }
+
+        Value distribute_value(Node node, const std::string& label, Value val) {
+            if(node.value_table().hasKey(label)) {
+                Value table_value = node.value_table().get(label);
+                if(table_value.type() == 0) {
+                    table_value.copy(val,false);
+                    val = table_value;
+                }
+            } else {
+                node.value_table().put(label, val);
+            }
+            for(int c = 0;c<node.children().length();c++) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
+                    for(int s = 0;s<node.children()[c].scopes().length();s++) {
+                        Node scope = child.scopes().get(s);
+                        if(scope.owner().idx==child.idx) {
+                            val = distribute_value(scope,label,val);
+                        }
+                    }
+                }
+            }
+            return val;
+        }
 
         Node distribute_node(Node node, const std::string& label, Node carry) {
             if(node.node_table().hasKey(label)) {
@@ -557,9 +557,7 @@ namespace Acorn {
                     bool right_associative = right_bp < left_bp; //lbp > rbp means right assoc
                     bool should_steal = left_bp > (right_associative ? left_right_bp : left_left_bp);
 
-                    // print("ON ",ctx.node().name().to_std());
-                    // print("BEFORE");
-                    // print(node_to_string(ctx.root()));
+                    //LOG_W(ctx,"ON "+ctx.node().name().to_std());
                     
                     if(!ctx.left().children().empty()) {
                         if(ctx.left().children().length()==1) {
@@ -570,10 +568,13 @@ namespace Acorn {
                         }
                     }
     
-                    // print("SHOULD STEAL ",should_steal?"YES":"NO");
+                    //LOG_W(ctx,"SHOULD STEAL "+std::to_string((int)should_steal));
                     if(left_right_bp!=-1 && should_steal) {
                         if(ctx.left().children().length()>1) {
+                            //LOG_W(ctx,"TAKING: "+node_info(ctx.left().children().last()));
                             ctx.node().children() << ctx.left().children().pop();
+                            //LOG_W(ctx,"TOOK: "+node_info(ctx.node().children().last()));
+                            if(ERROR_FLAG) return;
                         }
                         ctx.left().children() << ctx.result().take(ctx.index());
                     } else {
@@ -590,8 +591,7 @@ namespace Acorn {
                     ctx.index()++;
                 }
 
-                // print("MIDDLE");
-                // print(node_to_string(ctx.root()));
+                //LOG_W(ctx,"MIDDLE "+ctx.node().name().to_std());
                 
                 if(right_bp != -1 && ctx.index() < ctx.result().length()) {
                     Node next = ctx.result().get(ctx.index());
@@ -602,8 +602,7 @@ namespace Acorn {
                 }
                 ctx.index()--;
 
-                // print("AFTER");
-                // print(node_to_string(ctx.root()));
+                //LOG_W(ctx,"AFTER "+ctx.node().name().to_std());
             };
     
             for(int m = 0; m<2; m++) {
@@ -865,6 +864,9 @@ namespace Acorn {
                         overload_type(node.in_scope().owner().value().type(),nname,method_call_id,node.value());
                         //layouts[node.in_scope().owner().value().type()].add_prop(func_call_id,0,node.name().to_std(),node.value().type(),node.value().sub_type(),node.scopes()[0]);
                     }
+                    for(int c=0;c<node.children().length();c++) {
+                        place_node_in_scope(node.children()[c],node.scopes()[0]);
+                    }
                 } else {
                     node.type(type_decl_id);
                     node.value(make_type_value(node.name().to_std(),0));
@@ -906,9 +908,7 @@ namespace Acorn {
             return false;
         }
 
-        uint64_t make_overload_key(uint32_t root, uint32_t right) {
-            return ((uint64_t)root << 32) | right;
-        }
+
         void overload_type(uint32_t type, const std::string& instr, uint32_t overload_to, Value value = deadptr) {
             if(!layouts.hasKey(type)) layouts.put(type,_layout());
             Node expr = tokenize(instr);
@@ -939,6 +939,7 @@ namespace Acorn {
                     }
                 }
             }
+
             layouts[type].overload.put(make_overload_key(root_type,right_type),type_and_value{overload_to,value});
             recycle_node(expr);
 
@@ -1193,6 +1194,7 @@ namespace Acorn {
                     scope.value().loc(0); //Set location for stack depth
                 }
             };
+            x_handlers[func_decl_id] = [this](Context& ctx){};
             r_handlers[func_call_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 sync_args(ctx);
@@ -1230,21 +1232,26 @@ namespace Acorn {
             };
             r_handlers[return_id] = [this](Context& ctx){
                 Node climb = ctx.node();
-                while(is_live(climb)&&climb.type()!=func_decl_id) {
+                while(is_live(climb)&&climb.type()!=func_decl_id) { //WARNING: we need to make sure things like in blocks which also use returns are safe with this! 
+                    //This might try to bind to some random function via climbing when it does this, so when metaprogramming becomes visible in the compielr, add gaurds.
                     climb = climb.in_scope().owner();
                 }
                 ctx.node().parent(climb);
-                ctx.node().value(ctx.node().parent().value());
+                if(is_live(ctx.node().parent())) {
+                    ctx.node().value(ctx.node().parent().value());
+                }
                 standard_sub_process(ctx);
             };  
             x_handlers[return_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                if(!ctx.node().children().empty()) {
-                    void* snap = ctx.node().children()[0].value().get();
-                    ascend_call_scope(ctx.node().parent().scopes()[0]);
-                    ctx.node().value().set(snap);
-                } else {
-                    ascend_call_scope(ctx.node().parent().scopes()[0]);
+                if(is_live(ctx.node().parent())) {
+                    if(!ctx.node().children().empty()) {
+                        void* snap = ctx.node().children()[0].value().get();
+                        ascend_call_scope(ctx.node().parent().scopes()[0]);
+                        ctx.node().value().set(snap);
+                    } else {
+                        ascend_call_scope(ctx.node().parent().scopes()[0]);
+                    }
                 }
                 ctx.flag(true);
                 return;
@@ -1348,6 +1355,44 @@ namespace Acorn {
                 }
             };
 
+
+            tokenizer_state_functions[quote_id] = [this](Context& ctx) {
+                char c = ctx.source().at(ctx.index());
+
+                if(ctx.node().quals().empty()) {
+                    Node open_token = copy_as_token(ctx.node());
+                    ctx.node().quals() << open_token;
+                    ctx.node().type(string_id);
+                    ctx.node().name().col().clear();
+                    ctx.node().x(at_x);
+                    ctx.node().y(at_y);
+                }
+
+                if(c == '"') {
+                    ctx.state(0);
+                    Node closer = copy_as_token(ctx.node().quals()[0]);
+                    closer.x(at_x); closer.y(at_y);
+                    ctx.node().quals() << closer;
+                } else if(c == '\\' && ctx.index()+1<ctx.source().length()) {
+                    char next = ctx.source().at(ctx.index() + 1);
+                    switch(next) {
+                        case 'n':  ctx.node().name().push('\n'); break;
+                        case 't':  ctx.node().name().push('\t'); break;
+                        case 'r':  ctx.node().name().push('\r'); break;
+                        case '"':  ctx.node().name().push('"');  break;
+                        case '\\': ctx.node().name().push('\\'); break;
+                        default:   ctx.node().name().push(next); break;
+                    }
+                    at_x += 1.0f;
+                    ctx.index()++;
+                } else if(c == '\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                } else {
+                    ctx.node().name().push(c);
+                }
+            };
+ 
             r_handlers[langle_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 resolve_overload(ctx);

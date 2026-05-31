@@ -15,3 +15,7 @@ function fragthree(target, instruction, content) {
         document.getElementById(target).outerHTML = html;
     });
 }
+
+function goTo(route) {
+    window.location.href = route;
+}

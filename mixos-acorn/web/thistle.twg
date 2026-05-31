@@ -1,3 +1,135 @@
+inlined background_theme {
+    "background-color" : "rgb(225, 225, 225)";
+}
+inlined card_theme {
+    "background-color" : "rgb(247, 244, 244)";
+}
+inlined component_theme {
+    "background-color" : "rgb(255, 249, 249)";
+}
+inlined text_theme {
+    "font-size" : "13px";
+    "font-weight" : "600";
+    "color" : "rgb(80,80,80)";
+    "font-family" : "system-ui, sans-serif";
+}
+
+inlined input_theme {
+    component_theme;
+    "border" : "1px solid rgb(200,200,200)";
+    "border-radius" : "8px";
+    "padding" : "10px 14px";
+    "width" : "100%";
+    "font-size" : "15px";
+    "font-family" : "system-ui, sans-serif";
+}
+
+inlined basic_button {
+    "height" : "50%";
+    "width" : "50%";
+}
+
+div side_bar {
+    "id" : "side_bar";
+    "width" : "60px";
+    "min-height" : "100vh";
+    "display" : "flex";
+    "flex-direction" : "column";
+    "transition" : "width 0.2s ease";
+    "overflow" : "hidden";
+    card_theme;
+    
+    div top_section {
+        "display" : "flex";
+        "flex-direction" : "column";
+        "align-items" : "flex-start";
+        "padding" : "12px 8px";
+        "border-bottom" : "1px solid rgb(220,220,220)";
+        "gap" : "12px";
+
+       div thistle_btn {
+            "cursor" : "pointer";
+            "padding" : "8px";
+            "display" : "flex";
+            "align-items" : "center";
+            "justify-content" : "flex-end";
+            "white-space" : "nowrap";
+            "background-color" : "transparent";
+            "width" : "100%";
+            "height" : "30px";
+            
+            text "THISTLE" {
+                "onclick" : "goTo('/')";
+                "cursor" : "pointer";
+                "class" : "label";
+                "opacity" : "0";
+                "transition" : "opacity 0.15s ease";
+                "font-size" : "18px";
+                "flex" : "1";
+                text_theme;
+            }
+
+            div icon {
+                "onclick" : "toggleSidebar()";
+                "width" : "30px";
+                "height" : "30px";
+                "background-color" : "rgb(172, 57, 147)";
+                "flex-shrink" : "0";
+            }
+        }
+
+        div toggle_btn {
+            "onclick" : "toggleSidebar()";
+            "cursor" : "pointer";
+            "padding" : "8px";
+            "display" : "flex";
+            "align-items" : "center";
+            "gap" : "10px";
+            "width" : "30px";
+            "height" : "30px";
+            "white-space" : "nowrap";
+            "background-color" : "transparent";
+            
+            div icon {
+                "width" : "30px";
+                "height" : "30px";
+                "background-color" : "rgb(100, 100, 100)";
+                "flex-shrink" : "0";
+            }
+            
+            text "toggle" {
+                "class" : "label";
+                "opacity" : "0";
+                "transition" : "opacity 0.15s ease";
+                "font-size" : "16px";
+                text_theme;
+            }
+        }
+    }
+    
+    div main_section {
+        "flex" : "1";
+        "display" : "flex";
+        "flex-direction" : "column";
+        "padding" : "8px 0px";
+    }
+
+    script "
+        function toggleSidebar() {
+            const sidebar = document.getElementById('side_bar');
+            const expanded = sidebar.style.width === '220px';
+            sidebar.style.width = expanded ? '60px' : '220px';
+            document.querySelectorAll('.label').forEach(el => {
+                el.style.opacity = expanded ? '0' : '1';
+            });
+        }
+
+        function goTo(route) {
+            window.location.href = route;
+        }
+    ";
+}
+
 ##
     register root_path;
     "root_path" {
@@ -5,7 +137,7 @@
             emit_contents;
         }
         in fraging {
-            string src = source;
+            string src = ctx.source;
             print("SRC: ",src);
             string target = src.slice(0,src.find(" "));
             string instr = src.slice(" ",1,2);
@@ -13,14 +145,16 @@
             print("TARGET: ",target); 
             print("INSTR: ",instr); 
             print("CONTENT: ",content); 
-            Node to_edit = find_node(target,node);
+            Node to_edit = find_node(target,ctx.node);
             if(instr=="add") {
-                to_edit.children.get(0).value.getStr.append(content);
-                ctxsource(src);
-                ctxsource.clear;
+                if(to_edit.children.get(0).type==to_type("IDENTIFIER")) {
+                    to_edit.children.get(0).value.getStr.append(content);
+                } else {
+                    to_edit.children.get(0).name.append(content);
+                }
+                ctx.source = "";
                 htmlemit to_edit;
             }
-            ctxsource(src);
         }
     }
 ##
@@ -29,12 +163,12 @@ root_path {
     div root {
         script read_file("mixos-acorn/web/thistle.js");
 
-        inlined background_theme {
+        inlined abackground_theme {
             "background-color" : "blue";
         } 
 
         div twub {
-            background_theme;
+            abackground_theme;
             text "wub" {
                 "color" : "purple";
                 "onclick" : "post('wub')";
@@ -51,11 +185,12 @@ root_path {
         }
 
         div qwob {
-            background_theme;
+            abackground_theme;
             text "wubria" {
                 "color" : "red"; 
                 "id" : "wubria";
                 "onclick" : "fragthree('wubria', 'add', 'not')";
+                text_theme;
             }
         }
     }
@@ -82,3 +217,121 @@ r2 {
     }
 }
 
+
+
+
+##
+    register login;
+    "login" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+login {
+    div contents {
+        style "
+            td:hover {
+                background-color:rgb(234, 234, 234);
+            }
+            input:focus {
+                outline: none;
+            }
+            textarea:focus {
+                outline: none;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+        ";
+
+        script read_file("mixos-acorn/web/thistle.js");
+
+        background_theme;
+        div container {
+            "display" : "flex";
+            "min-height" : "100vh";
+                div content_panel {
+                    "flex" : "1";
+                    "display" : "flex";
+                    "flex-direction" : "column";
+                    "justify-content" : "center";
+                    "align-items" : "center";
+                        div actions {
+                            "display" : "flex";
+                            "justify-content" : "center";
+                            "align-items" : "end";
+                            "flex-direction" : "column";
+                            "width" : "480px";
+                            "height" : "200px";
+                            "padding" : "40px";
+                            "gap" : "12px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                                inlined login_input_theme {
+                                    "border" : "none";
+                                    "border-bottom" : "2px solid rgb(200,200,200)";
+                                    "border-radius" : "0px";
+                                    "background-color" : "transparent";
+                                    "padding" : "8px 0px";
+                                    input_theme;
+                                }
+
+                                div input_username {
+                                    "display" : "flex";
+                                    "align-items" : "center";
+                                    "width" : "100%";
+                                    "gap" : "7px";
+                                        text "Username:" {
+                                            "width" : "70px";
+                                            "font-size" : "14px";
+                                            "flex-shrink" : "0";
+                                            text_theme;
+                                        }
+                                        input username {
+                                            "id" : "username";
+                                            "flex" : "1";
+                                            login_input_theme;
+                                        }
+                                }
+
+                                div input_password {
+                                    "display" : "flex";
+                                    "align-items" : "center";
+                                    "width" : "100%";
+                                    "gap" : "8px";
+                                        text "Password:" {
+                                            "width" : "70px";
+                                            "font-size" : "14px";
+                                            "flex-shrink" : "0";
+                                            text_theme;
+                                        }
+                                        input password {
+                                            "id" : "password";
+                                            "type" : "password";
+                                            "flex" : "1";
+                                            login_input_theme;
+                                        }
+                                }
+
+                                button login {
+                                    "id" : "login";
+                                    "onclick" : "goTo('/')";
+                                    text "Login" {
+                                        "font-size" : "14px";
+                                        text_theme;
+                                    }
+                                    "width" : "75%";
+                                    "border" : "none";
+                                    "border-radius" : "4px";
+                                    "background-color" : "rgb(230, 230, 230)";
+                                }
+                        }
+                }
+        }
+    }
+}

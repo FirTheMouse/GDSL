@@ -5,13 +5,14 @@
 // #include "modules/GDSL-TwigSnap.hpp"
 // #include "modules/GDSL-Script.hpp"
 // #include "modules/GDSL-GQL.hpp"
-// #include "modules/GDSL-Thistle.hpp"
+#include "modules/GDSL-Thistle.hpp"
 // #include "modules/GDSL-PineNeedle.hpp"
 // #include "mixos-acorn/Acorn-Kernel.hpp"
 // #include "mixos-acorn/Acorn-Dirt.hpp"
 // #include "mixos-acorn/Acorn-JIT.hpp"
 // #include "mixos-acorn/Acorn-Script.hpp"
 #include "mixos-acorn/web/Webcorn-Core.hpp"
+// #include "mixos-acorn/Acorn-Core.hpp"
 
 // using namespace GDSL;
 
@@ -31,111 +32,19 @@ int main(int argc, char* argv[]) {
     span = make<Log::Span>();
     //span->log_everything = true; //While things are crashing
 
-    Acorn::init_type_pool();
+    // Acorn::init_type_pool();
     // // Acorn::test_acorn();
  
-    g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    acorn->setup_trace_res_flipbook();
-    //acorn->setup_stamp_res_flipbook();
-    acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // // acorn->setup_trace_res_flipbook();
+    // // //acorn->setup_stamp_res_flipbook();
+    // // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    // acorn->silence_blackfeather = true;
-    // std::string code = readFile("mixos-acorn/tests/acorntest.gld");
-    // std::string built_code = "";
-    // for(int i=0;i<code.length();i++) {
-    //     print("=====",i,"=====");
-    //     built_code+=code.at(i);
-    //     print("COMPILE:\n",built_code);
-    //     acorn->run(acorn->process(built_code));
-    //     Acorn::ERROR_FLAG = false;
-    // }
-    // built_code = "";
-    // print("===== AND BACKWARDS =====");
-    // for(int i=code.length()-1;i>=0;i--) {
-    //     print("=====",i,"=====");
-    //     built_code.insert(0,1,code.at(i));
-    //     print("COMPILE:\n",built_code);
-    //     acorn->run(acorn->process(built_code));
-    //     Acorn::ERROR_FLAG = false;
-    // }
-    // for(int j=0;j<50;j++) {
-    //     built_code = "";
-    //     for(int i=0;i<500;i++) {
-    //         print("=====",i,"=====");
-    //         built_code+=rands();
-    //         print("COMPILE:\n",built_code);
-    //         acorn->run(acorn->process(built_code));
-    //         Acorn::ERROR_FLAG = false;
-    //     }
-    // }
+    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    //webcorn->setup_trace_res_flipbook();
+    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
-    // list<std::string> programs;
-    // programs << "int x = ;";
-    // programs << "int int int x = 5;";
-    // programs << "float f = 5 + * 3;";
-    // programs << "print(print(print(print(print(print(print(print(print(print(1))))))))));";
-    // programs << "int a = b = c = d = e = 5;";
-    // programs << "{{{{{{{{{{}}}}}}}}}};";
-    // programs << "int f() {\n    int f() {\n        int f() {\n            f();\n        }\n    }\n}\nf();";
-    // programs << "int x = (((((((((5 + 3))))))))));";
-    // programs << ".x.y.z.w.v.u;";
-    // programs << "int x = 5;\nint x = 10;\nprint(x);";
-    // programs << "int sayHi(int a, int b, int c) {\n    print(a);\n}\nsayHi(1, 2, 3, 4, 5);";
-    // programs << "int x = x + 1;";
-    // programs << "##\nregister foo;\n\"foo\" {\n    in executing {\n        foo;\n    }\n}\n##\nfoo;";
-    // programs << "int f() { return; return; return; }\nf();";
-    // programs << "int x = 5 +";
-    // programs << "\"unclosed string;\nint x = 5;";
-    // programs << "int x = 5; int y = 10; int z = x + y * z - x / y + z * x;";
-    // programs << "##\n##\n##\n##";
-    // programs << "int f(int x) {\n    int g(int y) {\n        print(x);\n        print(y);\n    }\n    g(x);\n}\nf(5);";
-    // programs << "print(1+2+3+4+5+6+7+8+9+10+11+12+13+14+15+16+17+18+19+20);";
-    // programs << "int x = ;;;;;;;";
-    // programs << "int f() {}\nint f() {}\nint f() {}\nf();";
-    // programs << "((((;";
-    // programs << "int x = 5;\n{\n    int x = 10;\n    {\n        int x = 15;\n        print(x);\n    }\n    print(x);\n}\nprint(x);";
-    // programs << "int x = 5;\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);";
-    // programs << "int f(int x) { print(x); }\nf(f(f(f(f(1)))));";
-    // programs << "int x = 5;\nint y = x;\nint z = y;\nprint(z);";
-    // programs << "int x = 1;\nint y = 2;\nint z = 3;\nprint(x + y + z);\nprint(x * y * z);\nprint(x - y - z);";
-    // programs << "int f() {\n    int x = 5;\n    print(x);\n}\nf();\nf();\nf();";
-    // programs << "int x = 5 * 3 + 2 * 4 - 1;";
-    // programs << "int x = (5);";
-    // programs << "int x = 5;\n{\n    x = 10;\n    print(x);\n}\nprint(x);";
-    // programs << "int f(int x) {\n    if(x < 0) {\n        print(x);\n    }\n}\nf(-1);\nf(1);";
-    // programs << "int x = 5;\nint y = 0;\nint z = x * y;\nprint(z);";
-    // programs << "int f(int a, int b) {\n    print(a + b);\n}\nf(3, 4);\nf(10, 20);\nf(0, 0);";
-    // programs << "int x = 5;\nprint(x + x + x + x + x);";
-    // programs << ";;;;;;;;;;";
-    // programs << "int x = 5;\nint y = x + ;\nprint(y);";
-    // programs << "int f(int x) { print(x); }\nint g(int x) { f(x); }\nint h(int x) { g(x); }\nh(42);";
-    // programs << "int x = 5;\nprint(\n    x\n);";
-    // programs << "int x = 5;\nint y = 10;\nif(x < y) {\n    print(x);\n}";
-    // programs << "int f() {\n    int x = 5;\n    return;\n    print(x);\n}\nf();";
-    // programs << "int x = 1+2+3+4+5+6+7+8+9+10;\nint y = x * 2;\nprint(y);";
-    // programs << "int f(int x) {\n    int y = x + 1;\n    int z = y + 1;\n    print(z);\n}\nf(1);\nf(2);\nf(3);";
-    // programs << "int x = 5;\n) x ( = 10;\nprint(x);";
-    // programs << "int f(int x, int y, int z) {\n    print(x);\n    print(y);\n    print(z);\n}\nf(1,2,3);";
-    // programs << "{}{}{}{}";
-    // programs << "int x = 5;\nint x = x + 1;\nint x = x + 1;\nprint(x);";
-    // programs << "int f() { int x = 5; }\nint g() { int y = f(); }\ng();";
-    // for(int i=0;i<programs.length();i++) {
-    //     print(blue("PROGRAM "),i,":\n",programs[i]);
-    //     acorn->run(acorn->process(programs[i]));
-    //     if(!Acorn::ERROR_FLAG) {
-    //         print(green("DID NOT CRASH, CHECK STAMP: "));
-    //         print(acorn->nodenet_to_string(acorn->unit_root));
-    //     } else {
-    //         Acorn::ERROR_FLAG = false;
-    //     }
-    // }
-
-
-
-
-
-    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
-    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    
 
     // Acorn::Acorn_Kernel kernel;
     // Acorn::init_type_pool();
@@ -376,3 +285,96 @@ int main(int argc, char* argv[]) {
 //     csr = field_end;
 // }
 // writeFile("mixos-acorn/web/Webcorn-Core.hpp",s);
+
+
+
+// acorn->silence_blackfeather = true;
+    // std::string code = readFile("mixos-acorn/tests/acorntest.gld");
+    // std::string built_code = "";
+    // for(int i=0;i<code.length();i++) {
+    //     print("=====",i,"=====");
+    //     built_code+=code.at(i);
+    //     print("COMPILE:\n",built_code);
+    //     acorn->run(acorn->process(built_code));
+    //     Acorn::ERROR_FLAG = false;
+    // }
+    // built_code = "";
+    // print("===== AND BACKWARDS =====");
+    // for(int i=code.length()-1;i>=0;i--) {
+    //     print("=====",i,"=====");
+    //     built_code.insert(0,1,code.at(i));
+    //     print("COMPILE:\n",built_code);
+    //     acorn->run(acorn->process(built_code));
+    //     Acorn::ERROR_FLAG = false;
+    // }
+    // for(int j=0;j<50;j++) {
+    //     built_code = "";
+    //     for(int i=0;i<500;i++) {
+    //         print("=====",i,"=====");
+    //         built_code+=rands();
+    //         print("COMPILE:\n",built_code);
+    //         acorn->run(acorn->process(built_code));
+    //         Acorn::ERROR_FLAG = false;
+    //     }
+    // }
+
+    // list<std::string> programs;
+    // programs << "int x = ;";
+    // programs << "int int int x = 5;";
+    // programs << "float f = 5 + * 3;";
+    // programs << "print(print(print(print(print(print(print(print(print(print(1))))))))));";
+    // programs << "int a = b = c = d = e = 5;";
+    // programs << "{{{{{{{{{{}}}}}}}}}};";
+    // programs << "int f() {\n    int f() {\n        int f() {\n            f();\n        }\n    }\n}\nf();";
+    // programs << "int x = (((((((((5 + 3))))))))));";
+    // programs << ".x.y.z.w.v.u;";
+    // programs << "int x = 5;\nint x = 10;\nprint(x);";
+    // programs << "int sayHi(int a, int b, int c) {\n    print(a);\n}\nsayHi(1, 2, 3, 4, 5);";
+    // programs << "int x = x + 1;";
+    // programs << "##\nregister foo;\n\"foo\" {\n    in executing {\n        foo;\n    }\n}\n##\nfoo;";
+    // programs << "int f() { return; return; return; }\nf();";
+    // programs << "int x = 5 +";
+    // programs << "\"unclosed string;\nint x = 5;";
+    // programs << "int x = 5; int y = 10; int z = x + y * z - x / y + z * x;";
+    // programs << "##\n##\n##\n##";
+    // programs << "int f(int x) {\n    int g(int y) {\n        print(x);\n        print(y);\n    }\n    g(x);\n}\nf(5);";
+    // programs << "print(1+2+3+4+5+6+7+8+9+10+11+12+13+14+15+16+17+18+19+20);";
+    // programs << "int x = ;;;;;;;";
+    // programs << "int f() {}\nint f() {}\nint f() {}\nf();";
+    // programs << "((((;";
+    // programs << "int x = 5;\n{\n    int x = 10;\n    {\n        int x = 15;\n        print(x);\n    }\n    print(x);\n}\nprint(x);";
+    // programs << "int x = 5;\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);\nprint(x);";
+    // programs << "int f(int x) { print(x); }\nf(f(f(f(f(1)))));";
+    // programs << "int x = 5;\nint y = x;\nint z = y;\nprint(z);";
+    // programs << "int x = 1;\nint y = 2;\nint z = 3;\nprint(x + y + z);\nprint(x * y * z);\nprint(x - y - z);";
+    // programs << "int f() {\n    int x = 5;\n    print(x);\n}\nf();\nf();\nf();";
+    // programs << "int x = 5 * 3 + 2 * 4 - 1;";
+    // programs << "int x = (5);";
+    // programs << "int x = 5;\n{\n    x = 10;\n    print(x);\n}\nprint(x);";
+    // programs << "int f(int x) {\n    if(x < 0) {\n        print(x);\n    }\n}\nf(-1);\nf(1);";
+    // programs << "int x = 5;\nint y = 0;\nint z = x * y;\nprint(z);";
+    // programs << "int f(int a, int b) {\n    print(a + b);\n}\nf(3, 4);\nf(10, 20);\nf(0, 0);";
+    // programs << "int x = 5;\nprint(x + x + x + x + x);";
+    // programs << ";;;;;;;;;;";
+    // programs << "int x = 5;\nint y = x + ;\nprint(y);";
+    // programs << "int f(int x) { print(x); }\nint g(int x) { f(x); }\nint h(int x) { g(x); }\nh(42);";
+    // programs << "int x = 5;\nprint(\n    x\n);";
+    // programs << "int x = 5;\nint y = 10;\nif(x < y) {\n    print(x);\n}";
+    // programs << "int f() {\n    int x = 5;\n    return;\n    print(x);\n}\nf();";
+    // programs << "int x = 1+2+3+4+5+6+7+8+9+10;\nint y = x * 2;\nprint(y);";
+    // programs << "int f(int x) {\n    int y = x + 1;\n    int z = y + 1;\n    print(z);\n}\nf(1);\nf(2);\nf(3);";
+    // programs << "int x = 5;\n) x ( = 10;\nprint(x);";
+    // programs << "int f(int x, int y, int z) {\n    print(x);\n    print(y);\n    print(z);\n}\nf(1,2,3);";
+    // programs << "{}{}{}{}";
+    // programs << "int x = 5;\nint x = x + 1;\nint x = x + 1;\nprint(x);";
+    // programs << "int f() { int x = 5; }\nint g() { int y = f(); }\ng();";
+    // for(int i=0;i<programs.length();i++) {
+    //     print(blue("PROGRAM "),i,":\n",programs[i]);
+    //     acorn->run(acorn->process(programs[i]));
+    //     if(!Acorn::ERROR_FLAG) {
+    //         print(green("DID NOT CRASH, CHECK STAMP: "));
+    //         print(acorn->nodenet_to_string(acorn->unit_root));
+    //     } else {
+    //         Acorn::ERROR_FLAG = false;
+    //     }
+    // }

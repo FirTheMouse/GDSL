@@ -493,3 +493,134 @@ while(0<1) {
     response.clear;  
     ctxsource.clear;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+##
+    register login;
+    "login" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+login {
+    div contents {
+        style "
+            td:hover {
+                background-color:rgb(234, 234, 234);
+            }
+            input:focus {
+                outline: none;
+            }
+            textarea:focus {
+                outline: none;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+        ";
+
+        script read_file("mixos-acorn/web/thistle.js");
+
+        inlined background_theme {
+            "background-color" : "blue";
+        } 
+
+        background_theme;
+        div container {
+            "display" : "flex";
+            "min-height" : "100vh";
+                div content_panel {
+                    "flex" : "1";
+                    "display" : "flex";
+                    "flex-direction" : "column";
+                    "justify-content" : "center";
+                    "align-items" : "center";
+                        div actions {
+                            "display" : "flex";
+                            "justify-content" : "center";
+                            "align-items" : "end";
+                            "flex-direction" : "column";
+                            "width" : "480px";
+                            "height" : "200px";
+                            "padding" : "40px";
+                            "gap" : "12px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                                inlined login_input_theme {
+                                    "border" : "none";
+                                    "border-bottom" : "2px solid rgb(200,200,200)";
+                                    "border-radius" : "0px";
+                                    "background-color" : "transparent";
+                                    "padding" : "8px 0px";
+                                    input_theme;
+                                }
+
+                                div input_username {
+                                    "display" : "flex";
+                                    "align-items" : "center";
+                                    "width" : "100%";
+                                    "gap" : "7px";
+                                        text "Username:" {
+                                            "width" : "70px";
+                                            "font-size" : "14px";
+                                            "flex-shrink" : "0";
+                                            text_theme;
+                                        }
+                                        input username {
+                                            "id" : "username";
+                                            "flex" : "1";
+                                            login_input_theme;
+                                        }
+                                }
+
+                                div input_password {
+                                    "display" : "flex";
+                                    "align-items" : "center";
+                                    "width" : "100%";
+                                    "gap" : "8px";
+                                        text "Password:" {
+                                            "width" : "70px";
+                                            "font-size" : "14px";
+                                            "flex-shrink" : "0";
+                                            text_theme;
+                                        }
+                                        input password {
+                                            "id" : "password";
+                                            "type" : "password";
+                                            "flex" : "1";
+                                            login_input_theme;
+                                        }
+                                }
+
+                                button login {
+                                    "id" : "login";
+                                    "onclick" : "postForm({username: getel('username').value, password: getel('password').value})";
+                                    text "Login" {
+                                        "font-size" : "14px";
+                                        text_theme;
+                                    }
+                                    "width" : "75%";
+                                    "border" : "none";
+                                    "border-radius" : "4px";
+                                    "background-color" : "rgb(230, 230, 230)";
+                                }
+                        }
+                }
+        }
+    }
+}

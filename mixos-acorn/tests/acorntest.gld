@@ -2,14 +2,10 @@
 register wub;
 "wub" {
     in executing {
-        ctx.source+=" BONG"+" BING"+" TWING";
-        print(ctx.source);
+        execut(ctx.node.children.get(0));
+        print(ctx.node.children.get(0).value.getStr);
     }
 }
 ##
 
-ctx.source = "twing";
-print(ctx.source);
-wub;
-print(ctx.source);
-wub;
+wub("two");

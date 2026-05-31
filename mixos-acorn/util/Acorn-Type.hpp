@@ -24,23 +24,27 @@ namespace Acorn {
         #define DEBUG_ONLY(x)
     #endif
 
+    struct Ptr {
+        Ptr() {}
+        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
+        uint32_t pool = 0; //Pool it's at
+        uint32_t idx = 0; //Column
+        uint32_t sidx = 0; //Row
 
-    struct Col {
-        Col(uint32_t _size = 1) : element_size(_size) {}
+        inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
+        inline bool operator!=(const Ptr& other) const {return !(*this == other);}
+    };
+
+    static const Ptr deadptr = {0,0,0};
+    static Ptr dead_ref = {0,0,0};
+
+    struct QCol {
+        QCol() {}
         uint8_t* storage = nullptr;
-        uint32_t element_size;
         uint32_t size = 0;
         uint32_t capacity = 0;
-        uint32_t tag = 0;
-        bool live = true;
-        bool heterogenous = false;
-
-        std::string label;
-        map<std::string,uint32_t> cells;
-
-        inline uint32_t length() {return size/ element_size;}
+        
         inline bool empty() {return size==0;}
-
         void reserve(uint32_t new_capacity) {
             if(new_capacity <= capacity) return;
             
@@ -50,37 +54,104 @@ namespace Acorn {
             storage = newPtr;
             capacity = new_capacity;
         }
-
         void resize(uint32_t new_size) {
             if (new_size > capacity) {
                 reserve(new_size);
             }
             size = new_size;
         }
-
-        void push(const void* element) {
+        void push(const void* element, uint32_t width) {
             uint32_t old_size = size;
-            uint32_t new_size = size+element_size;
+            uint32_t new_size = size+width;
             if(new_size>=capacity) {
                 reserve(new_size*2);
             }
-            memcpy(&storage[old_size], element, element_size);
+            memcpy(&storage[old_size], element, width);
             size = new_size;
         }
-        void operator<<(const void* element) {push(element);}
-        void push_default() {
+        void push_default(uint32_t width) {
             size_t old_size = size;
-            resize(old_size + element_size);
-            memset(&storage[old_size], 0, element_size);
-        }
-        
-        inline void* sget(uint32_t index) {
-            DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
-            return &storage[index * element_size];
+            resize(old_size + width);
+            memset(&storage[old_size], 0, width);
         }
         inline void* qget(uint32_t offset) {
             DEBUG_ONLY(if(offset>=size) {throw_error(red("col:qget "),"offset ",offset," out of bounds for size ",size);return nullptr;})
             return &storage[offset];
+        }
+        inline void* operator[](uint32_t index) {return qget(index);}
+        inline void qset(uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[offset], element, width);}
+        void removeAt(uint32_t index, uint32_t width) {
+            size_t byte_start = index * width;
+            for(size_t i = byte_start; i < size - width; i++) {
+                storage[i] = storage[i + width];
+            }
+            resize(size - width);
+        }
+        void clear() {size = 0;}
+        void pop(void* out, uint32_t width) {
+            memcpy(out, qget((size/width - 1) * width), width);
+            resize(size - width);
+        }
+    };
+
+    struct QString : QCol {
+        char& at(uint32_t idx) {return *(char*)qget(idx);}
+        char& operator[](uint32_t idx) {return *(char*)qget(idx);}
+        void push(char c) {QCol::push((void*)&c,1);}
+        uint32_t length() {return size;}
+
+        void operator=(const std::string& s) {clear(); for(char c : s) push(c);}
+        void operator=(const char* s) {clear(); while(*s) push(*s++);}
+        bool operator==(const std::string& s) {
+            if(size != s.length()) return false;
+            return memcmp(storage, s.data(), size) == 0;
+        }
+        bool operator==(const char* s) {
+            uint32_t len = strlen(s);
+            if(size != len) return false;
+            return memcmp(storage, s, size) == 0;
+        }
+        std::string to_std() {
+            if(!storage) return "";
+            return std::string((char*)storage, size);
+        }
+    };
+    std::ostream& operator<<(std::ostream& os, QString& s) {
+        if(s.storage) os.write((const char*)s.storage, s.size);
+        return os;
+    }
+
+    struct ColCell {
+        uint32_t hash = 0;
+        uint32_t index = 0;
+    };
+    struct QCellCol : QCol {
+        ColCell& get(uint32_t idx) {return *(ColCell*)qget(idx*sizeof(ColCell));}
+        ColCell& operator[](uint32_t idx) {return *(ColCell*)qget(idx*sizeof(ColCell));}
+        void push(ColCell c) {QCol::push((void*)&c,sizeof(ColCell));}
+        uint32_t length() {return size/sizeof(ColCell);}
+    };
+
+    struct Col : QCol {
+        Col(uint32_t _size = 1) : element_size(_size) {}
+        uint32_t element_size;
+        uint32_t tag = 0;
+        uint32_t hash = 0;
+        bool live = true;
+        bool heterogenous = false;
+
+        QString label;
+        QCellCol cells;
+        inline uint32_t length() {return size / element_size;}
+        void push(const void* element) {
+            QCol::push(element,element_size);
+        }
+        void operator<<(const void* element) {push(element);}
+        void push_default() {QCol::push_default(element_size);}
+        
+        inline void* sget(uint32_t index) {
+            DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
+            return &storage[index * element_size];
         }
         inline void* iget(uint32_t index, uint32_t offset) {
             DEBUG_ONLY(if(index*element_size+offset>=size) {throw_error(red("col:iget "),"index ",index," plus offset ",offset," out of bounds for size ",size);return nullptr;})
@@ -96,53 +167,38 @@ namespace Acorn {
         inline void* operator[](uint32_t index) {return get(index);}
         inline void* last() {return get(size-1);}
 
-        inline bool hasKey(const std::string& key) {return cells.hasKey(key);}
-
-        inline void* get(const std::string& key) {
-            if(!hasKey(key)) {print(red("acorntype:col:get does not have key "+key+"!")); return nullptr;}
-            return &storage[cells.get(key) * element_size];
+        void put(const std::string& key, const void* element) {
+            ColCell c{hashString(key), length()};
+            cells.push(c);
+            push(element);
+        }
+        bool hasKey(const std::string& key) {
+            uint32_t h = hashString(key);
+            for(int i = 0; i < cells.length(); i++) {
+                if(cells.get(i).hash == h) return true;
+            }
+            return false;
+        }
+        void* get(const std::string& key) {
+            uint32_t h = hashString(key);
+            for(int i = 0; i < cells.length(); i++) {
+                ColCell& c = cells.get(i);
+                if(c.hash == h) return sget(c.index);
+            }
+            return nullptr;
         }
         inline void* operator[](const std::string& key) {return get(key);}
 
-        inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
-        inline void qset(uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[offset], element, width);}
-        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
         inline void set(const std::string& key, const void* element) {
             if(!hasKey(key)) {print(red("acorntype:col:set does not have key "+key+"!"));} 
-            else {memcpy(&storage[cells.get(key) * element_size], element, element_size);}
+            else {memcpy(get(key), element, element_size);}
         }
 
-        std::string get_cell_label(uint32_t index) {
-            for(auto& e : cells.entrySet()) {
-                if(e.value==index) return e.key;
-            }
-            return "";
-        }
+        inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
+        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
 
-        void put(const std::string& key, const void* element) {
-            cells[key] = length();
-            push(element);
-        }
-
-        void removeAt(uint32_t index) {
-            size_t byte_start = index * element_size;
-            for(size_t i = byte_start; i < size - element_size; i++) {
-                storage[i] = storage[i + element_size];
-            }
-            resize(size - element_size);
-            for(auto& e : cells.entrySet()) {
-                if(e.value > index) e.value--;
-            }
-        }
-
-        void clear() {
-            size = 0;
-        }
-
-        void pop(void* out) {
-            memcpy(out, get(length()-1), element_size);
-            resize(size - element_size);
-        }
+        void removeAt(uint32_t index) {QCol::removeAt(index,element_size);}
+        void pop(void* out) {QCol::pop(out,element_size);}
     };
 
     //Convience for ergonomic white/blacklist things
@@ -162,571 +218,46 @@ namespace Acorn {
         }
     };
 
-    struct Ptr {
-        Ptr() {}
-        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
-        uint32_t pool = 0; //Pool it's at
-        uint32_t idx = 0; //Column OR type if a node/value
-        uint32_t sidx = 0; //Row
-
-        inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
-        inline bool operator!=(const Ptr& other) const {return !(*this == other);}
-    };
-
-    static const Ptr deadptr = {0,0,0};
-    static Ptr dead_ref = {0,0,0};
-
-
-    class Type {
-    public:
-        Type() {}
-        ~Type() {}
-
-        list<Col> columns;
-        list<Ptr> array;
-
-        int save_idx = -1;
-        std::string type_name = "bullets";
-
-
-        std::string make_table_string(int mode) {
-            std::string table = "";
-            if(columns.length()==0) return table;
-            int lr = -1; //Longest length
-            for(int c=0;c<columns.length();c++) {
-                int l = columns[c].length();
-                if(l>lr) lr = l;
-            }
-
-            if(mode==1) { //Auto
-                if(columns.length()<10) mode = 2;
-                else mode = 3;
-            }
-            if(mode==2) //Full
-            {
-                std::string header = "COL: ";
-                for(int c=0;c<columns.length();c++) {
-                    header.append(std::to_string(c)+":"+std::to_string((uintptr_t)&columns[c]).append(" ").insert(5,"-").insert(8,"-"));
-                    std::string c_size = std::to_string(columns[c].element_size);
-                    header.append("("+c_size+")");
-                    if(c_size.length()==1) header.append("   ");
-                    if(c_size.length()==2) header.append("  ");
-                    if(c_size.length()==3) header.append(" ");
-                }
-                table.append(header+"\n");
-                for(int r=0;r<lr;r++) {
-                    std::string row = "";
-                    if(r<10) row.append("   ");
-                    else if(r<100) row.append("  ");
-                    row.append(std::to_string(r)+":");
-                    for(int c=0;c<columns.length();c++) {
-                        if(r<columns[c].length()) {
-                            row.append("  "+std::to_string((uintptr_t)columns[c].get(r)).append(" ").insert(5,"-").insert(8,"-"));
-                        }
-                        else {
-                            row.append("             ");
-                        }
-                        row.append("      ");
-                    }
-                    table.append(row+(r!=lr-1?"\n":""));
-                }
-            }
-            else if(mode==3) //Compact
-            {
-                std::string header = "COL: ";
-                for(int c=0;c<columns.length();c++) {
-                    header.append(std::to_string(c)+" ");
-                }
-                table.append(header+"\n");
-
-                for(int r=0;r<lr;r++) {
-                    std::string row = "";
-                    if(r<10) row.append("  ");
-                    else if(r<100) row.append(" ");
-                    row.append(std::to_string(r)+":");
-                    for(int c=0;c<columns.length();c++) {
-                        if(r<columns[c].length())
-                            row.append(" O");
-                        else
-                            row.append("  ");
-                    }
-                    table.append(row+(r!=lr-1?"\n":""));
-                }
-            }
-            else if(mode==4) {
-                list<list<std::string>> ids(columns.length());
-                list<int> ids_max_size(columns.length());
-                list<std::string> headers(columns.length());
-                
-                for(int i=0;i<columns.length();i++) {
-                    ids_max_size[i] = 0;
-                    list<std::string> sl(lr);
-                    for(int r=0;r<lr;r++) sl[r] = "";
-                    ids[i] = sl;
-                    headers[i] = std::to_string(i) + "(" + std::to_string(columns[i].element_size) + ")";
-
-                    std::string c_size = std::to_string(columns[i].element_size);
-                    headers[i] = std::to_string(i)+"("+c_size+")";
-                    ids_max_size[i] = headers[i].length();
-                }
-
-                //Replace later
-                // if(notes.size() != 0) {
-                //     for(auto e : notes.entrySet()) {
-                //         int col = e.value.index;
-                //         int row = e.value.sub_index;
-                //         if(col == -1) continue;
-                //         if(row == -1) {
-                //             headers[col] = e.key;
-                //             ids_max_size[col] = std::max(ids_max_size[col], (int)e.key.length());
-                //         } else {
-                //             ids[col][row] = e.key;
-                //             ids_max_size[col] = std::max(ids_max_size[col], (int)e.key.length());
-                //         }
-                //     }
-                // }
-
-                // if(array.size() != 0) {
-                //     for(int a=0;a<array.length();a++) {
-                //         int col = array[a].index;
-                //         int row = array[a].sub_index;
-                //         if(col == -1 || row == -1) continue;
-                //         if(ids[col][row] == "") {
-                //             std::string s = std::to_string(a);
-                //             ids[col][row] = s;
-                //             ids_max_size[col] = std::max(ids_max_size[col], (int)s.length());
-                //         }
-                //     }
-                // }
-
-                std::string header = "COL: ";
-                for(int c=0;c<columns.length();c++) {
-                    header.append(headers[c] + " ");
-                    int pad = ids_max_size[c] - headers[c].length();
-                    for(int i=0;i<pad;i++) header.append(" ");
-                }
-                table.append(header + "\n");
-
-                for(int r=0;r<lr;r++) {
-                    std::string row = "";
-                    if(r<10) row.append("  ");
-                    else if(r<100) row.append(" ");
-                    row.append(std::to_string(r)+":");
-                    for(int c=0;c<columns.length();c++) {
-                        if(r<(int)columns[c].length() && ids[c][r]!="") {
-                            int pad = ids_max_size[c] - ids[c][r].length();
-                            row.append(" " + ids[c][r]);
-                            for(int i=0;i<pad;i++) row.append(" ");
-                        } else {
-                            row.append(" ");
-                            for(int i=0;i<ids_max_size[c];i++) row.append(" ");
-                        }
-                    }
-                    table.append(row + (r!=lr-1?"\n":""));
-                }
-            }
-            return table;
-        }
-
-        //Modes: 1 == Auto, 2 == Full, 3 == Compact, 4 == Pretty
-        std::string table_to_string(int mode = 1) {
-            return make_table_string(mode);
-        }
-
-        inline Col& operator[](size_t index) {
-            return columns[index];
-        }
-
-        size_t column_count() {
-            return columns.length();
-        }
-        
-        size_t row_count(int column_index) {
-            return columns[column_index].length();
-        }
-        
-        void add_row(int index) {
-            columns[index].push_default();
-        }
-        
-        //Adds a new column and intilizes the rows
-        void add_column(size_t size = 0) {
-            columns.push(Col(size));
-        }
-
-        inline bool has_column(int index) {return index<columns.length();}
-
-        //Returns the adress of the column at the index
-        inline void* address_column(int index) {
-            return &columns[index];
-        }
-
-        int get_column(const std::string& label) {
-            for(int i=0;i<columns.length();i++) {
-                if(columns[i].label==label) return i;
-            }
-            return -1;
-        }
-
-        //Returns the adress of a column with the label
-        inline void* address_column(const std::string& label) {
-            int at_id = get_column(label);
-            if(at_id==-1) return nullptr;
-            return address_column(at_id);
-        }
-
-        uint32_t note_value(const std::string& key, uint32_t size, uint32_t tag) {
-            add_column(size);
-            columns.last().label = key;
-            columns.last().tag = tag;
-            return columns.length()-1;
-        }
-
-        //Direct get from a pointer to the adress of a column
-        inline static void* get(void* ptr, size_t sub_index) {   
-            return (*(Col*)ptr).get(sub_index);
-        }
-
-        void* get(const std::string& label, size_t sub_index) {
-            void* ptr = address_column(label);
-            if (!ptr) return nullptr;
-            return get(ptr,sub_index);
-        }
-        
-        template<typename T>
-        T& get(const std::string& label, size_t sub_index) {
-            void* data_ptr = get(label, sub_index);
-            if (!data_ptr) print("get::270 value not found");
-            return *(T*)data_ptr;
-        }
-
-        template<typename T>
-        T& get(void* ptr, size_t sub_index) {
-            void* data_ptr = get(ptr, sub_index);
-            if (!data_ptr) print("get::285 value not found");
-            return *(T*)data_ptr;
-        }
-        
-        //Inserts into the provided index or creates a new column for it, and puts a note in the array
-        void push(void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
-            if(column_index == -1) {
-                column_index = columns.length();
-                add_column(size);
-            } else if(columns[column_index].element_size!=size) {
-                print("acorntype:push provided column index ",column_index," is the wrong size, expected: ",size);
-                return;
-            }
-            if(tag!=0&&columns[column_index].tag!=tag) {
-                print(yellow("acorntype:push columns tag is "+std::to_string(columns[column_index].tag)+" but an elment of tag "+std::to_string(tag)+" was pushed"));
-            }
-            array << Ptr{0,(uint32_t)column_index,(uint32_t)row_count(column_index)};
-            columns[column_index].push(value);
-        }
-
-        //Same as push, except it will try to insert into the first column matching the provided size instead of creating one
-        void push_and_bucket(void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
-            if(column_index == -1) {
-                for(int i=0;i<columns.length();i++) {
-                    if(columns[i].element_size==size) {
-                        column_index = i;
-                        break;
-                    }
-                }
-            } 
-            push(value,size,column_index,tag);
-        }
-
-        //Takes the result of the base push and inserts the note into the notes map with the provided name as well
-        void add(const std::string& label, void* value, size_t size, int column_index = -1, uint32_t tag = 0) {
-            if(column_index == -1) {
-                column_index = columns.length();
-                add_column(size);
-                columns[column_index].tag = tag;
-            } else if(columns[column_index].element_size!=size) {
-                print("acorntype:add provided column index ",column_index," is the wrong size, expected: ",size);
-                return;
-            }
-            if(tag!=0&&columns[column_index].tag!=tag) {
-                print(yellow("acorntype:add columns tag is "+std::to_string(columns[column_index].tag)+" but an elment of tag "+std::to_string(tag)+" was pushed"));
-            }
-            array << Ptr{0,(uint32_t)column_index,(uint32_t)row_count(column_index)};
-            columns[column_index].put(label,value);
-        }
-
-        //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array as well as the notes map
-        template<typename T>
-        void add(const std::string& name,T value,int column_index = -1, uint32_t tag = 0) {
-            add(name,&value,sizeof(T),column_index,tag);
-        }
-
-        //Add but without the column index to be prettier and it returns the column allocated
-        template<typename T>
-        uint32_t new_column(const std::string& name,T value, uint32_t tag = 0) {
-            add(name,&value,sizeof(T),-1,tag);
-            return columns.length()-1;
-        }
-
-        //Add but without the column index to be prettier and it returns the column allocated
-        uint32_t new_column(const std::string& name,void* value, uint32_t size, uint32_t tag) {
-            add(name,value,size,-1,tag);
-            return columns.length()-1;
-        }
-
-        //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
-        uint32_t create_column(uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
-            if(use_pooling) {
-                for(int i=0;i<columns.length();i++) {
-                    Col& col = columns[i];
-                    if(!col.live&&col.element_size==size&&(!tag_sensitive||col.tag==tag)) {
-                        col.clear();
-                        col.live = true;
-                        return i;
-                    }
-                }
-            }
-            add_column(size);
-            columns.last().tag = tag;
-            return columns.length()-1;
-        }
-        //Creates a column from pool and intilizes it's memory if empty
-        uint32_t push_column(uint32_t size, uint32_t tag) {
-            uint32_t at = create_column(size,tag);
-            Col& col = columns[at];
-            if(col.size<size) {
-                col.resize(size);
-            }
-            return at;
-        }
-
-        void recycle_column(uint32_t id) {
-            columns[id].live = false;
-        }
-
-        //Inserts into the provided index or creates a new column for it, and puts a note in the array, and puts a note in the array
-        template<typename T>
-        void push(T value, int column_index = -1, uint32_t tag = 0) {
-            push(&value, sizeof(T), column_index, tag);
-        }
-
-        //Same as push, except it will try to insert into the first column matching the provided size instead of creating one
-        template<typename T>
-        void push_and_bucket(T value, int column_index = -1, uint32_t tag = 0) {
-            push_and_bucket(&value, sizeof(T), column_index, tag);
-        }
-        
-        //Direct set 
-        static void set(void* ptr,void* value, int sub_index) {
-            return (*(Col*)ptr).set(sub_index,value);
-        }
-        void set(int index,int sub_index,void* value) {columns[index].set(sub_index,value);}
-        //Sets the value associated with the label 
-        void set(const std::string& label,void* value, int sub_index, int size = -1) {
-            void* ptr = address_column(label);
-            if (!ptr) {
-                if(size!=-1) {
-                    add(label,value,size);
-                } else {
-                    print("Set::414 no address found associated with ",label," and no size was provided to default construct");
-                }
-                return;
-            }
-            set(ptr,value,sub_index);
-        }
-        template<typename T>
-        void set(const std::string& label,T value,size_t index) {
-            size_t size = sizeof(T);
-            set(label,&value,index,size);
-        }
-
-        inline void* get(int index,int sub_index) {return columns[index].get(sub_index);}
-        inline void* get_from_ptr(Ptr& ptr) {return columns[ptr.idx][ptr.sidx];}
-        void* array_get(int index) {return get_from_ptr(array[index]);}
-
-        //Retrives based on an index into the array, only works if values were pushed in
-        template<typename T>
-        T& get(int index) {return *(T*)array_get(index);}
-
-        template<typename T>
-        T& get(int index,int sub_index) {return *(T*)get(index,sub_index);}
-
-        //Directly sets the value of a place
-        template<typename T>
-        void set(int index,int sub_index,T value) {set(index,sub_index,(void*)&value);}
-    };
-
-
-    static void write_col(std::ostream& out, Col& col) {
-        write_raw<size_t>(out, col.element_size);
-        write_raw<uint32_t>(out, (uint32_t)col.length());
-        out.write((const char*)col.storage, col.size);
-        write_string(out, col.label);
-        write_raw<uint32_t>(out, col.tag);
-        write_raw<uint32_t>(out, (uint32_t)col.cells.size());
-        for(auto e : col.cells.entrySet()) {
-            write_string(out, e.key);
-            write_raw<uint32_t>(out, e.value);
-        }
+    uint32_t add_column(Col& col, size_t size = 0, uint32_t tag = 0) {
+        Col ncol(size);
+        ncol.tag = tag;
+        col.push((void*)&ncol);
+        return col.length()-1;
+    }
+    
+    uint32_t note_value(Col& col, const std::string& key, uint32_t size, uint32_t tag) {
+        uint32_t at = add_column(col, size, tag);
+        (*(Col*)col.sget(at)).label = key;
+        return at;
     }
 
-    static void write_ptr(std::ostream& out, Ptr& ptr) {
-        write_raw<uint32_t>(out, ptr.pool);
-        write_raw<uint32_t>(out, ptr.idx);
-        write_raw<uint32_t>(out, ptr.sidx);
-    }
-
-    static void write_type(std::ostream& out, Type t) {
-        write_raw<uint32_t>(out, t.columns.length());
-        write_raw<uint32_t>(out, t.array.length());
-
-        write_raw<int>(out, t.save_idx);
-        write_string(out, t.type_name);
-
-        for(int i = 0; i < t.columns.length(); i++) {write_col(out, t.columns[i]);}
-        for(int i = 0; i < t.array.length(); i++) {write_ptr(out, t.array[i]);}
-    }
-
-    static void read_col(std::istream& in, Col& col) {
-        col.element_size = read_raw<size_t>(in);
-        uint32_t len = read_raw<uint32_t>(in);
-        col.resize(len * col.element_size);
-        in.read((char*)col.storage, len);
-        col.label = read_string(in);
-        col.tag = read_raw<uint32_t>(in);
-        uint32_t cells_count = read_raw<uint32_t>(in);
-        for(uint32_t i = 0; i < cells_count; i++) {
-            std::string key = read_string(in);
-            col.cells[key] = read_raw<uint32_t>(in);
-        }
-    }
-
-    static Ptr read_ptr(std::istream& in) {
-        uint32_t pool = read_raw<uint32_t>(in);
-        uint32_t idx = read_raw<uint32_t>(in);
-        uint32_t sidx = read_raw<uint32_t>(in);
-        return Ptr{pool,idx,sidx};
-    }
-
-    static void read_type(Type& t, std::istream& in) {
-        uint32_t col_count   = read_raw<uint32_t>(in);
-        uint32_t array_count = read_raw<uint32_t>(in);
-
-        t.save_idx = read_raw<int>(in);
-        t.type_name = read_string(in);
-
-        //Columns
-        for(uint32_t i = 0; i < col_count; i++) {
-            Col col;
-            read_col(in,col);
-            t.columns.push(col);
-        }
-
-        //Array
-        for(uint32_t i = 0; i < array_count; i++) {
-            t.array << read_ptr(in);
-        }
-    }
-
-    static void save_type(Type& t, const std::string& path) {
-        std::ofstream out(path, std::ios::binary);
-        if(!out) throw std::runtime_error("Can't write to file: " + path);
-        write_type(out, t);
-        out.close();
-    }
-
-    static Type load_type(const std::string& path) {
-        std::ifstream in(path, std::ios::binary);
-        if(!in) throw std::runtime_error("Can't read from file: " + path);
-        Type t;
-        read_type(t,in);
-        in.close();
-        return t;
-    }
-
-    static void load_type(Type& t, const std::string& path) {
-        std::ifstream in(path, std::ios::binary);
-        if(!in) throw std::runtime_error("Can't read from file: " + path);
-        read_type(t,in);
-        in.close();
-    }
-
-    class TypePool : public Type {
-    public:
-        TypePool() {}
-
-        list<Ptr> handles;
-        uint32_t free_stack_top = 0;
-        list<int> free_ids;
-        list< std::function<void(Ptr&)> > init_funcs;
-
-        std::function<Ptr()> make_func = [](){
-            Ptr optr;
-            return optr;
-        };
-
-        int get_next() {
-            if (free_stack_top == 0) return -1;
-            return free_ids.get(--free_stack_top);
-        }
-        
-        void return_id(int id) {
-            if (free_stack_top < free_ids.size()) {
-                free_ids.get(free_stack_top++) = id;
-            } else {
-                free_ids.push(id);
-                free_stack_top++;
-            }
-        }
-
-        Ptr& create() {
-            int next_id = get_next();
-            if(next_id != -1) {
-                Ptr& optr = handles.get(next_id);
-                for(int i = 0; i < init_funcs.size(); i++) init_funcs[i](optr);
-                optr.idx = 1; //Mark as live
-                return optr;
-            } else {
-                Ptr newptr = make_func();
-                store(newptr);
-                Ptr& optr = handles.last();
-                for(int i = 0; i < init_funcs.size(); i++) init_funcs[i](optr);
-                optr.idx = 1;
-                return optr;
-            }
-        }
-
-        uint32_t add_column(size_t size) {
-            Col col(size);
-            for(size_t i = 0; i < handles.length(); i++) col.push_default();
-            int col_len = columns.length();
-            columns.push(col);
-            return col_len;
-        }
-
-        private:
-            void store(Ptr& optr)
-            {
-                optr.sidx = handles.size();
-                for(int c = 0; c<columns.length(); c++) {
-                    columns[c].push_default();
+    //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
+    uint32_t create_column(Col& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
+        if(use_pooling) {
+            for(int i=0;i<col.length();i++) {
+                Col& ncol = *(Col*)col.sget(i);
+                if(!ncol.live&&ncol.element_size==size&&(!tag_sensitive||ncol.tag==tag)) {
+                    ncol.clear();
+                    ncol.live = true;
+                    return i;
                 }
-                handles.push(optr);
             }
-        public:
-
-        void add_initializers(list<std::function<void(Ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
-        void add_initializer(std::function<void(Ptr&)> init) {init_funcs << init;}
-        void operator+(std::function<void(Ptr&)> init) {add_initializer(init);}
-        void operator+(list<std::function<void(Ptr&)>> inits) {for(auto i : inits) add_initializer(i);}
-
-        void recycle(Ptr& optr) {
-            if(optr.idx==0) { //If already dead
-                return;
-            }
-            optr.idx = 0;
-
-            return_id(optr.sidx);
         }
-    };
+        add_column(col,size,tag);
+        return col.length()-1;
+    }
+    //Creates a column from pool and intilizes it's memory if empty
+    uint32_t push_column(Col& col, uint32_t size, uint32_t tag) {
+        uint32_t at = create_column(col,size,tag);
+        Col& ncol = *(Col*)col.sget(at);
+        if(ncol.size<size) {
+            ncol.resize(size);
+        }
+        return at;
+    }
+    void recycle_column(Col& col, uint32_t id) {
+       (*(Col*)col.sget(id)).live = false;
+    }
 
 }
 

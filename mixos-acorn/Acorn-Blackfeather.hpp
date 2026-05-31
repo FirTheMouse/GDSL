@@ -359,33 +359,56 @@ namespace Acorn {
                 flipbooks << b;
             };
             w.prefix = [this](Context& ctx) {                
-                ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = white("> "+s);}; //Ptr on
-                g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);    
-                b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(b->len+1)));
-                ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = pine("~ "+s);}; //Ptr resolving
+                g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);   
+                if(b) {
+                    ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = white("> "+s);}; //Ptr on
+                    b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(b->len+1)));
+                    ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = pine("~ "+s);}; //Ptr resolving
+                }
             };
             w.suffix = [this](Context& ctx) {
-                ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = green("> "+s);}; //Ptr finished resolving
                 g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);      
-                b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(b->len+1)));
-                for(int i=0;i<ctx.node().quals().length();i++)  {
-                    Node q = ctx.node().quals()[i]; 
-                    if(q.mute()) {
-                        ptr_colors[Ptr_to_key(q)] = [](std::string& s){s = gray(s);};
+                if(b) {
+                    ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = green("> "+s);}; //Ptr finished resolving
+                    b->add_page("\n\n\n\n\n\n\n"+node_to_string(unit_root)+"\n"+blue(std::to_string(b->len+1)));
+                    for(int i=0;i<ctx.node().quals().length();i++)  {
+                        Node q = ctx.node().quals()[i]; 
+                        if(q.mute()) {
+                            ptr_colors[Ptr_to_key(q)] = [](std::string& s){s = gray(s);};
+                        }
                     }
+                    ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = gray(". "+s);}; //Ptr resolved
                 }
-                ptr_colors[Ptr_to_key(ctx.node())] = [](std::string& s){s = gray(". "+s);}; //Ptr resolved
             };
             w.logger = [this](Context& ctx) {
                 g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);  
-                b->add_page("\n\n\n\n\n\n\n"+node_to_string(is_live(ctx.root())?ctx.root():ctx.node())+"\n"+blue(std::to_string(b->len+1))+": "+GLOBAL_MSG);
+                if(b) {
+                    b->add_page("\n\n\n\n\n\n\n"+node_to_string(is_live(ctx.root())?ctx.root():ctx.node())+"\n"+blue(std::to_string(b->len+1))+": "+GLOBAL_MSG);
+                }
             };
             w.stagend = [this](Context& ctx){
                 g_ptr<Flipbook> b = get_flipbook("trace_res_"+active_stage->label+"_"+unit_label);
-                if(b) b->close();
-                ptr_colors.clear();
+                if(b) {
+                    b->close();
+                    ptr_colors.clear();
+                }
             };
             watchers << w;
+        }
+
+        void clear_terminal() {
+            print("\033[3J\033[H");
+        }
+        void enter_alt_screen() { print("\033[?1049h"); }
+        void exit_alt_screen()  { print("\033[?1049l"); }
+
+        void print_page_at(const std::string& page, int offset) {
+            print("\033[H\033[2J");
+            list<std::string> lines = split_str(page, '\n');
+            int terminal_height = 40; // or query with TIOCGWINSZ
+            for(int i = offset; i < std::min((size_t)(offset + terminal_height), lines.length()); i++) {
+                print(lines[i]);
+            }
         }
 
         void navigate_flipbook(g_ptr<Flipbook> flipbook) {
@@ -394,15 +417,21 @@ namespace Acorn {
             int on_page = 0;
             TerminalLantern lantern;
             std::string next = book[on_page];
+            int line_offset = 0;
+            enter_alt_screen();
             while(true) {
-                print(next);
+                clear_terminal();
+                print_page_at(next,line_offset);
                 int key = read_arrow();
                 if(key == 1 && on_page < book.length()-1) {on_page++; next = book[on_page];} //>
                 if(key == -1 && on_page > 0) {on_page--; next = book[on_page];} //<
-                if(key == -2) {if(on_page-5 > 0) {on_page-=5;} else {on_page=0;} next = book[on_page];} //v
-                if(key == 2) {if(on_page+5 < book.length()-1) {on_page+=5;} else {on_page=book.length()-1;} next = book[on_page];} //^
+                if(key == -2) {if(line_offset<book.length()) line_offset++;} //v
+                if(key == 2) {if(line_offset>0) line_offset--;} //^
+                // if(key == -2) {if(on_page-5 > 0) {on_page-=5;} else {on_page=0;} next = book[on_page];} //v
+                // if(key == 2) {if(on_page+5 < book.length()-1) {on_page+=5;} else {on_page=book.length()-1;} next = book[on_page];} //^
                 if(key == -100) break;
             }
+            exit_alt_screen();
             print("Exited navigation");
         }
 
@@ -593,12 +622,12 @@ namespace Acorn {
                                     addr0 = std::stoi(cmds[2]);
                                 } else {
                                     for(int i=0;i<types.length();i++) {
-                                        if(types[i].type_name==cmds[2]) {
+                                        if(types[i].label==cmds[2]) {
                                             addr0 = i; break;
                                         }
                                     }
                                 }
-                                TypePool& ptype = types[addr0];
+                                TypeCol& ptype = types[addr0];
                                 if(cmds.length()==3) {
                                     if(do_print) {
                                         print(type_to_string(ptype));

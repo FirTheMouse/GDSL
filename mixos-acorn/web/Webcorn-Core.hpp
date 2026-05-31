@@ -61,6 +61,9 @@ namespace Acorn {
 
                         if(c.children()[0].value().type()==string_id) {
                             process_node(ctx,c.children()[0]);
+                            if(!is_live(c.children()[0].value().data_ptr())) { //For templates and such where we might use an identifer
+                                continue;
+                            }
                             prop = string(*(Ptr*)c.children()[0].value().get()).to_std();
                         } else {
                             prop = c.children()[0].name().to_std();
@@ -68,6 +71,9 @@ namespace Acorn {
 
                         if(c.children()[1].value().type()==string_id) {
                             process_node(ctx,c.children()[1]);
+                            if(!is_live(c.children()[1].value().data_ptr())) {
+                                continue;
+                            }
                             val = string(*(Ptr*)c.children()[1].value().get()).to_std();
                         } else {
                             val = c.children()[1].name().to_std();
@@ -184,12 +190,14 @@ namespace Acorn {
                             std::string val = "";
     
                             if(c.children()[0].value().type()==string_id) {
+                                if(!is_live(c.children()[0].value().data_ptr())) {continue;}
                                 prop = string(*(Ptr*)c.children()[0].value().get()).to_std();
                             } else {
                                 prop = c.children()[0].name().to_std();
                             }
     
                             if(c.children()[1].value().type()==string_id) {
+                                if(!is_live(c.children()[1].value().data_ptr())) {continue;}
                                 val = string(*(Ptr*)c.children()[1].value().get()).to_std();
                             } else {
                                 val = c.children()[1].name().to_std();
@@ -207,9 +215,11 @@ namespace Acorn {
                 }
             }
             for(int i=0;i<from.scopes().length();i++) {
-                Node found = webcorn_node_scan(label,from.scopes()[i]);
-                if(is_live(found)) {
-                    return found;
+                if(from.scopes()[i].owner()==from) {
+                    Node found = webcorn_node_scan(label,from.scopes()[i]);
+                    if(is_live(found)) {
+                        return found;
+                    }
                 }
             }
             return deadptr;
@@ -342,6 +352,7 @@ namespace Acorn {
             uint32_t bind_id = make_tokenized_keyword("bind");
             r_handlers[bind_id] = make_int_node;
             x_handlers[bind_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 //Retrive fd and port from children
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 int port = *(int*)ctx.node().children()[1].value().get();
@@ -359,6 +370,7 @@ namespace Acorn {
             uint32_t listen_id = make_tokenized_keyword("listen");
             r_handlers[listen_id] = make_int_node;
             x_handlers[listen_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 int result = listen(fd, 10);
                 ctx.node().value().set((void*)&result);
@@ -367,6 +379,7 @@ namespace Acorn {
             uint32_t accept_id = make_tokenized_keyword("accept");
             r_handlers[accept_id] = make_int_node;
             x_handlers[accept_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 struct sockaddr_in client_addr;
                 memset(&client_addr, 0, sizeof(client_addr));
@@ -386,6 +399,7 @@ namespace Acorn {
                 ctx.node().value(make_value(string_id,sizeof(Ptr)));
             };
             x_handlers[read_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 char buffer[4096];
                 std::string request;
@@ -396,7 +410,7 @@ namespace Acorn {
                     request += buffer;
                     if(bytes < (int)sizeof(buffer)-1) break;
                 }
-                Ptr ticket(name_store_id, types[name_store_id].note_value("request",sizeof(char),char_id), 0);
+                Ptr ticket(name_store_id, note_value(types[name_store_id],"request",sizeof(char),char_id), 0);
                 for(auto c : request) types[name_store_id][ticket.idx].push((void*)&c);
                 ctx.node().value().set((void*)&ticket);
             };
@@ -404,6 +418,7 @@ namespace Acorn {
             uint32_t write_id = make_tokenized_keyword("write");
             r_handlers[write_id] = make_int_node;
             x_handlers[write_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 //Second child is the string to write
                 Ptr strptr = *(Ptr*)ctx.node().children()[1].value().get();
@@ -415,6 +430,7 @@ namespace Acorn {
             uint32_t close_id = make_tokenized_keyword("close");
             r_handlers[close_id] = make_int_node;
             x_handlers[close_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 ::close(fd);
             };

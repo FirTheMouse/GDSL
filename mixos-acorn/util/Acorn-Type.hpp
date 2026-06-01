@@ -90,6 +90,14 @@ namespace Acorn {
             resize(old_size + width);
             memset(&storage[old_size], 0, width);
         }
+        void insert(uint32_t index, const void* element, uint32_t width) {
+            uint32_t byte_pos = index * width;
+            uint32_t new_size = size + width;
+            if(new_size >= capacity) reserve(new_size * 2);
+            memmove(&storage[byte_pos + width], &storage[byte_pos], size - byte_pos);
+            memcpy(&storage[byte_pos], element, width);
+            size = new_size;
+        }
         inline void* qget(uint32_t offset) {
             DEBUG_ONLY(if(offset>=size) {throw_error(red("col:qget "),"offset ",offset," out of bounds for size ",size);return nullptr;})
             return &storage[offset];
@@ -156,6 +164,9 @@ namespace Acorn {
         }
         void operator<<(const void* element) {push(element);}
         void push_default() {QCol::push_default(element_size);}
+        void insert(uint32_t index, const void* element) {
+            QCol::insert(index, element, element_size);
+        }
         
         inline void* sget(uint32_t index) {
             DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
@@ -298,5 +309,51 @@ namespace Acorn {
        (*(Col*)col.sget(id)).live = false;
     }
 
+
+
+    static void write_qcol(std::ostream& out, QCol& col) {
+        write_raw<uint32_t>(out, col.size);
+        out.write((const char*)col.storage, col.size);
+    }
+
+    static QCol read_qcol(std::istream& in) {
+        QCol col;
+        uint32_t size = read_raw<uint32_t>(in);
+        col.resize(size);
+        in.read((char*)col.storage, col.size);
+        return col;
+    }
+
+    static void write_ccol(std::ostream& out, CCol& col) {
+        write_qcol(out,col);
+        write_raw<uint32_t>(out, col.element_size);
+        write_raw<uint32_t>(out, col.tag);
+        write_raw<uint32_t>(out, col.hash);
+        write_raw<bool>(out, col.live);
+    }
+
+    static CCol read_ccol(std::istream& in) {
+        CCol col = read_qcol(in);
+        col.element_size = read_raw<uint32_t>(in);
+        col.tag = read_raw<uint32_t>(in);
+        col.hash = read_raw<uint32_t>(in);
+        col.live = read_raw<bool>(in);
+        return col;
+    }
+
+    static void write_col(std::ostream& out, Col& col) {
+        write_ccol(out,col);
+        write_raw<bool>(out, col.heterogenous);
+        write_qcol(out,col.cells);
+        write_qcol(out,col.label);
+    }
+
+    static Col read_col(std::istream& in) {
+        Col col = read_ccol(in);
+        col.heterogenous = read_raw<bool>(in);
+        col.cells = read_qcol(in);
+        col.label = read_qcol(in);
+        return col;
+    }
 }
 

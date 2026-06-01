@@ -1,4 +1,0 @@
-string s = "hello world";
-print("Just hello: ",s.slice(0,s.find(" ")));
-print("Just world: ",s.slice(s.find(" ")+1,s.length));
-print("Last l: ",s.substr(s.find("l",0,3),2));

@@ -126,3 +126,27 @@ int sum_to(int n) {
 }
 int sum10 = sum_to(10);
 print(sum10);
+
+
+Test 4
+
+wub {
+    int x;
+    int y;
+
+    int sayHi(int times, wub* m) {
+        (*m).x = 9;
+        for(int i=0;i<times;i++) {
+            print("Hi");
+            x++;
+        }
+        return times+1;
+    }
+}
+
+
+
+wub w;
+w.x = 8;
+wub n;
+print(w.sayHi(3,&n)," ",w.x,"/",n.x);

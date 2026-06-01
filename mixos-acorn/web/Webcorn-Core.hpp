@@ -158,7 +158,7 @@ namespace Acorn {
                     } else if(c.type() == func_decl_id) {
 
                     } else if(c.children().empty()) {
-                        if(c.value().type()==inlined_id) {
+                        if(is_live(c.value())&&c.value().type()==inlined_id) {
                             //scope.quals() << copy_as_token(c);
                             for(int q=0;q<c.scopes()[0].quals().length();q++) {
                                 scope.quals().push(c.scopes()[0].quals()[q]);
@@ -223,6 +223,36 @@ namespace Acorn {
                 }
             }
             return deadptr;
+        }
+
+
+        std::string TypeCol_to_html_table(TypeCol& t) {
+            list<list<std::string>> lines = TypeCol_to_lines(t);
+            std::string out = "<table style='border-collapse:collapse;font-family:system-ui;font-size:13px;'>";
+            
+            out += "<tr>";
+            for(auto& col : lines) {
+                out += "<th style='border:1px solid rgb(200,200,200);padding:6px 12px;background:rgb(240,240,240);'>";
+                out += col.empty() ? "" : col[0];
+                out += "</th>";
+            }
+            out += "</tr>";
+            
+            uint32_t max_rows = 0;
+            for(auto& col : lines) if(col.length() > max_rows) max_rows = col.length();
+            
+            for(int r = 1; r < max_rows; r++) {
+                out += "<tr>";
+                for(auto& col : lines) {
+                    out += "<td style='border:1px solid rgb(200,200,200);padding:6px 12px;'>";
+                    out += r < col.length() ? col[r] : "";
+                    out += "</td>";
+                }
+                out += "</tr>";
+            }
+            
+            out += "</table>";
+            return out;
         }
 
         map<std::string,uint32_t> routes;
@@ -293,6 +323,24 @@ namespace Acorn {
                         start_stage(x_handlers);
                     }
                 }
+            };
+
+            TypeCol t;
+            for(int i=0;i<5;i++) {
+                Col c;
+                c.element_size = 4;
+                c.tag = int_id;
+                for(int n=0;n<8;n++) {
+                    c.push((void*)&n);
+                }
+                t.push(c);
+            }
+            types.push(t);
+
+            x_handlers[make_tokenized_keyword("render_col")] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                int idx = *(int*)ctx.node().children()[0].value().get();
+                ctx.sub().source().push(TypeCol_to_html_table(types[idx]));
             };
 
             uint32_t display_node_id = make_tokenized_keyword("display_node");

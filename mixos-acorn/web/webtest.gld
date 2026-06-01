@@ -124,6 +124,14 @@
             ctx.source.append("</body></html>");
         }
     }
+
+    register sheet;
+    "sheet" {
+        in htmlemiting {
+            render_col(14);
+        }
+    }
+
 ##
 
 print("Compiling");

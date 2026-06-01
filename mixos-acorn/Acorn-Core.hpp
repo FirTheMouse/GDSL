@@ -512,6 +512,7 @@ namespace Acorn {
         inline T pop()                       {DEBUG_ONLY(if(safety_check("col_ptr:pop")){return T(deadptr);}) Ptr p; col().pop(&p); return T(p);}
         inline void push(T t)                {DEBUG_ONLY(if(safety_check("col_ptr:push")){return;}) Ptr p(t); col().push(&p);}
         inline void operator<<(T t)          {push(t);}
+        inline void insert( uint32_t idx, T t){DEBUG_ONLY(if(safety_check("col_ptr:insert")){return;}) Ptr p(t); col().insert(idx,&p);}
     
         inline bool hasKey(const std::string& key) {DEBUG_ONLY(if(safety_check("col_ptr:hasKey")){return false;}) return col().hasKey(key);}
         inline T get(const std::string& key) {DEBUG_ONLY(if(safety_check("col_ptr:get_key")){return T(deadptr);}) return T(*(Ptr*)col().get(key));}
@@ -810,6 +811,10 @@ namespace Acorn {
         col.qset(resolved_offset, (void*)&resolved,1);
 
         return n;
+    }
+
+    Node make_node(uint32_t type, std::string name, Value value, Ptr in_scope) {
+        return make_node(type,0,name,-1.0f,-1.0f,-1.0f,value,deadptr,deadptr,deadptr,deadptr,deadptr,deadptr,deadptr,in_scope);
     }
 
     void recycle_column(Ptr p) {
@@ -1256,17 +1261,11 @@ namespace Acorn {
                 }
             } else {
                 for(int r=0;r<col.length();r++) {
-                    std::string line = "";
-                    if(col.label=="type"||col.label=="sub_type") {
-                        if(col.label=="type"){dtypes << *(int*)col[r];} //Passing info down so values can print themselves out
-                        line+=labels[*(int*)col[r]];
-                    } else if(col.label=="stages") { //From the handler type
+                    std::string line = ""; //v turn this into a 'show key as string' tag eventually and replace this cruft
+                    if(col.label=="stages") { //From the handler type
                         std::string cell_label = ""; //col.get_cell_label(r);
                         if(!cell_label.empty()) line+=cell_label;
                         else line+="REIMPLMENT CELL KEYS LATER";
-                    } else if(!dtypes.empty()&&dtypes[r]!=0&&col.label=="data") {
-                        Ptr p = *(Ptr*)col[r];
-                        line+=Ptr_as_string(p)+"> "+tag_to_str(dtypes[r],resolve_ptr(p));
                     } else {
                         line+=tag_to_str(col.tag,col[r]);
                     }
@@ -1280,6 +1279,37 @@ namespace Acorn {
 
     std::string type_to_string(TypeCol& t) {
         return print_columnar_table(type_to_lines(t));
+    }
+
+
+    list<list<std::string>> TypeCol_to_lines(TypeCol& t) {
+        list<list<std::string>> lines;
+        for(int c=0;c<t.length();c++) {
+            Col& col = t[c];
+            list<std::string> subline;
+            subline << col.label.to_std();
+            if(col.heterogenous) {
+                if(layouts.hasKey(col.tag)) {
+                    _layout& l = layouts.get(col.tag);
+                    for(int o=0;o<l.offsets.length();o++) {
+                        std::string line = "";
+                        line+=pad_str(l.labels[o]+": ",12);
+                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
+                        subline << line;
+                    }
+                } else {
+                    print(red("core::TypeCol_to_lines unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
+                }
+            } else {
+                for(int r=0;r<col.length();r++) {
+                    std::string line = "";
+                    line+=tag_to_str(col.tag,col[r]);
+                    subline << line;
+                }
+            }
+            lines << subline;
+        }
+        return lines;
     }
 
     void print_column(Col& col) {
@@ -1994,50 +2024,6 @@ namespace Acorn {
     }
 
 
-    static void write_qcol(std::ostream& out, QCol& col) {
-        write_raw<uint32_t>(out, col.size);
-        out.write((const char*)col.storage, col.size);
-    }
-
-    static QCol read_qcol(std::istream& in) {
-        QCol col;
-        uint32_t size = read_raw<uint32_t>(in);
-        col.resize(size);
-        in.read((char*)col.storage, col.size);
-        return col;
-    }
-
-    static void write_ccol(std::ostream& out, CCol& col) {
-        write_qcol(out,col);
-        write_raw<uint32_t>(out, col.element_size);
-        write_raw<uint32_t>(out, col.tag);
-        write_raw<uint32_t>(out, col.hash);
-        write_raw<bool>(out, col.live);
-    }
-
-    static CCol read_ccol(std::istream& in) {
-        CCol col = read_qcol(in);
-        col.element_size = read_raw<uint32_t>(in);
-        col.tag = read_raw<uint32_t>(in);
-        col.hash = read_raw<uint32_t>(in);
-        col.live = read_raw<bool>(in);
-        return col;
-    }
-
-    static void write_col(std::ostream& out, Col& col) {
-        write_ccol(out,col);
-        write_raw<bool>(out, col.heterogenous);
-        write_qcol(out,col.cells);
-        write_qcol(out,col.label);
-    }
-
-    static Col read_col(std::istream& in) {
-        Col col = read_ccol(in);
-        col.heterogenous = read_raw<bool>(in);
-        col.cells = read_qcol(in);
-        col.label = read_qcol(in);
-        return col;
-    }
 
     static void write_TypeCol(std::ostream& out, TypeCol& type) {
         write_col(out, type);

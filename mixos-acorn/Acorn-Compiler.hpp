@@ -465,8 +465,8 @@ namespace Acorn {
                     Node id_term = children[1];
 
                     ctx.node().name(type_term.name().to_std()+c+id_term.name().to_std());
-                    
-                    if(type_term.type()==var_decl_id) {
+                    //May need to commit the decls as tokens, check the stamp later when it isn't almost midnight
+                    if(type_term.type()==var_decl_id||(is_live(type_term.value())&&type_term.value().sub_type()==type_term.type())) {
                         ctx.node().type(decl_id);
                         ctx.node().value(type_term.value());
                         ctx.node().name(id_term.name().to_std());
@@ -474,10 +474,7 @@ namespace Acorn {
                         ctx.node().value(distribute_value(ctx.node().in_scope(), ctx.node().name().to_std(), ctx.node().value()));
                         ctx.node().children().clear();
     
-                        // Node marker = make<Node>(); //Make a muted qual marker
-                        // marker->type = decl_id;
-                        // marker->mute = true;
-                        // ctx.node()->value->quals << marker;
+                        
                     }
                 } else if(children.length() == 1) {
                     Node type_term = children[0];
@@ -788,6 +785,7 @@ namespace Acorn {
         void resolve_identifier(Context& ctx) {
             Node node = ctx.node();
             Value decl_value = make_value();
+            bool found_a_value = find_value_in_scope(ctx.node());
             // if(is_live(node.value())) decl_value = node.value();
             // else decl_value = make_value();
             bool is_qualifier = is_live(node.value()) && node.value().type()!=0 && node.value().sub_type() != 0; 
@@ -862,7 +860,13 @@ namespace Acorn {
                         for(auto c : nname) {if(registered_opperators.getOrDefault(c,false)) {has_opp = true; break;}}
                         if(!has_opp) {nname=".\""+nname+"\"";} 
                         overload_type(node.in_scope().owner().value().type(),nname,method_call_id,node.value());
-                        //layouts[node.in_scope().owner().value().type()].add_prop(func_call_id,0,node.name().to_std(),node.value().type(),node.value().sub_type(),node.scopes()[0]);
+
+                        Node star = make_node(star_id);
+                        Node type_term = make_node(identifier_id,node.in_scope().owner().name().to_std(),deadptr,node.scopes()[0]);
+                        Node id_term = make_node(identifier_id,"this",deadptr,node.scopes()[0]);
+                        star.children().push(type_term);
+                        star.children().push(id_term);
+                        node.children().insert(0,star);
                     }
                     for(int c=0;c<node.children().length();c++) {
                         place_node_in_scope(node.children()[c],node.scopes()[0]);
@@ -874,6 +878,17 @@ namespace Acorn {
                     node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value()));
                     node.scopes()[0].type(type_scope_id);
                     add_template(node.value().type());
+                    r_handlers[to_prefix_id(node.value().type())] = [this](Context& ctx){
+                        if(ctx.value().size()==0&&layouts.hasKey(ctx.value().type())) {
+                            ctx.value().size(layouts.get(ctx.value().type()).total_size);
+                        }
+                    };
+                    x_handlers[to_prefix_id(node.value().type())] = [this](Context& ctx){
+                        if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                            ctx.value().data_col().push_default();
+                            ctx.value().data_col().heterogenous = true;
+                        }
+                    }; 
                 }
             } else {
                 has_scope = find_node_in_scope(node); //To distinquish func_calls from object identifiers
@@ -895,8 +910,31 @@ namespace Acorn {
                     //     node->name.append("(");
                     //     for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
                     // }
-                } else { //Must be a plain identifier
+                } else if(found_a_value) { //If we already had a value and nothing interesting happened to us, reclaim it
                     find_value_in_scope(node);
+                } else {                                   
+                    if(node.in_scope().value_table().hasKey("this")) { //The has check is so we don't inject this on the names of declared variables at the top
+                        bool children_has_node = false;
+                        for(int i=0;i<node.in_scope().children().length();i++){
+                            if(node.in_scope().children()==node) {children_has_node=true; break;}
+                        }
+
+                        if(node.in_scope().owner().type()==func_decl_id&&!children_has_node) { //These are arguments in the function decleration, the children_has_node check is becuase the args are in the scope of the decleration but not actually in it's children list
+
+                        } else {
+                            Node accessor = make_node(dot_id);
+                            place_node_in_scope(accessor,node.in_scope());
+                            Node star = make_node(star_id);
+                            Node this_node = make_node(identifier_id,"this",node.in_scope().value_table().get("this"),node.in_scope());
+                            star.children().push(this_node);
+                            accessor.children().push(star);
+                            accessor.children().push(node);
+                            ctx.result().removeAt(ctx.index()); ctx.result().insert(ctx.index(),accessor); 
+                            process_node(ctx,star); //Because this won't get processed again like the scope children do, it's up to us to resolve it here
+                        }
+                    } else {
+                        //No clue what this could be
+                    }
                 }
             }
         }
@@ -1076,7 +1114,11 @@ namespace Acorn {
                     memcpy(temp, types[dataptr.pool][dataptr.idx].get((uint32_t)0), elem_size);
                     if(types[dataptr.pool][dataptr.idx].length() <= loc) {
                         //These shouldn't be getting out of sync in the first place, in the future investigate this deeper
-                        while(types[dataptr.pool][dataptr.idx].length() <= loc) types[dataptr.pool][dataptr.idx].push(temp);
+                        int depth_check = 0;
+                        while(types[dataptr.pool][dataptr.idx].length() <= loc && depth_check++ < 100) types[dataptr.pool][dataptr.idx].push(temp);
+                        if(depth_check>=90) {
+                            print(red("Infinite loop in loc catchup on "+Ptr_as_string(dataptr)+": this shouldn't even be happening in the first place!"));
+                        }
                     } else {
                         types[dataptr.pool][dataptr.idx].set(loc, temp);
                     }
@@ -1273,7 +1315,8 @@ namespace Acorn {
 
                     DEBUG_ONLY(if(!is_live(lp)) {throw_error("left term of equals is invalid"); return;})
                     DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
-
+                    DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
+                    
                     if(types[lp.pool][lp.idx].heterogenous) {
                         types[lp.pool][lp.idx].qset(lp.sidx,types[rp.pool][rp.idx][rp.sidx],right.value().size());
                     } else {
@@ -1325,10 +1368,17 @@ namespace Acorn {
                     resolve_overload(ctx); //Going around a second time
                 } else if(ctx.node().type()==method_call_id) { //Turn into a function call
                     ctx.node().type(func_call_id);
+                    Node amp = make_node(to_unary_id(amp_id));
+                    amp.value(make_value(ptr_id,sizeof(Ptr)));
+                    Node match_this = make_node(identifier_id,"match_this",ctx.node().children()[0].value(),ctx.node().in_scope());
+                    amp.children().push(match_this);
+                    process_node(ctx,amp); //Resolve this
                     node_col args = ctx.node().children()[1].children();
                     ctx.node().children(args);
+                    ctx.node().children().insert(0,amp);
                     ctx.node().scopes().push(ctx.node().value().type_scope());
                     sync_args(ctx);
+                    ctx.node().value(ctx.node().value().type_scope().owner().value());
                 }
             };
             x_handlers[dot_id] = [this](Context& ctx){
@@ -1337,7 +1387,15 @@ namespace Acorn {
                 Node right = ctx.node().children()[1];
                 Value value = ctx.node().value();
                 if(right.type()==identifier_id) {
-                    Ptr ptr = *(Ptr*)left.value().get();
+                    Ptr ptr = deadptr;
+                    uint32_t rvt = left.value().type();
+                    if(rvt==ptr_id||rvt==node_id||rvt==value_id||rvt==context_id||rvt==string_id) {
+                        void* p = left.value().get();
+                        DEBUG_ONLY(if(ERROR_FLAG) {return;});
+                        ptr = *(Ptr*)p;
+                    } else {
+                        ptr = left.value().data_ptr();
+                    }
                     ptr.sidx = value.address();
                     if(!right.children().empty()) { //This is a bit jank, I would prefer to find a way to get = working instead
                         if(types[ptr.pool][ptr.idx].heterogenous) {
@@ -1346,11 +1404,11 @@ namespace Acorn {
                             types[ptr.pool][ptr.idx].set(ptr.sidx,(void*)&right.children()[0].value().data_ptr());
                         }
                     } else {
-                        if(ctx.root().type()==equals_id&&is_live(ctx.left())) {
-                            types[value.pool][value.idx].qset(value_data_offset,(void*)&ptr,sizeof(Ptr)); //Setting the data_ptr itself
-                        } else {
-                            value.set(types[ptr.pool][ptr.idx].get(ptr.sidx)); //Setting what the data_ptr points to
-                        }
+                        //if(is_assignment.getOrDefault(ctx.root().type(),false)&&is_live(ctx.left())) {
+                            value.data_ptr(ptr); //Setting the data pointer itself
+                        // } else {
+                        //     value.set(resolve_ptr(ptr)); //Setting what the data_ptr points to
+                        // }
                     }
                 }
             };

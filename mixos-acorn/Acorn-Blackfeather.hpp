@@ -68,6 +68,9 @@ namespace Acorn {
 
     void signal_handler(int signal) {
         print("\nRECIVED SIGNAL: ",signal);
+        if(ERROR_FLAG) {
+            std::abort();
+        }
         ERROR_FLAG = true;
         ERROR_MSG = "Console interrupt";
     }
@@ -262,14 +265,6 @@ namespace Acorn {
                 }
             }
             return out;
-        }
-
-        std::string dump_col(Col& col, std::function<std::string(Col&)> format) {
-            return format(col);
-        }
-
-        list<list<std::string>> dump_TypeTypeCol(TypeTypeCol& col) {
-            
         }
 
         struct Flipbook : q_object {

@@ -1,8 +1,2246 @@
 #pragma once
 
-#include "../core/Golden.hpp"
-#include "../mixos-acorn/util/Acorn-Type.hpp"
-#include "../ext/g_lib/core/q_object.hpp"
+#include <atomic>
+#include <chrono>
+#include <random>
+#include <functional>
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <sstream>
+#include <fstream>
+#include <initializer_list>
+#include <stdlib.h>
+#include <any>
+#include <sys/mman.h>
+template<typename... Args>
+void print(Args&&... args) {
+  (std::cout << ... << args) << std::endl;
+}
+
+template<typename... Args>
+void printnl(Args&&... args) {
+  (std::cout << ... << args);
+}
+
+
+static inline std::string lime(const std::string& text) {
+  return "\x1b[92m"+text+"\x1b[0m";
+}
+static inline std::string green(const std::string& text) {
+  return "\x1b[32m"+text+"\x1b[0m";
+}
+static inline std::string pine(const std::string& text) {
+  return "\x1b[2;32m"+text+"\x1b[0m";
+}
+static inline std::string yellow(const std::string& text) {
+  return "\x1b[33m"+text+"\x1b[0m";
+}
+static inline std::string red(const std::string& text) {
+  return "\x1b[31m"+text+"\x1b[0m";
+}
+static inline std::string blue(const std::string& text) {
+  return "\x1b[34m"+text+"\x1b[0m";
+}
+static inline std::string magenta(const std::string& text) {
+  return "\x1b[35m"+text+"\x1b[0m";
+}
+static inline std::string cyan(const std::string& text) {
+  return "\x1b[36m"+text+"\x1b[0m";
+}
+static inline std::string white(const std::string& text) {
+  return "\x1b[37m"+text+"\x1b[0m";
+}
+static inline std::string gray(const std::string& text) {
+  return "\x1b[90m"+text+"\x1b[0m";
+}
+
+static inline std::string bold_str(const std::string& text) {
+  return "\x1b[1m"+text+"\x1b[0m";
+}
+static inline std::string dim_str(const std::string& text) {
+  return "\x1b[2m"+text+"\x1b[0m";
+}
+static inline std::string underline_str(const std::string& text) {
+  return "\x1b[4m"+text+"\x1b[0m";
+}
+
+static inline std::string italic_str(const std::string& s) {
+  return "\033[3m" + s + "\033[23m";
+}
+
+
+static inline std::string rgb(const std::string& text, int r, int g, int b) {
+  return "\x1b[38;2;"+std::to_string(r)+";"+std::to_string(g)+";"+std::to_string(b)+"m"+text+"\x1b[0m";
+}
+static inline std::string bg(const std::string& text, int r, int g, int b) {
+  return "\x1b[48;2;"+std::to_string(r)+";"+std::to_string(g)+";"+std::to_string(b)+"m"+text+"\x1b[0m";
+}
+
+
+std::string to_bin(uint32_t n) {
+  std::string s = "";
+  for(int i = 31; i >= 0; i--) {
+      s += ((n >> i) & 1) ? '1' : '0';
+  }
+  return s;
+}
+
+std::string to_hex(uint32_t n) {
+  const char digits[] = "0123456789ABCDEF";
+  std::string s = "0x";
+  for(int i = 28; i >= 0; i -= 4) {
+      s += digits[(n >> i) & 0b1111];
+  }
+  return s;
+}
+
+static std::string ftime(double t) 
+{
+  if(t >= 100000000) {
+      return red(std::to_string(t/1000000000.0)+"s");
+  } else if(t >= 100000) {
+      return yellow(std::to_string(t/1000000.0)+"ms");
+  } else { 
+      return  green(std::to_string(t/1000.0)+"ns");
+  } 
+}
+
+namespace Log {
+  class Line {
+      public:
+      Line() {}
+  
+      ~Line() {}
+
+      std::string label_;
+      std::chrono::steady_clock::time_point start_;
+      double total_time_ = 0.0;
+
+      void start() {
+          start_ = std::chrono::steady_clock::now();
+      }
+
+    double time_ns() {
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_).count();
+        return (double)duration;
+    }
+
+    double time_s() {
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration<double>(end - start_).count();
+        return duration;
+    }
+
+      double end() {
+          auto end = std::chrono::steady_clock::now();
+          auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_).count();
+          total_time_ += duration;
+          return (double)duration;
+      }
+      
+  };
+}
+
+inline float randf(float min, float max)
+{
+    // One engine per thread; seeded once from real entropy.
+    static thread_local std::mt19937 rng{ std::random_device{}() };
+    std::uniform_real_distribution<float> dist(min, max);
+    return dist(rng);                  // [min, max) – max exclusive by default
+}
+
+inline int randi(int min, int max)
+{
+    static thread_local std::mt19937 rng{ std::random_device{}() };
+    std::uniform_int_distribution<int> dist(min, max); // inclusive both ends
+    return dist(rng);
+}
+
+inline void clamp(float& value, float min, float max) {
+  value = std::max(min,std::min(max,value));
+}
+
+
+
+#define DISABLE_BOUNDS_CHECK 1
+
+struct d_object {};
+
+
+template <typename T>
+class list : public d_object {
+protected:
+    T* ptr;
+    size_t size_;
+    size_t capacity_;
+public:
+    list() {
+        size_ = 0;
+        capacity_ = 0;
+        ptr = nullptr;
+    }
+
+    list(size_t cap) {
+        size_ = 0;
+        capacity_ = cap;
+        ptr = (capacity_ > 0) ? new T[capacity_] : nullptr;
+    }
+
+    list(size_t cap,T def) {
+        size_ = cap;
+        capacity_ = cap;
+        ptr = (capacity_ > 0) ? new T[capacity_] : nullptr;
+        for(int i = 0;i<cap;i++) {
+            ptr[i] = def;
+        }
+    }
+
+    list(std::initializer_list<T> values) {
+    size_ = 0;
+    capacity_ = values.size();
+    ptr = (capacity_ > 0) ? new T[capacity_] : nullptr;
+    for (const T& value : values) {
+        push(value);
+    }
+    }
+
+    list(list&& other) noexcept {
+        ptr = other.ptr;
+        size_ = other.size_;
+        capacity_ = other.capacity_;
+
+        other.ptr = nullptr;
+        other.size_ = 0;
+        other.capacity_ = 0;
+    }
+
+    list(const list& other) noexcept {
+        size_ = other.size_;
+        capacity_ = other.capacity_;
+
+        if (capacity_ > 0) {
+        ptr = new T[capacity_];
+        for (size_t i = 0; i < size_; ++i) {
+            ptr[i] = other.ptr[i];
+        }
+        } else {
+            ptr = nullptr;
+        }
+    }
+
+    list<T>& operator=(const list<T>& other) {
+    if (this != &other) {
+        destroy();
+        size_ = other.size_;
+        capacity_ = other.capacity_;
+        if (capacity_ > 0) {
+            ptr = new T[capacity_];
+            for (size_t i = 0; i < size_; ++i) {
+                ptr[i] = other.ptr[i];
+            }
+        } else {
+            ptr = nullptr;
+        }
+    }
+    return *this;
+    }
+
+    list<T>& operator=(list<T>&& other) noexcept {
+        if (this == &other) return *this; // self-assignment safety
+    
+        // Steal data
+        T* oldPtr = ptr;
+        ptr = other.ptr;
+        size_ = other.size_;
+        capacity_ = other.capacity_;
+    
+        // Reset the other
+        other.ptr = nullptr;
+        other.size_ = 0;
+        other.capacity_ = 0;
+    
+        // Only delete after stealing to avoid alias corruption
+        if (oldPtr) delete[] oldPtr;
+    
+        return *this;
+    }
+    
+
+    ~list() {
+        destroy();
+    }
+
+    inline size_t length() const {return size_;}
+    inline size_t size() const {return size_;}
+    inline size_t space() const { return capacity_; }
+    inline size_t capacity() const { return capacity_; }
+    inline bool empty() const {return length()==0;}
+    inline T& last() {return ptr[size_-1];}
+    inline T& first() {return ptr[0];}
+
+    //This implmentation is flawed, or at least, OpenGL doesn't play nice with it
+    T* data() noexcept { return ptr; }
+    const T* data() const noexcept { return ptr; }
+
+    inline T* begin() {return ptr;}
+    inline T* end() {return ptr+size_;}
+
+    inline T* begin() const {return ptr;}
+    inline T* end() const {return ptr+size_;}
+
+    void pushAll(const list<T>& input) {
+        for(int i = 0;i<input.size_;i++)
+        {
+            push(input[i]);
+        }
+    }
+
+    void insertAll(const list<T>& input, size_t index) {
+        for(int i = input.size_-1;i>=0;i--) {
+            insert(input[i],index);
+        }
+    }
+
+    // void printAll() const {
+    //     for(size_t i = 0;i<size;i++)
+    //     {
+    //         std::cout << ptr[i] << std::endl;
+    //     }
+    // }
+   
+    /// @brief Pushes all values of the input to this list
+    list<T>&  operator<<(const list<T>& input) {
+        for(size_t i = 0;i<input.size_;i++)
+        {
+            push(input.get(i));
+        }
+        return *this;
+    }
+
+    /// @brief Pushes all values of this list to the output
+    void operator>>(list<T>& output) {
+        for(size_t i = 0;i<size_;i++)
+        {
+            output.push(get(i));
+        }
+    }
+    
+    template <typename... Args>
+    void pushAll(Args... args) {
+        (push(args),...);
+    }
+
+    void destroy() {
+        if (ptr) {
+        delete[] ptr;
+        ptr = nullptr;
+        }
+        size_ = 0;
+        capacity_ = 0;
+    }
+
+    void clear() {
+        if constexpr (std::is_trivially_destructible_v<T>) {
+            size_ = 0;
+        } else {
+            for (size_t i = 0; i < size_; ++i) {
+                ptr[i].~T();
+            }
+            size_ = 0;
+        }
+    }
+
+    void merge(list<T>& input) {
+        for(size_t i = 0;i<input.size_;i++)
+        {
+            push(input.get(i));
+        }
+        input.destroy();
+    }
+
+    /// @brief Merges the input to this list, erasing the input
+    void operator<=(list<T>& input) {
+        for(size_t i = 0;i<input.size_;i++)
+        {
+            push(input.get(i));
+        }
+        input.destroy();
+    }
+
+ /// @brief Merges this list to the output, erasing it
+    void operator>=(list<T>& output) {
+        for(size_t i = 0;i<size_;i++)
+        {
+            output.push(get(i));
+        }
+        destroy();
+    }
+
+    void operator>=(list<T>&& output) {
+        for(size_t i = 0;i<size_;i++)
+        {
+            output.push(get(i));
+        }
+        destroy();
+    }
+    
+    template <typename Func>
+    void forEach(Func&& function)
+    {
+        for(size_t i=0;i<size_;i++)
+        {
+            function(ptr[i]);
+        }
+    }
+
+    template <typename Func>
+     /// @brief Executes a function on each of the items in the list
+    void operator()(Func&& function)
+    {
+        for(size_t i=0;i<size_;i++)
+        {
+            function(ptr[i]);
+        }
+    }
+
+    /// @brief Returns the index of a value in the list, similar to keylist, returns -1 if not found
+    int find(const T& v) {
+        for(int i=0;i<size_;i++) {
+            if(ptr[i] == v) return i;
+       }
+       return -1;
+    }
+
+    /// @brief Returns a single index matching the function! -1 if nothing is found
+    int find_if(std::function<bool(const T&)> pred) {
+        for (int i = 0; i < size_; ++i) {
+            if (pred(ptr[i])) return i;
+        }
+        return -1;
+    }
+
+    /// @brief Removes a single value from the list based on the function
+    void erase_if (std::function<bool(const T&)> pred) {
+        int f = find_if(pred);
+        if(f!=-1) {removeAt(f);}
+    }
+
+    /// @brief Removes a value from the list based on type rather than just index, uses find
+    void erase(const T& v) {
+        int f = find(v);
+        if(f!=-1) {removeAt(f);}
+    }
+
+
+    template<typename TT>
+    void insert(TT&& value,size_t index)
+    {
+        if (index > size_) {
+            if(index==0&&size_==0) {
+                push(value);
+                return;
+            } else {
+                throw std::out_of_range("list::insert::212 Insert index, "+std::to_string(index)+" out of size: "+std::to_string(size_));
+            }
+        }
+        push(value);
+        for (std::size_t i = size_ - 1; i > index; --i) {
+            ptr[i] = std::move(ptr[i - 1]);
+        }
+        ptr[index] = std::forward<TT>(value);
+    }
+
+    template<typename TT>
+    inline void push(TT&& value) {
+        if (size_ >= capacity_) 
+        {
+        capacity_ = capacity_ == 0 ? 4 : capacity_ * 2; 
+        T* newPtr = new T[capacity_];
+        for (size_t i = 0; i < size_; ++i) {
+             newPtr[i] = std::move(ptr[i]);
+        }
+        delete[] ptr;
+        ptr = newPtr;
+        }
+        new (&ptr[size_]) T(std::forward<TT>(value));
+        ++size_;
+    }
+
+    /// @brief a conditonal push that ensures the list does not already have an entry first
+    template<typename TT>
+    void push_if_absent(TT&& value) {
+        if(!has(value)) push(value);
+    }
+
+
+    void reserve(size_t new_capacity) {
+        if (new_capacity <= capacity_) return;
+        
+        T* newPtr = new T[new_capacity];
+        for (size_t i = 0; i < size_; ++i) {
+            newPtr[i] = std::move(ptr[i]);
+        }
+        
+        delete[] ptr;
+        ptr = newPtr;
+        capacity_ = new_capacity;
+    }
+
+    void resize(size_t new_size) {
+        if (new_size > capacity_) {
+            reserve(new_size);
+        }
+        size_ = new_size;
+    }
+
+    void shrink_to_fit() {
+        if (size_ == capacity_ || capacity_ == 0) return;
+        
+        if (size_ == 0) {
+            delete[] ptr;
+            ptr = nullptr;
+            capacity_ = 0;
+            return;
+        }
+        
+        T* newPtr = new T[size_];
+        for (size_t i = 0; i < size_; ++i) {
+            newPtr[i] = std::move(ptr[i]);
+        }
+        
+        delete[] ptr;
+        ptr = newPtr;
+        capacity_ = size_;
+    }
+
+    /// @brief Pushes a value to the list
+    /// @param value the value to be pushed
+    list<T>& operator<<(T value) {
+        push(value);
+        return *this;
+    }
+
+    T pop() {
+        if (size_ == 0) throw std::out_of_range("ERROR: List is empty");
+
+        T val = ptr[size_ - 1];
+        --size_;
+        return val;
+    }
+
+    void removeAt(size_t index) {
+        if (index >= size_) throw std::out_of_range("ERROR: Remove index out of bounds!");
+        for (size_t i = index; i + 1 < size_; ++i) {
+            ptr[i] = ptr[i + 1];
+        }
+        --size_;
+    }
+
+    T take(size_t index) {
+        T val = ptr[index];
+        removeAt(index);
+        return val;
+    }
+
+    // T& rand() {return }
+    
+    inline T& get(size_t index) {
+        #if !DISABLE_BOUNDS_CHECK
+        if(index >= size_) {
+            throw std::out_of_range("Util 265: List out of Bounds");
+        }
+        #endif
+        return ptr[index];
+    }
+
+    inline const T& get(size_t index) const {
+        if(index >= size_) {
+            throw std::out_of_range("Util 268: List out of Bounds");
+        }
+        return ptr[index];
+    }
+
+    inline T& get(size_t index,const std::string& from) {
+        if(index >= size_) {
+            throw std::out_of_range("Util 275: List out of Bounds from \n  "+from);
+        }
+        return ptr[index];
+    }
+
+    inline T& operator[](size_t index) {
+    #if !DISABLE_BOUNDS_CHECK
+    if(index >= size_) {
+        throw std::out_of_range("Util 265: List out of Bounds");
+    }
+    #endif
+      return ptr[index];
+    }
+
+    inline const T& operator[](size_t index) const {
+    #if !DISABLE_BOUNDS_CHECK
+        if(index >= size_) {
+            throw std::out_of_range("Util 268: List out of Bounds");
+        }
+    #endif
+        return ptr[index];
+    }
+
+    inline T& rand() {
+        return ptr[randi(0,size_-1)];
+    }
+
+    inline T& rand() const {
+        return ptr[randi(0,size_-1)];
+    }
+
+
+    inline void shuffle() {
+        for(int i = size_ - 1; i > 0; i--) {
+            int j = randi(0, i);
+            T& temp = ptr[i];
+            ptr[i] = ptr[j];
+            ptr[j] = temp;
+        }
+    }
+
+    //This is crude and temporary
+    inline void sort(std::function<bool(T,T)> func) {
+        std::vector<T> temp_vec;
+        for(int i=0;i<size_;i++) {
+            temp_vec.push_back(ptr[i]);
+        }
+        std::sort(temp_vec.begin(), temp_vec.end(), func);
+        clear();
+        for(int i=0;i<temp_vec.size();i++) {
+            push(temp_vec[i]);
+        }
+    }
+    
+    inline void reverse() {
+        T* left = ptr;
+        T* right = ptr + size_;
+        
+        if (left >= right) return;
+        --right;
+        
+        while (left < right) {
+            std::swap(*left++, *right--);
+        }
+    }
+
+    inline void swap(size_t from, size_t to) {
+        std::swap(ptr[from], ptr[to]);
+    }
+
+    template<typename TT>
+    /// @brief Compares two lists and returns true if they are equivalent.
+    bool operator==(list<TT>& other) {
+        if(other.size_!=size_) return false;
+        for(size_t i=0;i<size_;i++)
+        {
+           if(other[i]!=ptr[i]) return false;
+        }
+        return true;
+    }
+
+    template<typename TT>
+    /// @brief Compares two lists and returns true if they are equivalent.
+    bool operator==(const list<TT>& other) const {
+        if(other.size_!=size_) return false;
+        for(size_t i=0;i<size_;i++)
+        {
+           if(other[i]!=ptr[i]) return false;
+        }
+        return true;
+    }
+
+    template<typename TT>
+    /// @brief Compares two lists and returns false if they are equivalent.
+    bool operator!=(list<TT>& other) {
+        return !(*this == other);
+    }
+
+    /// @brief Returns if the list contains an instance of a given value
+    bool has(T search) const {
+        for(size_t i=0;i<size_;i++)
+        {
+            if(ptr[i]==search) return true;
+        }
+        return false;
+    }
+
+};
+template <typename T>
+list(std::initializer_list<T>) -> list<T>;
+
+
+
+    // template<typename... Args>
+    // void emplace(Args&&... args) {
+    //     if (size >= capacity) {
+    //         capacity = capacity == 0 ? 4 : capacity * 2;
+    //         T* newPtr = new T[capacity];
+    //         for (size_t i = 0; i < size; ++i) {
+    //             newPtr[i] = std::move(ptr[i]);
+    //         }
+    //         delete[] ptr;
+    //         ptr = newPtr;
+    //     }
+    //     ptr[size++] = T(std::forward<Args>(args)...); // Constructs in-place
+    // }
+
+
+class q_object {
+    protected:
+        mutable std::atomic<int> refCount{0};
+        std::atomic<bool> tombstone{true};
+    
+    public:
+        q_object() {}
+        virtual ~q_object() {}
+        // Explicitly delete copy operations
+        q_object(const q_object&) = delete;
+        q_object& operator=(const q_object&) = delete;
+
+        // Properly implement move operations
+        q_object(q_object&& other) noexcept 
+            : refCount(other.refCount.load()), tombstone(other.tombstone.load()) {
+            // Reset the moved-from object
+            other.refCount.store(0);
+            other.tombstone.store(false);
+        }
+
+        q_object& operator=(q_object&& other) noexcept {
+            if (this != &other) {
+                refCount.store(other.refCount.load());
+                tombstone.store(other.tombstone.load());
+                // Reset the moved-from object
+                other.refCount.store(0);
+                other.tombstone.store(false);
+            }
+            return *this;
+        }
+
+        void stop() {tombstone.store(false);}
+        void resurrect() {tombstone.store(true);}
+        bool isActive() {return tombstone.load();}
+    
+        void retain() { ++refCount; }
+        virtual void release() {
+            if (refCount.fetch_sub(1) == 1) {
+                delete this;
+            }
+        }
+
+        int getRefCount() const {
+            return refCount.load();
+        }
+    };
+    
+    template<typename T>
+    class g_ptr {
+        //static_assert(std::is_base_of<Object, T>::value, "T must inherit from Object");
+    
+        T* ptr = nullptr;
+    
+    public:
+        g_ptr() = default;
+    
+        g_ptr(T* raw) : ptr(raw) {
+            if (ptr) ptr->retain();
+        }
+    
+        g_ptr(const g_ptr<T>& other) : ptr(other.ptr) {
+            if (ptr) ptr->retain();
+        }
+    
+        g_ptr(g_ptr<T>&& other) noexcept : ptr(other.ptr) {
+            other.ptr = nullptr;
+        }
+    
+        ~g_ptr() {
+            if (ptr) ptr->release();
+        }
+    
+        g_ptr<T>& operator=(const g_ptr<T>& other) {
+            if (this != &other) {
+                if (ptr) ptr->release();
+                ptr = other.ptr;
+                if (ptr) ptr->retain();
+            }
+            return *this;
+        }
+    
+        g_ptr<T>& operator=(g_ptr<T>&& other) noexcept {
+            if (this != &other) {
+                if (ptr) ptr->release();
+                ptr = other.ptr;
+                other.ptr = nullptr;
+            }
+            return *this;
+        }
+    
+        T* operator->() const { return ptr; }
+        T& operator*() const { return *ptr; }
+        T* getPtr() const { return ptr; }
+
+        friend bool operator==(const g_ptr<T>& lhs, const g_ptr<T>& rhs) {
+            return lhs.ptr == rhs.ptr;
+        }
+        
+        friend bool operator!=(const g_ptr<T>& lhs, const g_ptr<T>& rhs) {
+            return lhs.ptr != rhs.ptr;
+        }
+
+        explicit operator bool() const { return ptr != nullptr; }
+
+        template<typename U>
+        operator g_ptr<U>() const {
+            static_assert(std::is_base_of<U, T>::value, "Can only convert to base types");
+            return g_ptr<U>(ptr);
+        }
+
+    };
+    
+    template<typename T, typename... Args>
+    g_ptr<T> make(Args&&... args) {
+        static_assert(std::is_base_of<q_object, T>::value, "make<T>: T must derive from Object");
+        T* obj = new T(std::forward<Args>(args)...);
+        return g_ptr(obj);
+    }
+
+    template<typename T, typename U>
+    g_ptr<T> g_dynamic_pointer_cast(const g_ptr<U>& from) {
+        static_assert(std::is_base_of<q_object, U>::value, "U must inherit from Object");
+        static_assert(std::is_base_of<q_object, T>::value, "T must inherit from Object");
+        
+        if (!from) return g_ptr<T>(nullptr);
+        
+        T* casted = dynamic_cast<T*>(from.getPtr());
+        if (casted) {
+            return g_ptr<T>(casted);
+        } else {
+            return g_ptr<T>(nullptr);
+        }
+   }
+
+   template<typename T, typename U>
+   g_ptr<T> as(const g_ptr<U>& from) {
+        return g_dynamic_pointer_cast<T>(from);
+   }
+
+
+
+
+template<typename K,typename V>
+struct entry
+{
+    K key;
+    V value;
+    entry() = default;
+    entry(const K& k, const V& v) : key(k), value(v) {}
+    entry(K&& k, V&& v) : key(std::move(k)), value(std::move(v)) {}
+    entry(const entry& other) = default;
+    entry(entry&& other) noexcept = default;
+    entry& operator=(const entry& other) = default;
+    entry& operator=(entry&& other) noexcept = default;
+};
+
+
+template<typename K,typename V>
+class keylist : public list<entry<K,V>>
+{
+private:
+
+public:
+    using base = list<entry<K, V>>;
+
+    //Add more control here in the future, with conventions for const and such and r/l
+    template<typename KK, typename VV>
+    void put(KK&& key, VV&& value) {
+        *this << entry<K,V>(std::forward<KK>(key), std::forward<VV>(value));
+    }
+
+    template<typename EE>
+    void put(EE&& e) {
+        *this << std::forward<EE>(e);
+    }
+
+    V& get(const K& key){
+       for(entry<K,V>& e : *this){
+            if(e.key == key) return e.value;
+       }
+       //This is so that ASAN can trace the error origin 
+    //    std::vector<int> ints;
+    //    ints.push_back(1);
+    //    volatile int b = ints[3];
+       throw std::runtime_error("map::43 key not found ");
+    }
+
+    list<V> getAll(const K& key){
+        list<V> l;
+        for(entry<K,V>& e : *this){
+             if(e.key == key) l << e.value;
+        }
+        return l;
+     }
+
+    list<V> allValues() {
+        list<V> l;
+        for(entry<K,V>& e : *this){
+             l << e.value;
+        }
+        return l;
+     }
+
+    template<typename VV>
+    V& getOrDefault(const K& key,VV&& fallback){
+       for(entry<K,V>& e : *this){
+            if(e.key == key) return e.value;
+       }
+       return fallback;
+    }
+
+    bool hasKey(const K& key){
+       for(entry<K,V>& e : *this){
+            if(e.key == key) return true;
+       }
+       return false;
+    }
+
+    list<K> keySet() {  
+        list<K> result;
+        for(entry<K,V>& e : *this) result << e.key;
+        return result;
+    }
+
+    list<entry<K,V>> entrySet() {
+        list<entry<K,V>> result;
+        for(entry<K,V>& e : *this) {
+            result << e;
+        }
+        return result;
+    }
+    
+    template<typename KK, typename VV>
+    bool set(KK& key, VV&& value){
+       for(entry<K,V>& e : *this){
+            if(e.key == key) {
+             e = entry<K,V>(std::forward<KK>(key), std::forward<VV>(value));
+             return true;
+            }
+       }
+       return false;
+    }
+
+    // V& operator[](const K& key) {
+    // return get(key);
+    // }
+
+     bool has(const K& key){
+       for(entry<K,V>& e : *this){
+            if(e.key == key) return true;
+       }
+       return false;
+    }
+
+    bool remove(const K& key) {
+    for (size_t i = 0; i < this->length(); ++i) {
+        if (this->base::operator[](i).key == key) {
+            this->removeAt(i);
+            return true;
+        }
+    }
+    return false;
+    }
+};
+
+static inline uint32_t hashString(const std::string& str) {
+    uint32_t hash = 5381;
+    for (char c : str) {
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    }
+    return hash;
+}
+
+static inline uint32_t mix32(uint64_t x) {
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return (uint32_t)x;
+}
+
+template<typename K,typename V>
+class map
+{
+private:
+   list<keylist<K,V>> buckets;
+   size_t size_;
+   size_t capacity;
+public:
+    map()
+    {
+        size_ = 0;
+        capacity = 8;
+        for(int i=0;i<capacity;i++)
+        {
+            buckets.push(keylist<K,V>());
+        }
+    }
+
+    size_t size() {return size_;}
+
+
+    uint32_t mix96(uint32_t a, uint32_t b, uint32_t c) {
+        uint64_t combined = ((uint64_t)a << 32) | b;
+        return mix32(combined) ^ mix32((uint64_t)c);
+    }
+
+    template<typename T>
+    uint32_t hashT(const T& val)
+    {
+        if constexpr (std::is_same_v<T,std::string>) {
+            return hashString(val);
+        }
+        else if constexpr (std::is_same_v<T,const char*>) {
+            return hashString(string(val));
+        }
+        else if constexpr (std::is_array_v<T> && std::is_same_v<std::remove_extent_t<T>, char>) {
+            return hashString(string(val));
+        }
+        else if constexpr (std::is_same_v<T,int>) {
+            return val;
+        } else if constexpr (std::is_pointer_v<T>) {
+            auto addr = (std::uintptr_t)val;
+            addr >>= 3; 
+            return mix32((uint64_t)addr);
+        } else if constexpr (sizeof(T)==12) {
+            const uint32_t* parts = reinterpret_cast<const uint32_t*>(&val);
+            return mix96(parts[0], parts[1], parts[2]);
+        } else if constexpr (sizeof(T)==8) {
+            return mix32((uint64_t)val);
+        }
+        else {
+            return val;
+        }
+    };
+
+    template<class U>
+    uint32_t hashT(const g_ptr<U>& p)
+    {
+        return hashT(p.getPtr());
+    }
+
+    void put(const K& key,V value)
+    {
+        if(size_>=(capacity*2))
+        {
+            capacity = capacity*2;
+            list<keylist<K,V>> newBuckets(capacity);
+            for(int i=0;i<capacity;i++)
+            {   
+                newBuckets.push(keylist<K,V>());
+            }
+            for(keylist<K,V>& old : buckets)
+            {
+                // for(const auto& e : old.entrySet()) {
+                //     newBuckets[(hashT(e.key)%capacity)].put(e.key,e.value);
+                // }
+                //For some reason the lambda is faster in testing
+                old([&](const entry<K,V>& e){newBuckets[(hashT(e.key)%capacity)].put(e.key,e.value);});
+            }
+            buckets = std::move(newBuckets);
+
+        }
+        buckets[hashT(key)%capacity].put(key,value);
+        size_++;
+    }
+    
+
+    bool set(const K& key,V value) {
+        return buckets.get(hashT(key)%capacity).set(key,value);
+    }
+
+    // keylist<K, V> b = buckets[hashT(key)%capacity];
+    // if(b.hasKey(key)) return b.get(key);
+    // else {throw}
+    V& get(const K& key)
+    {
+       return buckets.get(hashT(key)%capacity).get(key);
+    }
+
+    keylist<K, V>& getBucket(const K& key) {
+        return buckets.get(hashT(key)%capacity);
+    }
+    
+
+    //Returns all values in the map
+    list<V> getAll(){
+        list<V> l;
+        for(auto b : buckets) {
+            for(auto v : b.allValues()) {
+                l << v; }
+        }
+        return l;
+     }
+
+     //Reuturns all values associated with a key
+     list<V> getAll(const K& key){
+       return buckets.get(hashT(key)%capacity,"map::getAll::210").getAll(key);
+     }
+
+
+
+    template<typename VV>
+    V& getOrDefault(const K& key,VV&& fallback)
+    {
+       return buckets[hashT(key)%capacity].getOrDefault(key,fallback);
+    }
+
+    bool hasKey(const K& key)
+    {
+       return buckets.get(hashT(key)%capacity).hasKey(key);
+    }
+
+    V& getOrPut(const K& key,const V& fallback) {
+        if(!hasKey(key)) {
+            put(key,fallback);
+        }
+        return get(key);
+    }
+
+    V& getOr(const K& key,std::function<V()> func) {
+        if(!hasKey(key)) {
+            put(key,func());
+        }
+        return get(key);
+    }
+
+    V& operator[](const K& key) {
+        return getOrPut(key,V());
+    }
+
+    list<K> keySet() {  
+        list<K> result;
+        for(keylist<K,V>& e : buckets) e.keySet()>=result;
+        return result;
+    }
+
+    list<entry<K,V>> entrySet() {
+        list<entry<K,V>> result;
+        for(const keylist<K,V>& e : buckets){
+            for(int i=0;i<e.length();i++){
+                result << e[i];
+            }
+        } 
+        return result;
+    }
+
+    // list<entry<K,V>> entrySet() {
+    //     list<entry<K,V>> result;
+    //     for(int bucket_idx = 0; bucket_idx < buckets.length(); bucket_idx++) {
+    //         keylist<K,V>& bucket = buckets[bucket_idx];
+    //         for(int i = 0; i < bucket.length(); i++){
+    //             result << bucket[i];
+    //         }
+    //     } 
+    //     return result;
+    // }
+
+    void clear()
+    {
+        buckets([](keylist<K,V> keyl){keyl.base::destroy();});
+        buckets.destroy();
+        size_=0;
+        capacity = 8;
+        for(int i=0;i<capacity;i++)
+        {
+            buckets.push(keylist<K,V>());
+        }
+    }
+
+    bool remove(const K& key) {
+        int hash = (hashT(key)%capacity);
+        if(hash<buckets.length())
+            return buckets.get(hash).remove(key);
+        else
+            return false;
+    }
+
+    void debugMap() {
+        buckets([](keylist<K,V> keyl){keyl([](entry<K,V> e){std::cout << e.key << std::endl;});});
+    }
+};
+inline list<std::string> split_str(const std::string& s,char delimiter)
+{
+    list<std::string> toReturn;
+    int last = 0;
+    for(int i=0;i<s.length();i++)
+    {
+        if(s.at(i)==delimiter) {
+            toReturn << s.substr(last,i-last);
+            last = i+1;
+        }
+    }
+    if(last<s.length())
+    {
+        toReturn << s.substr(last,s.length()-last);
+    }
+    return toReturn;
+}
+
+class Data{
+public:
+    Data() {}
+
+    map<std::string,std::any> notes;
+
+    template<typename T = std::string>
+    void add(const std::string& label,T info)
+    {
+        notes.put(label,std::any(info));
+    }
+
+    template<typename T = std::string>
+    T get(const std::string& label)
+    {
+        #if !DISABLE_BOUNDS_CHECK
+            if(!has(label)) std::cerr << "Data does not have label " << label <<"\n";
+        #endif
+        return std::any_cast<T>(notes.get(label));
+    }
+
+    bool has(const std::string& label)
+    {
+        return notes.hasKey(label);
+    }
+
+    bool check(const std::string& label)
+    {
+        if(!has(label)) return false;
+        try {
+            return get<bool>(label);
+        }
+        catch(std::exception e)
+        {
+            print("data::check::59 Attempted to check a non-bool in data");
+            //Or just return false?
+            return false;
+        }
+    }
+
+    bool toggle(const std::string& label) {
+        if(!has(label)) set<bool>(label,true);
+        bool toReturn = !get<bool>(label);
+        set<bool>(label,toReturn);
+        return toReturn;
+    }
+
+    void flagOn(const std::string& label) {set<bool>(label,true);}
+    void flagOff(const std::string& label) {set<bool>(label,false);}
+
+    template<typename T>
+    void set(const std::string& label,T info) {
+        if(!notes.set(label,info))
+            add<T>(label,info);
+    }
+
+    template<typename T = int>
+    T inc(const std::string& label,T by)
+    {
+        if(has(label)) {set<T>(label,get<T>(label)+by);}
+        else {add<T>(label,by);}
+        return get<T>(label);
+    }
+
+    void debugData() {
+        notes.debugMap();
+    }
+    
+    /// @brief Scans through based on provided list, returns all missing labels
+    list<std::string> validate(list<std::string> toCheck)
+    {
+        list<std::string> toReturn;
+        for(auto s : toCheck) if(!has(s)) toReturn << s;
+        return toReturn;
+    }
+};
+
+inline std::string readFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file) throw std::runtime_error("Could not open file: " + filename);
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
+  }
+  
+  inline void writeFile(const std::string& filename, const std::string& contents) {
+    std::ofstream file(filename, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!file) throw std::runtime_error("Could not open file for writing: " + filename);
+  
+    file.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+    if (!file) throw std::runtime_error("Failed while writing file: " + filename);
+  }
+  
+  inline void editTextFile(  const std::string& filename, const std::function<void(std::string&)>& editor) {
+    std::string text = readFile(filename);
+    editor(text);
+    writeFile(filename, text);
+  }
+
+inline std::ifstream openReadStream(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if(!in) throw std::runtime_error("Can't read from file: " + path);
+    return std::move(in);
+}
+
+inline std::ofstream openWriteStream(const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    if(!out) throw std::runtime_error("Can't write to file: " + path);
+    return std::move(out);
+}
+
+
+  template<typename T>
+  inline void write_raw(std::ostream& out, const T& val) {
+      out.write(reinterpret_cast<const char*>(&val), sizeof(T));
+  }
+
+  inline void write_string(std::ostream& out, const std::string& s) {
+      uint32_t len = s.length();
+      write_raw(out, len);
+      out.write(s.data(), len);
+  }
+
+  template<typename T>
+  inline T read_raw(std::istream& in) {
+      T val;
+      in.read(reinterpret_cast<char*>(&val), sizeof(T));
+      return val;
+  }
+
+  inline std::string read_string(std::istream& in) {
+      uint32_t len = read_raw<uint32_t>(in);
+      std::string s(len, '\0');
+      in.read(s.data(), len);
+      return s;
+  }
+
+
+
+
+
+class Type;
+
+class Object : virtual public q_object {    
+    public:
+        uint32_t sidx = 0;
+        std::atomic<bool> recycled{false};
+        Type* type_ = nullptr;
+
+        Object() {
+
+        }
+        virtual ~Object() {}
+
+        Object(Object&& other) noexcept 
+        : q_object(std::move(other)) {}
+
+        Object& operator=(Object&& other) noexcept {
+            if (this != &other) {
+                q_object::operator=(std::move(other));
+            }
+            return *this;
+        }
+    };
+
+
+
+
+inline std::string add_commas(int num) {
+    std::string str = std::to_string(num);
+    int insert_position = str.length() - 3;
+    
+    while(insert_position > 0) {
+        str.insert(insert_position, ",");
+        insert_position -= 3;
+    }
+    
+    return str;
+  }
+  
+  inline void indent_multiline(std::string& str, const std::string& pad) {
+    size_t pos = 0;
+    while((pos = str.find('\n', pos)) != std::string::npos) {
+        str.replace(pos, 1, "\n" + pad);
+        pos += pad.length() + 1;
+    }
+  }
+
+    inline void strip_whitespace(std::string& s) {
+        s.erase(std::remove_if(s.begin(), s.end(), [](char c) {
+            return c == ' ' || c == '\n' || c == '\r' || c == '\t';
+        }), s.end());
+    }
+  
+  inline std::string wrap_str(const std::string& s,const std::string& c) {
+    return c+s+c;
+  }
+  
+  inline std::string trim_str(const std::string& s,const char c) {
+    if (s.size() >= 2 && s.front() == c && s.back() == c)
+        return s.substr(1, s.size() - 2);
+    return s; 
+  }
+
+
+    std::string pad_str(const std::string& s, uint32_t width) {
+        std::string to_return = s;
+        while(width>to_return.length()) to_return+=" ";
+        return to_return;
+    }
+
+    std::string center_pad(const std::string& s, uint32_t width) {
+        if(s.length() >= width) return s;
+        uint32_t total_pad = width - s.length();
+        uint32_t left_pad = total_pad / 2;
+        uint32_t right_pad = total_pad - left_pad;
+        return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
+    }
+    std::string center_pad_known(const std::string& s, uint32_t s_visible_len, uint32_t width) {
+        if(s_visible_len >= width) return s;
+        uint32_t total_pad = width - s_visible_len;
+        uint32_t left_pad = total_pad / 2;
+        uint32_t right_pad = total_pad - left_pad;
+        return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
+    }
+
+    uint32_t digit_count(uint32_t n) {
+        if(n == 0) return 1;
+        uint32_t digits = 0;
+        while(n > 0) { n /= 10; digits++; }
+        return digits;
+    }
+
+    bool is_str_num(const std::string& tocheck) {for(auto c : tocheck) {if(!std::isdigit(c)) return false;} return true;}
+
+    std::string escape_string(const std::string& content, bool compact_spaces = true) {
+        std::string escaped;
+        int space_count = 0;
+        for(char c : content) {
+            if(compact_spaces) {
+                if(c == ' ') {
+                    if(space_count==1) {escaped.pop_back(); escaped += "..."; space_count++; continue;}
+                    else if(space_count>1) {continue;}
+                    else {space_count++;}
+                } else {
+                    space_count = 0;
+                }
+            }
+            switch(c) {
+                case '\n': escaped += "\\n"; break;
+                case '\t': escaped += "\\t"; break;
+                case '\r': escaped += "\\r"; break;
+                //case '"':  escaped += "\\\""; break;
+                case '\\': escaped += "\\\\"; break;
+                default:   escaped += c; break;
+            }
+        }
+        return escaped;
+    }
+  
+namespace sgen {
+    struct namebase {
+        namebase() {}
+        explicit namebase(const list<list<std::string>>& _opts) : opts(_opts) {}
+        explicit namebase(const std::string& seed) {
+            list<std::string> lines = split_str(seed,',');
+            for(const auto& l : lines) {
+                opts << split_str(l,'|');
+            }
+        }
+        list<list<std::string>> opts;
+    };
+
+    const namebase STANDARD("Ja|Be|Ma|Cer|Le,ck|de|ly|th|ch|un|el");
+    const namebase TRUE_RANDOM("a|A|b|B|c|C|d|D|e|E|f|F|g|G|h|H|i|I|j|J|k|K|l|L|m|M|n|N|o|O|p|P|q|Q|r|R|s|S|t|T|u|U|v|V|w|W|x|X|y|Y|z|Z|0|1|2|3|4|5|6|7|8|9|_|+|-|*|/|=|<|>|!|&|^|.|,|:|;|(|)|[|]|{|}|\"|#|@|~|`|\\");
+    const namebase RANDOM(
+        "A|a|B|b|C|c|D|d|E|e|F|f|G|g|H|h|I|i|J|j|K|k|L|l|M|m|N|n|O|o|P|p|Q|q|R|r|S|s|T|t|U|u|V|v|W|w|Y|y|X|x|Z|z,"
+        "A|a|B|b|C|c|D|d|E|e|F|f|G|g|H|h|I|i|J|j|K|k|L|l|M|m|N|n|O|o|P|p|Q|q|R|r|S|s|T|t|U|u|V|v|W|w|Y|y|X|x|Z|z,"
+        "A|a|B|b|C|c|D|d|E|e|F|f|G|g|H|h|I|i|J|j|K|k|L|l|M|m|N|n|O|o|P|p|Q|q|R|r|S|s|T|t|U|u|V|v|W|w|Y|y|X|x|Z|z,"
+        "A|a|B|b|C|c|D|d|E|e|F|f|G|g|H|h|I|i|J|j|K|k|L|l|M|m|N|n|O|o|P|p|Q|q|R|r|S|s|T|t|U|u|V|v|W|w|Y|y|X|x|Z|z");
+    const namebase AVAL_WEST_TAMOR_FIRST(
+        "Bu|Ahm|He|Ol|Mo|In|Bir|Ba|Tu," 
+        "|||||||||||||||||||ha|ck|a|ch," 
+        "el|ba|ak|ael|he|med");
+
+    const namebase AVAL_CENTRAL_FIRST_MALE(
+        "Al|Ed|Da|Ro|Wil|Tho|Hen|Mar|Reg|Cla|Luc|Aug,"  
+        "||||||||||||an|ar|er|or|ald|ric|vid|lan|den|bert|tor|mon,"
+        "us|d|n|rt|mer|son|ard|ton|las|ius|mond|iel");
+
+    const namebase AVAL_WESTERN_FIRST_MALE(
+        "Jo|Al|Con|Se|Sok|Va|Wel|Eg," 
+        "|||||||||rgo|ra|ell|ber,"
+        "der|us|ard|rk|on|th|n|l|vid");
+
+    const namebase AVAL_CENTRAL_FIRST_FEMALE(
+        "My|Al|Se|Ma|Eg|Cha|Sha|Tha," 
+        "|||||ri|ex|il,"
+        "|||na|der|ra|us|da|na|et");
+    const namebase AVAL_CENTRAL_LAST(
+        "Copper|Silver|Iron|Wood|High|Low|Swift|Old|New|Red|White|Black|Green|Blue|Yellow," 
+        "paw|tail|fang|talon|wing|feather|river|hill|heart|claw|hall");
+
+    inline std::string randsgen(const namebase& g) {
+        std::string result;
+        for(const auto& s : g.opts) 
+            result.append(s.rand());
+        return result;
+    }
+    
+    inline std::string randsgen(const std::string& line) {
+        list<std::string> lines = split_str(line,',');
+        std::string result;
+        for(const auto& l : lines) {
+            list<std::string> sub = split_str(l,'|');
+            std::string app = sub.rand();
+            result.append(app);
+        }
+        return result;
+    }
+}
+
+inline std::string rands() {
+    return sgen::randsgen(sgen::TRUE_RANDOM);
+}
+
+
+namespace Log {
+
+// Provides the time it takes for a function to run, not avereged over iterations
+inline double time_function(int ITERATIONS,std::function<void(int)> process) {
+    auto start = std::chrono::high_resolution_clock::now();
+    for(int i=0;i<ITERATIONS;i++) {
+        process(i);
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    return (double)time.count();
+}
+
+struct Comparison_ {
+    Comparison_() {}
+    Comparison_(int a, int b, int c, int d) : a_table(a), a_row(b), b_table(c), b_row(d) {}
+    int a_table, a_row;
+    int b_table, b_row;
+};
+
+
+inline void run_rig(list<list<std::function<void(int)>>> f_table,list<list<std::string>> s_table,list<Comparison_> comps,bool warm_up,int PROCESS_ITERATIONS,int C_ITS) {
+    list<list<double>> t_table;
+
+    for(int c=0;c<f_table.length();c++) {
+        t_table.push(list<double>{});
+        for(int r=0;r<f_table[c].length();r++) {
+            t_table[c].push(0.0);
+        }
+    }
+
+    for(int m = 0;m<(warm_up?2:1);m++) {
+        int C_ITERATIONS = m==0?warm_up?1:C_ITS:C_ITS;
+
+        for(int c=0;c<t_table.length();c++) {
+            for(int r=0;r<t_table[c].length();r++) {
+                t_table[c][r]=0.0;
+            }
+        }
+
+        for(int i = 0;i<C_ITERATIONS;i++)
+        {
+            for(int c=0;c<f_table.length();c++) {
+                for(int r=0;r<f_table[c].length();r++) {
+                    // if(r==0) print("Running: ",s_table[c][r]);
+                    double time = time_function(PROCESS_ITERATIONS,f_table[c][r]);
+                    t_table[c][r]+=time;
+                }
+            }
+        }
+        if(warm_up) {
+        print("-------------------------");
+        print(m==0 ? "      ==COLD==" : "       ==WARM==");
+        }
+        print("-------------------------");
+        for(int c=0;c<t_table.length();c++) {
+            for(int r=0;r<t_table[c].length();r++) {
+                t_table[c][r]/=C_ITERATIONS;
+                print(s_table[c][r],": ",t_table[c][r]," ns (",t_table[c][r] / PROCESS_ITERATIONS," ns per operation)");
+            }
+            print("-------------------------");
+        }
+        for(auto v : comps) {
+            double factor = t_table[v.a_table][v.a_row]/t_table[v.b_table][v.b_row];
+            std::string sfs;
+            double tolerance = 5.0;
+            if (std::abs(factor - 1.0) < tolerance/100.0) {
+                sfs = "around the same as ";
+            } else if (factor > 1.0) {
+                double percentage = (factor - 1.0) * 100.0;
+                sfs = std::to_string(percentage) + "% slower than ";
+            } else {
+                double percentage = (1.0/factor - 1.0) * 100.0;
+                sfs = std::to_string(percentage) + "% faster than ";
+            }
+            print("Factor [",s_table[v.a_table][v.a_row],"/",s_table[v.b_table][v.b_row],
+            "]: ",factor," (",s_table[v.a_table][v.a_row]," is ",sfs,s_table[v.b_table][v.b_row],")");
+        }
+        print("-------------------------");
+
+    }
+}
+
+// A helper for using the benchmarking tools to reduce boilerplate
+struct rig {
+private:
+
+    list<list<std::function<void(int)>>> f_table;
+    list<list<std::string>> s_table;
+    list<Comparison_> comps;
+    map<std::string,std::pair<int,int>> processes;
+public:
+    //Adds another table, tables are isolated test blocks
+    void add_table() {
+        f_table << list<std::function<void(int)>>{};
+        s_table << list<std::string>{};
+    }
+
+    /// @brief Add a process to run
+    /// @param process_name Name of the process, used for lookup and display when run
+    /// @param process The function to time and run, the int argument is the process iteration, assuming PROCESS_ITERATIONS is not 1
+    /// @param table Default value is 0, this can be used to split processes into distinct blocks when run
+    void add_process(const std::string& process_name,std::function<void(int)> process,int table = 0) {
+        while(f_table.length() <= table) add_table();
+        processes.put(process_name,std::make_pair(table,f_table.get(table).length()));
+        s_table.get(table) << process_name;
+        f_table.get(table) << process;
+    }
+
+    /// @brief Add a comparison to be printed
+    /// @param a Process to compare against
+    /// @param b Process to compare to a
+    void add_comparison(const std::string& a,const std::string& b) {
+        try {
+            std::pair<int,int> ap = processes.get(a);
+            std::pair<int,int> bp = processes.get(b);
+            comps << Comparison_(ap.first,ap.second,bp.first,bp.second);
+        } catch(std::exception e) {
+            if(!processes.hasKey(a)) {
+                print("rig::110 Unable to add comparison to rig: ",a," was never added as a process");
+            }
+            if(!processes.hasKey(b)) {
+                print("rig::110 Unable to add comparison to rig: ",b," was never added as a process");
+            }
+        }
+    }
+
+    /// @brief Run the rig and print out the results of the benchmark
+    /// @param C_ITS How many iterations of the processes there should be, this contributes to the averege
+    /// @param warm_up Whether or not to do a cold run to warm up the cache
+    /// @param PROCESS_ITERATIONS How many times each process should run, not part of the averege
+    void run(int C_ITS,bool warm_up = false,int PROCESS_ITERATIONS = 1) {
+        run_rig(f_table,s_table,comps,warm_up,PROCESS_ITERATIONS,C_ITS);
+    }
+};
+
+
+struct SeqLine : public q_object
+{
+    SeqLine() {};
+    SeqLine(const std::string _label, bool _is_log) {
+        label = _label;
+        is_log = _is_log;
+        Log::Line new_timer; new_timer.start();
+        timer = new_timer;
+    }
+
+    Log::Line timer;
+    std::string label = "";
+    SeqLine* parent = nullptr;
+    list<g_ptr<SeqLine>> children;
+    bool is_log = true;
+
+    std::string get_indent() {
+        if(!parent) return "";
+        int depth = 0;
+        SeqLine* cursor = this;
+        while(cursor->parent) { depth++; cursor = cursor->parent; }
+        std::string indent(depth * 3, ' ');
+        return indent;
+    }
+
+    std::string to_string() {
+        std::string indent = get_indent();
+        std::string to_return = "";
+        if(is_log) {
+            to_return.append(indent+label+"\n");
+        } else {
+            to_return.append(indent+label+" [time: " + ftime(timer.total_time_)+"]\n");
+            for(auto& child : children) {
+                to_return.append(child->to_string());
+            }
+        }
+        return to_return;
+    }
+};
+
+class Span : public Object
+{
+public:
+    Span() {line_root = make<SeqLine>("Root",false);};
+
+    map<std::string, Log::Line> timers;
+    map<std::string, int> counters;
+    bool print_on_line_end = false;
+    bool log_everything = false;
+
+    void start_timer(const std::string &label) {
+        if (timers.hasKey(label)) {
+            Log::Line &timer = timers.get(label);
+            timer.start();
+        } else {
+            Log::Line timer;
+            timer.start();
+            timers.put(label, timer);
+        }
+    }
+
+    double end_timer(const std::string &label) {
+        if (timers.hasKey(label)) {
+            Log::Line &timer = timers.get(label);
+            return timer.end();
+        }
+        return 0.0;
+    }
+    double get_time(const std::string &label) {
+        if (timers.hasKey(label)) {return timers.get(label).total_time_;}
+        else {return -1.0;}
+    }
+    inline std::string timer_string(const std::string &label) {return label + ": " + ftime(get_time(label));}
+    void print_timers() {for (auto label : timers.keySet()) {print(timer_string(label));}}
+
+    inline void increment(const std::string &label, int by = 1) {counters.getOrPut(label, 0) += by;}
+    inline int get_count(const std::string &label) {return counters.getOrDefault(label, 0);}
+    void print_counters() {for (auto label : counters.keySet())  { print(label, ": ", get_count(label)); }}
+
+    g_ptr<SeqLine> line_root = nullptr;
+    g_ptr<SeqLine> on_line = nullptr;
+
+    g_ptr<SeqLine> get_last_line() {
+        if(on_line) return on_line;
+        else return line_root;
+    }
+
+    void add_line(const std::string& label) {
+        g_ptr<SeqLine> parent = get_last_line();
+        parent->children << make<SeqLine>(label,false);
+        parent->children.last()->parent = parent.getPtr();
+        on_line = parent->children.last();
+
+        if(log_everything)
+            print(label);
+    }
+
+    double end_line() 
+    {
+        double time = 0.0;
+        if(!on_line) return time;
+        time = on_line->timer.end();
+        if(print_on_line_end)
+            std::cout << on_line->to_string() << std::flush;
+        if(on_line->parent) {
+            on_line = on_line->parent;
+        }
+        return time;
+    }
+
+    template<typename... Args>
+    void log(Args&&... args) {
+        std::ostringstream oss;
+        (oss << ... << args);
+        if(log_everything)
+            std::cout << oss.str() << std::endl;
+        std::string indent = get_last_line()->get_indent();
+        indent += "  > "; //Extra space to distinquish from header
+        std::string msg = indent+oss.str();
+        indent_multiline(msg,indent);
+        g_ptr<SeqLine> new_log = make<SeqLine>(msg,true);
+        get_last_line()->children << new_log;
+    }
+
+    void print_all() {
+        line_root->timer.end();
+        print(line_root->to_string());
+    }
+
+    void newline(const std::string& label) {
+        add_line(label);
+    }
+
+    double endline() {
+        return end_line();
+    }
+};
+
+}
+
+
+
+    
+//Controls for the compiler printing, for debugging
+#define PRINT_ALL 1
+
+g_ptr<Log::Span> span = nullptr;
+static inline void newline(const std::string& label) {
+    #if PRINT_ALL
+    if(!span) span = make<Log::Span>();
+    span->add_line(label);
+    #endif
+}
+static inline double endline() {
+    #if PRINT_ALL
+    return span->end_line();
+    #else
+    return 0;
+    #endif
+}
+
+template<typename... Args>
+static inline void log(Args&&... args) {
+    #if PRINT_ALL
+    if(!span) span = make<Log::Span>();
+    span->log(std::forward<Args>(args)...);
+    #endif
+}
+
+std::string ptr_to_string(uint64_t addr) {
+    uint64_t varied = addr >> 4;
+    
+    const char* profiles[] = {"CGOQD", "IHLTFE", "AVWXZK", "BPRSM"};
+    int prof = varied & 0x3;
+    
+    const char* group = profiles[prof];
+    int letter_idx = (varied >> 2) % strlen(group);
+    char letter = group[letter_idx];
+    
+    uint64_t tiebreaker = (varied >> 6) & 0xFFF;
+    std::string tbstr = std::to_string(tiebreaker);
+    std::reverse(tbstr.begin(), tbstr.end());
+    
+    return std::string({letter}) + "-" + tbstr + "-" + letter;
+}
+
+std::string ptr_to_string(void* ptr) {
+    return ptr_to_string((uint64_t)ptr);
+}
+
+struct IdPool {
+    list<int> ids;
+    int top = 0;
+    
+    void init(list<int> available) {
+        ids = available;
+        top = available.length();
+    }
+    
+    int alloc() {
+        if(top == 0) return -1;
+        return ids[--top];
+    }
+    
+    void free(int id) {
+        if(id != -1) 
+            ids[top++] = id;
+    }
+};
+
+
+
+
+
+
+
+
+#define ACORN_DEBUG 1
+
+namespace Acorn {
+
+    bool ERROR_FLAG = false;
+    std::string ERROR_MSG = "";
+
+    template<typename... Args>
+    void throw_error(Args&&... args) {
+        std::ostringstream oss;
+        (oss << ... << args);
+        ERROR_MSG = oss.str();
+        ERROR_FLAG = true;
+        print(red("ERROR: "),ERROR_MSG);
+    }
+
+    #if ACORN_DEBUG
+        #define DEBUG_ONLY(x) x
+    #else
+        #define DEBUG_ONLY(x)
+    #endif
+
+    uint32_t hashBytes(const void* data, uint32_t size) {
+        uint32_t hash = 5381;
+        const uint8_t* bytes = (const uint8_t*)data;
+        for(uint32_t i = 0; i < size; i++) {
+            hash = ((hash << 5) + hash) + bytes[i];
+        }
+        return hash;
+    }
+
+    struct Ptr {
+        Ptr() {}
+        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
+        uint32_t pool = 0; //Pool it's at
+        uint32_t idx = 0; //Column
+        uint32_t sidx = 0; //Row
+
+        inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
+        inline bool operator!=(const Ptr& other) const {return !(*this == other);}
+    };
+
+    struct Ptr4 {
+        Ptr4() {}
+        Ptr4(uint32_t _midx, Ptr p) : midx(_midx), ptr(p) {}
+        uint32_t midx = 0;
+        Ptr ptr;
+    };
+
+    static const Ptr deadptr = {0,0,0};
+    static Ptr dead_ref = {0,0,0};
+
+    struct QCol {
+        QCol() {}
+        uint8_t* storage = nullptr;
+        uint32_t size = 0;
+        uint32_t capacity = 0;
+        
+        inline bool empty() {return size==0;}
+        void reserve(uint32_t new_capacity) {
+            if(new_capacity <= capacity) return;
+            
+            uint8_t* newPtr = new uint8_t[new_capacity];
+            if(storage) memcpy(newPtr, storage, size);
+            delete[] storage;
+            storage = newPtr;
+            capacity = new_capacity;
+        }
+        void resize(uint32_t new_size) {
+            if (new_size > capacity) {
+                reserve(new_size);
+            }
+            size = new_size;
+        }
+        void push(const void* element, uint32_t width) {
+            uint32_t old_size = size;
+            uint32_t new_size = size+width;
+            if(new_size>=capacity) {
+                reserve(new_size*2);
+            }
+            memcpy(&storage[old_size], element, width);
+            size = new_size;
+        }
+        void push_default(uint32_t width) {
+            size_t old_size = size;
+            resize(old_size + width);
+            memset(&storage[old_size], 0, width);
+        }
+        void insert(uint32_t index, const void* element, uint32_t width) {
+            uint32_t byte_pos = index * width;
+            uint32_t new_size = size + width;
+            if(new_size >= capacity) reserve(new_size * 2);
+            memmove(&storage[byte_pos + width], &storage[byte_pos], size - byte_pos);
+            memcpy(&storage[byte_pos], element, width);
+            size = new_size;
+        }
+        inline void* qget(uint32_t offset) {
+            DEBUG_ONLY(if(offset>=size) {throw_error(red("col:qget "),"offset ",offset," out of bounds for size ",size);return nullptr;})
+            return &storage[offset];
+        }
+        inline void* operator[](uint32_t index) {return qget(index);}
+        inline void qset(uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[offset], element, width);}
+        void removeAt(uint32_t index, uint32_t width) {
+            size_t byte_start = index * width;
+            for(size_t i = byte_start; i < size - width; i++) {
+                storage[i] = storage[i + width];
+            }
+            resize(size - width);
+        }
+        void clear() {size = 0;}
+        void pop(void* out, uint32_t width) {
+            memcpy(out, qget((size/width - 1) * width), width);
+            resize(size - width);
+        }
+    };
+
+    struct QString : QCol {
+        QString() {}
+        QString(QCol q) : QCol(q) {}
+        char& at(uint32_t idx) {return *(char*)qget(idx);}
+        char& operator[](uint32_t idx) {return *(char*)qget(idx);}
+        void push(char c) {QCol::push((void*)&c,1);}
+        uint32_t length() {return size;}
+
+        void operator=(const std::string& s) {clear(); for(char c : s) push(c);}
+        void operator=(const char* s) {clear(); while(*s) push(*s++);}
+        bool operator==(const std::string& s) {
+            if(size != s.length()) return false;
+            return memcmp(storage, s.data(), size) == 0;
+        }
+        bool operator==(const char* s) {
+            uint32_t len = strlen(s);
+            if(size != len) return false;
+            return memcmp(storage, s, size) == 0;
+        }
+        std::string to_std() {
+            if(!storage) return "";
+            return std::string((char*)storage, size);
+        }
+    };
+    std::ostream& operator<<(std::ostream& os, QString& s) {
+        if(s.storage) os.write((const char*)s.storage, s.size);
+        return os;
+    }
+
+
+    struct CCol : QCol {
+        CCol() {}
+        CCol(uint32_t _size) : element_size(_size) {}
+        CCol(QCol q) : QCol(q) {}
+        uint32_t element_size = 1;
+        uint32_t tag = 0;
+        uint32_t hash = 0;
+        uint32_t index = 0;
+        bool live = true;
+
+        inline uint32_t length() {return size / element_size;}
+        void push(const void* element) {
+            QCol::push(element,element_size);
+        }
+        void operator<<(const void* element) {push(element);}
+        void push_default() {QCol::push_default(element_size);}
+        void insert(uint32_t index, const void* element) {
+            QCol::insert(index, element, element_size);
+        }
+        
+        inline void* sget(uint32_t index) {
+            DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
+            return &storage[index * element_size];
+        }
+        inline void* iget(uint32_t index, uint32_t offset) {
+            DEBUG_ONLY(if(index*element_size+offset>=size) {throw_error(red("col:iget "),"index ",index," plus offset ",offset," out of bounds for size ",size);return nullptr;})
+            return &storage[index * element_size + offset];
+        }
+        inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
+        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
+        void removeAt(uint32_t index) {QCol::removeAt(index,element_size);}
+        void pop(void* out) {QCol::pop(out,element_size);}
+    };
+
+    struct QCellCol : QCol {
+        QCellCol() {}
+        QCellCol(QCol q) : QCol(q) {}
+        CCol& get(uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
+        CCol& operator[](uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
+        void push(CCol c) {QCol::push((void*)&c,sizeof(CCol));}
+        uint32_t length() {return size/sizeof(CCol);}
+    };
+
+    struct Col : CCol {
+        Col() {}
+        Col(uint32_t _size) :  CCol(_size) {}
+        Col(CCol q) : CCol(q) {}
+        bool heterogenous = false;
+        QString label;
+        QCellCol cells;
+        
+        inline void* get(uint32_t index) {
+            if(heterogenous) {
+                return qget(index);
+            } else {
+                return sget(index);
+            }
+        }
+        inline void* operator[](uint32_t index) {return get(index);}
+        inline void* last() {return get(size-1);}
+
+        void qput(const void* element, const void* key, uint32_t key_size, uint32_t key_tag) {
+            CCol c;
+            c.element_size = key_size; 
+            c.tag = key_tag;
+            c.hash = hashBytes(key, key_size);
+            c.index = length();
+            c.push(key);
+            push(element);
+            cells.push(c);
+        }
+        void* get(const void* key, uint32_t size) {
+            uint32_t h = hashBytes(key, size);
+            for(int i = 0; i < cells.length(); i++) {
+                CCol& c = cells[i];
+                if(c.hash == h) {
+                    if(memcmp(c.storage, key, size) == 0) { //Collison check against the stored key
+                        return sget(c.index);
+                    }
+                }
+            }
+            return nullptr;
+        }
+        uint32_t getidx(const void* key, uint32_t size) {
+            uint32_t h = hashBytes(key, size);
+            for(int i = 0; i < cells.length(); i++) {
+                CCol& c = cells[i];
+                if(c.hash == h) {
+                    if(memcmp(c.storage, key, size) == 0) { //Collison check against the stored key
+                        return c.index;
+                    }
+                }
+            }
+            return 0;
+        }
+        bool hasKey(const void* key, uint32_t size) {
+            uint32_t h = hashBytes(key, size);
+            for(int i = 0; i < cells.length(); i++) {
+                CCol& c = cells[i];
+                if(c.hash == h && memcmp(c.storage, key, size) == 0) return true;
+            }
+            return false;
+        }
+
+        void put(const std::string& str, const void* element, uint32_t tag = 0) {qput(element,str.data(),str.length(),tag);}
+        void* get(const std::string& str) {return get(str.data(), str.length());}
+        bool hasKey(const std::string& str) {return hasKey(str.data(), str.length());}
+        void put(uint64_t u64, const void* element, uint32_t tag = 0) {qput(element,(void*)&u64,8,tag);}
+        void* get(uint64_t u64) {return get((void*)&u64, 8);}
+        bool hasKey(uint64_t u64) {return hasKey((void*)&u64, 8);}
+        void put(Ptr p, const void* element, uint32_t tag = 0) {qput(element, (void*)&p, sizeof(Ptr), tag);}
+        void* get(Ptr p) {return get((void*)&p, sizeof(Ptr));}
+        bool hasKey(Ptr p) {return hasKey((void*)&p, sizeof(Ptr));}
+    };
+
+    //Convience for ergonomic white/blacklist things
+    struct _lookup {
+        _lookup(list<std::string> init, bool _default_state) 
+        : default_state(_default_state)  {
+            for(auto s : init) {
+                lookup[s] = !default_state;
+            }
+        }
+
+        map<std::string,bool> lookup;
+        bool default_state;
+
+        bool operator[](const std::string& key) {
+            return lookup.getOrDefault(key,default_state);
+        }
+    };
+
+    uint32_t add_column(Col& col, size_t size = 0, uint32_t tag = 0) {
+        Col ncol(size);
+        ncol.tag = tag;
+        col.push((void*)&ncol);
+        return col.length()-1;
+    }
+    
+    uint32_t note_value(Col& col, const std::string& key, uint32_t size, uint32_t tag) {
+        uint32_t at = add_column(col, size, tag);
+        (*(Col*)col.sget(at)).label = key;
+        return at;
+    }
+
+    //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
+    uint32_t create_column(Col& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
+        if(use_pooling) {
+            for(int i=0;i<col.length();i++) {
+                Col& ncol = *(Col*)col.sget(i);
+                if(!ncol.live&&ncol.element_size==size&&(!tag_sensitive||ncol.tag==tag)) {
+                    ncol.clear();
+                    ncol.live = true;
+                    return i;
+                }
+            }
+        }
+        add_column(col,size,tag);
+        return col.length()-1;
+    }
+    //Creates a column from pool and intilizes it's memory if empty
+    uint32_t push_column(Col& col, uint32_t size, uint32_t tag) {
+        uint32_t at = create_column(col,size,tag);
+        Col& ncol = *(Col*)col.sget(at);
+        if(ncol.size<size) {
+            ncol.resize(size);
+        }
+        return at;
+    }
+    void recycle_column(Col& col, uint32_t id) {
+       (*(Col*)col.sget(id)).live = false;
+    }
+
+
+
+    static void write_qcol(std::ostream& out, QCol& col) {
+        write_raw<uint32_t>(out, col.size);
+        out.write((const char*)col.storage, col.size);
+    }
+
+    static QCol read_qcol(std::istream& in) {
+        QCol col;
+        uint32_t size = read_raw<uint32_t>(in);
+        col.resize(size);
+        in.read((char*)col.storage, col.size);
+        return col;
+    }
+
+    static void write_ccol(std::ostream& out, CCol& col) {
+        write_qcol(out,col);
+        write_raw<uint32_t>(out, col.element_size);
+        write_raw<uint32_t>(out, col.tag);
+        write_raw<uint32_t>(out, col.hash);
+        write_raw<bool>(out, col.live);
+    }
+
+    static CCol read_ccol(std::istream& in) {
+        CCol col = read_qcol(in);
+        col.element_size = read_raw<uint32_t>(in);
+        col.tag = read_raw<uint32_t>(in);
+        col.hash = read_raw<uint32_t>(in);
+        col.live = read_raw<bool>(in);
+        return col;
+    }
+
+    static void write_col(std::ostream& out, Col& col) {
+        write_ccol(out,col);
+        write_raw<bool>(out, col.heterogenous);
+        write_qcol(out,col.cells);
+        write_qcol(out,col.label);
+    }
+
+    static Col read_col(std::istream& in) {
+        Col col = read_ccol(in);
+        col.heterogenous = read_raw<bool>(in);
+        col.cells = read_qcol(in);
+        col.label = read_qcol(in);
+        return col;
+    }
+}
+
 
 namespace Acorn {   
     static int _ctx_dummy_index = 0;
@@ -196,6 +2434,41 @@ namespace Acorn {
     };
     map<uint32_t,_layout> layouts;
 
+    void make_wrapper_for_layout(_layout& l, const std::string& name,  const std::string& output_path) {
+        std::string s = "";
+        std::string pad = "     ";
+        s+="struct "+name+" : Ptr {\n";
+        s += pad+name+"() {}\n";
+        s += pad+name+"(uint32_t p, uint32_t i, uint32_t s) { pool = p; idx = i; sidx = s; }\n";
+        s += pad+name+"(Ptr p) { pool = p.pool; idx = p.idx; sidx = p.sidx; }\n";
+        for(int i=0;i<l.offsets.length();i++) {
+            s+="\n";
+            std::string type = labels[l.tags[i]];
+            std::string label = l.labels[i];
+            uint32_t offset = l.offsets[i];
+            uint32_t size = l.sizes[i];
+
+            bool is_compound = layouts.hasKey(l.tags[i]);
+            bool is_ptr = l.tags[i]==ptr_id;
+
+            if(is_ptr) {
+                s += pad+pad_str("inline "+pad_str("Ptr&",12)+" "+label+"_ptr()",32)+"{return *(Ptr*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
+                s += pad+pad_str("inline "+pad_str("Col&",12)+" "+label+"_col()",32)+"{return  resolve_to_col("+label+"_ptr());}\n";
+                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"(Ptr p)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&p, "+std::to_string(size)+"); }\n";
+            } else if(is_compound) {
+                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return {pool, idx, sidx+"+std::to_string(offset)+"}; }\n";
+                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", types[t.pool][t.idx].qget(t.sidx), "+std::to_string(size)+"); }\n";
+            } else {
+                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return *("+type+"*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
+                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&t, "+std::to_string(size)+"); }\n";
+            }
+        }
+        s+="};";
+        editTextFile(output_path,[s](std::string& source){
+            source += (source.empty()?"":"\n\n")+s;
+        });
+    }
+
     bool is_live(Ptr p) {return (p.pool!=0||p.idx!=0)&&p.pool<types.length();}
 
     uint32_t undefined_id = 0;
@@ -280,39 +2553,6 @@ namespace Acorn {
 
     size_t tombstone_col = 0; 
     size_t refs_col = 0;
-
-    std::string make_wrapper_for_layout(_layout& l, const std::string& name) {
-        std::string s = "";
-        std::string pad = "     ";
-        s+="struct "+name+" : Ptr {\n";
-        s += pad+name+"() {}\n";
-        s += pad+name+"(uint32_t p, uint32_t i, uint32_t s) { pool = p; idx = i; sidx = s; }\n";
-        s += pad+name+"(Ptr p) { pool = p.pool; idx = p.idx; sidx = p.sidx; }\n";
-        for(int i=0;i<l.offsets.length();i++) {
-            s+="\n";
-            std::string type = labels[l.tags[i]];
-            std::string label = l.labels[i];
-            uint32_t offset = l.offsets[i];
-            uint32_t size = l.sizes[i];
-
-            bool is_compound = layouts.hasKey(l.tags[i]);
-            bool is_ptr = l.tags[i]==ptr_id||l.tags[i]==string_id;
-
-            if(is_ptr) {
-                s += pad+pad_str("inline "+pad_str("Ptr&",12)+" "+label+"_ptr()",32)+"{return *(Ptr*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
-                s += pad+pad_str("inline "+pad_str("Col&",12)+" "+label+"_col()",32)+"{return resolve_to_col("+label+"_ptr());}\n";
-                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"(Ptr p)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&p, "+std::to_string(size)+"); }\n";
-            } else if(is_compound) {
-                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return {pool, idx, sidx+"+std::to_string(offset)+"}; }\n";
-                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", types[t.pool][t.idx].qget(t.sidx), "+std::to_string(size)+"); }\n";
-            } else {
-                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return *("+type+"*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
-                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&t, "+std::to_string(size)+"); }\n";
-            }
-        }
-        s+="};";
-        return s;
-    }
 
     Ptr add_layout_to_col(uint32_t type) {
         Ptr p = {layout_type_id,note_value(types[layout_type_id],labels[type]+" Offsets",4,int_id),0};

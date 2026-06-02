@@ -67,6 +67,12 @@ namespace Acorn {
                         ctx.value().type_scope(ctx.qual().value().type_scope());
                 }
             };
+            // r_handlers[to_prefix_id(type)] = [](Context& ctx){
+            //     if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+            //         ctx.value().type(ctx.qual().value().type());
+            //         ctx.value().size(ctx.qual().value().size());
+            //     }
+            // };
         }
 
         Value make_type_value(const std::string& f, size_t size = 0) {
@@ -102,11 +108,6 @@ namespace Acorn {
             keywords.put(name,keywords.get(labels[type]));
         }
 
-        uint32_t add_function(const std::string& f, uint32_t return_type = 0) {
-            Value val = register_value(f,0,return_type);
-            keywords.put(f,val);
-            return val.sub_type();
-        }
 
 
         map<std::string,uint32_t> tokenized_keywords;
@@ -468,7 +469,9 @@ namespace Acorn {
                     //May need to commit the decls as tokens, check the stamp later when it isn't almost midnight
                     if(type_term.type()==var_decl_id||(is_live(type_term.value())&&type_term.value().sub_type()==type_term.type())) {
                         ctx.node().type(decl_id);
-                        ctx.node().value(type_term.value());
+                        ctx.node().value(make_value());
+                        ctx.node().value().copy(type_term.value(),true);
+                        ctx.node().value().quals().push(value_to_qual(type_term.value()));
                         ctx.node().name(id_term.name().to_std());
                         ctx.node().value().sub_type(0);
                         ctx.node().value(distribute_value(ctx.node().in_scope(), ctx.node().name().to_std(), ctx.node().value()));
@@ -482,7 +485,7 @@ namespace Acorn {
                     ctx.node().type(unary_id);
                     if(is_live(type_term.value())) {
                         if(!is_live(ctx.node().value())) ctx.node().value(make_value());
-                        ctx.node().value().copy(type_term.value(),false);
+                        ctx.node().value().copy(type_term.value(),true);
                     }
                 } 
             };
@@ -896,7 +899,7 @@ namespace Acorn {
                     node.type(var_decl_id);
                     if(node.in_scope().type()==type_scope_id) {
                         node.in_scope().value_table().put(node.name().to_std(), decl_value); //So we don't distribute into function bodies, we need to alias later via this, as it's per instance
-                        layouts[node.in_scope().owner().value().type()].add_prop(node.value().type(),node.value().size(),node.name().to_std());
+                        layouts[node.in_scope().owner().value().type()].add_prop(node.value().type(),node.value().size(),node.name().to_std(),0,0,decl_value);
                     } else {
                         node.value(distribute_value(node.in_scope(), node.name().to_std(), decl_value));
                     }
@@ -920,17 +923,31 @@ namespace Acorn {
                         }
 
                         if(node.in_scope().owner().type()==func_decl_id&&!children_has_node) { //These are arguments in the function decleration, the children_has_node check is becuase the args are in the scope of the decleration but not actually in it's children list
-
+                            
                         } else {
-                            Node accessor = make_node(dot_id);
-                            place_node_in_scope(accessor,node.in_scope());
-                            Node star = make_node(star_id);
-                            Node this_node = make_node(identifier_id,"this",node.in_scope().value_table().get("this"),node.in_scope());
-                            star.children().push(this_node);
-                            accessor.children().push(star);
-                            accessor.children().push(node);
-                            ctx.result().removeAt(ctx.index()); ctx.result().insert(ctx.index(),accessor); 
-                            process_node(ctx,star); //Because this won't get processed again like the scope children do, it's up to us to resolve it here
+                            Node climb = node;
+                            while(is_live(climb)&&climb.type()!=func_decl_id) { 
+                                climb = climb.in_scope().owner();
+                            }
+                            if(is_live(climb)&&climb.type()==func_decl_id) { //Checking if this is a member of the method or not
+                                if(climb.in_scope().value_table().hasKey(node.name().to_std())) {
+                                    //node.value().copy(climb.in_scope().value_table().get(node.name().to_std()),true);
+
+                                    Node accessor = make_node(dot_id);
+                                    place_node_in_scope(accessor,node.in_scope());
+                                    Node star = make_node(star_id);
+                                    Node this_node = make_node(identifier_id,"this",node.in_scope().value_table().get("this"),node.in_scope());
+                                    star.children().push(this_node);
+                                    accessor.children().push(star);
+                                    accessor.children().push(node);
+                                    ctx.result().removeAt(ctx.index()); ctx.result().insert(ctx.index(),accessor); 
+                                    process_node(ctx,star); //Because this won't get processed again like the scope children do, it's up to us to resolve it here
+                                } else {
+                                    //Just a plain identifer, not a member
+                                }
+                            } else {
+                               //It isn't in a method, something gave it this as a glitch probably
+                            }
                         }
                     } else {
                         //No clue what this could be
@@ -1048,10 +1065,19 @@ namespace Acorn {
                             if((value.type()!=0)) {
                                 ctx.root().value(make_value(value.type(),value.size(),value.address(),value.sub_type(),value.sub_size(),value.type_scope()));
                             } else {
+                                if(ctx.node().value().sub_type()==0) {
+                                    fire_quals(ctx,ctx.node().value());
+                                } 
+
                                 ctx.root().value(make_value(
                                     ctx.node().value().sub_type(),
                                     ctx.node().value().sub_size()
                                 ));
+                                if(ctx.node().value().quals().length()>1) {
+                                    for(int i=1;i<ctx.node().value().quals().length();i++) {
+                                        ctx.root().value().quals() << ctx.node().value().quals()[i];
+                                    }
+                                }
                             }
                         }
                     }
@@ -1203,7 +1229,31 @@ namespace Acorn {
             }
         }
 
-        uint32_t print_id = add_function("print");
+
+
+        uint32_t add_function(const std::string& f, Handler x_handler, uint32_t size = 0, uint32_t return_type = 0) {
+            Value val = register_value(f,size,return_type);
+            keywords.put(f,val);
+            uint32_t id = val.sub_type();
+            if(return_type!=0) {
+                r_handlers[id] = [this](Context& ctx) {
+                    standard_sub_process(ctx);
+                    resolve_overload(ctx);
+                };
+            }
+            x_handlers[id] = x_handler;
+            return id;
+        }
+
+        uint32_t print_id = add_function("print",[this](Context& ctx){ 
+            std::string to_print = "";
+            for(int i=0;i<ctx.node().children().length();i++) {
+                Node c = ctx.node().children()[i];
+                process_node(ctx,c);
+                to_print += value_as_string(c.value());
+            }
+            print(to_print);
+        });
         uint32_t return_id = make_tokenized_keyword("return");
 
         void init() override {
@@ -1219,6 +1269,7 @@ namespace Acorn {
             register_type("Node",node_id,sizeof(Ptr));
             register_type("Value",value_id,sizeof(Ptr));
             register_type("Context",context_id,sizeof(Ptr));
+            register_type("Ptr",ptr_id,sizeof(Ptr));
 
             set_binding_powers(random_combo_id,8,9);
 
@@ -1348,7 +1399,11 @@ namespace Acorn {
                         std::string prop = right.name().to_std();
                         if(layout.label_to_index.hasKey(prop)) {
                             uint32_t index = layout.label_to_index.get(prop);
-                            ctx.node().value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index], layout.ptrs[index]));
+                            if(is_live(layout.ptrs[index])) { //If we were handed a full value just copy that over (why not just always use this though... mark for later)
+                                ctx.node().value(make_value()); ctx.node().value().copy(layout.ptrs[index],true);
+                            } else {
+                                ctx.node().value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index]));
+                            }
                         } else {
                             print(red("r_handlers::dot_id layout of "+labels[ltype]+" does not have prop "+prop));
                             // print(red("root is: "+labels[ctx.root().type()]));
@@ -1358,6 +1413,7 @@ namespace Acorn {
                         print(red("r_handlers::dot_id no layout found for type "+labels[ltype]));
                     }
 
+                    //This is mean to be for inline get syntax like children(0), probably going to be replaced with a proper overload in the future
                     if(right.type()==identifier_id&&!right.children().empty()) { //Can replace with QValue in the future for an optimization
                         Value value = ctx.node().value();
                         value.type(value.sub_type()); value.sub_type(0);
@@ -1579,16 +1635,6 @@ namespace Acorn {
             x_handlers[to_unary_id(dash_id)] = [this](Context& ctx){
                 int neg = -(*(int*)ctx.node().children()[0].value().get());
                 ctx.node().value().set((void*)&neg);
-            };
-
-            x_handlers[print_id] = [this](Context& ctx){
-                std::string to_print = "";
-                for(int i=0;i<ctx.node().children().length();i++) {
-                    Node c = ctx.node().children()[i];
-                    process_node(ctx,c);
-                    to_print += value_as_string(c.value());
-                }
-                print(to_print);
             };
 
             x_handlers[make_tokenized_keyword("root_name")] = [this](Context& ctx){

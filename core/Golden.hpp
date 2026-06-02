@@ -9,6 +9,7 @@
 g_ptr<Log::Span> span = nullptr;
 static inline void newline(const std::string& label) {
     #if PRINT_ALL
+    if(!span) span = make<Log::Span>();
     span->add_line(label);
     #endif
 }
@@ -23,6 +24,7 @@ static inline double endline() {
 template<typename... Args>
 static inline void log(Args&&... args) {
     #if PRINT_ALL
+    if(!span) span = make<Log::Span>();
     span->log(std::forward<Args>(args)...);
     #endif
 }

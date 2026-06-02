@@ -16,6 +16,78 @@
 
 // using namespace GDSL;
 
+
+std::string resolve(const std::string& current_file, const std::string& include_path) {
+    std::string dir = current_file.substr(0, current_file.find_last_of("/"));
+    std::string joined = dir + "/" + include_path;
+    return std::filesystem::path(joined).lexically_normal().string();
+}
+
+
+list<std::string> system_includes;
+void strip_pragmas_and_system_includes(std::string& s) {
+    size_t pos = s.find("#pragma once");
+    while (pos != std::string::npos) {
+        size_t line_end = s.find("\n", pos);
+        s.erase(pos, line_end - pos + 1);
+        pos = s.find("#pragma once");
+    }
+    pos = s.find("#include <");
+    while (pos != std::string::npos) {
+        size_t path_start = pos + 10;
+        size_t path_end = s.find(">", path_start);
+        
+        std::string include = s.substr(path_start, path_end - path_start);
+        system_includes.push_if_absent(include);
+        
+        size_t line_end = s.find("\n", path_end);
+        s.erase(pos, line_end - pos + 1);
+        
+        pos = s.find("#include <");
+    }
+}
+
+map<std::string,bool> included_paths;
+std::string vendor_file(const std::string& input_path, bool is_first = true) {
+    std::string s = readFile(input_path);
+    strip_pragmas_and_system_includes(s);
+    size_t pos = s.find("#include \"");
+    while (pos != std::string::npos) {
+        size_t path_start = pos + 10; //Len of '#include "'
+        size_t path_end = s.find("\"", path_start);
+        
+        std::string path = s.substr(path_start, path_end - path_start);
+        path = resolve(input_path,path);
+        
+        size_t line_end = s.find("\n", path_end);
+        s.erase(pos, line_end - pos + 1); //Erase the line
+        
+        uint32_t offset = 0;
+        if(!included_paths.hasKey(path)) {
+            std::string vendored = vendor_file(path,false);
+            s.insert(pos, vendored);
+            offset = vendored.size();
+            included_paths.put(path,true);
+        }
+        
+        pos = s.find("#include \"", pos + offset);
+    }
+
+    if(is_first) {
+        s = s.substr(s.find_first_not_of('\n'));
+
+        for(auto i : system_includes) {
+            s.insert(0,"#include <"+i+">\n");
+        }
+        s.insert(0,"#pragma once\n\n");
+    
+        included_paths.clear();
+        system_includes.clear();
+    }   
+
+    return s;
+}
+
 int main(int argc, char* argv[]) {
     // if(argc < 2) {
     //     print("Usage: ./gdsl <file>");
@@ -29,20 +101,25 @@ int main(int argc, char* argv[]) {
     print("TEST START");
     // g_ptr<Node> root = nullptr;
 
-    span = make<Log::Span>();
-    //span->log_everything = true; //While things are crashing
 
-    Acorn::init_type_pool();
-    // // Acorn::test_acorn();
+    writeFile("acorn_export.hpp",vendor_file("mixos-acorn/Acorn-Core.hpp"));
+    //writeFile("mixos-acorn/tests/printout.txt",Acorn::make_wrapper_for_layout(Acorn::layouts[Acorn::node_id],"Node"));
+
+
+    // span = make<Log::Span>();
+    // //span->log_everything = true; //While things are crashing
+
+    // Acorn::init_type_pool();
+    // // // Acorn::test_acorn();
  
-    // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
-    // acorn->setup_trace_res_flipbook();
-    // //acorn->setup_stamp_res_flipbook();
-    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // // g_ptr<Acorn::Acorn_Script> acorn = make<Acorn::Acorn_Script>();
+    // // acorn->setup_trace_res_flipbook();
+    // // //acorn->setup_stamp_res_flipbook();
+    // // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
-    g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
-    //webcorn->setup_trace_res_flipbook();
-    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    // g_ptr<Acorn::Webcorn_Core> webcorn = make<Acorn::Webcorn_Core>();
+    // //webcorn->setup_trace_res_flipbook();
+    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
 
     // Acorn::init_type_pool();

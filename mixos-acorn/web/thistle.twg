@@ -24,6 +24,15 @@ inlined input_theme {
     "font-family" : "system-ui, sans-serif";
 }
 
+inlined air_input_theme {
+    "border" : "none";
+    "border-bottom" : "2px solid rgb(200,200,200)";
+    "border-radius" : "0px";
+    "background-color" : "transparent";
+    "padding" : "8px 0px";
+    input_theme;
+}
+
 inlined basic_button {
     "height" : "50%";
     "width" : "50%";
@@ -78,33 +87,39 @@ div side_bar {
             }
         }
 
-        div toggle_btn {
-            "onclick" : "toggleSidebar()";
-            "cursor" : "pointer";
-            "padding" : "8px";
-            "display" : "flex";
-            "align-items" : "center";
-            "gap" : "10px";
-            "width" : "30px";
-            "height" : "30px";
-            "white-space" : "nowrap";
-            "background-color" : "transparent";
-            
-            div icon {
+        div func_btn_temp(string function, string color, string label) {
+            div func_btn {
+                "onclick" : function;
+                "cursor" : "pointer";
+                "padding" : "8px";
+                "display" : "flex";
+                "align-items" : "center";
+                "gap" : "10px";
                 "width" : "30px";
                 "height" : "30px";
-                "background-color" : "rgb(100, 100, 100)";
-                "flex-shrink" : "0";
-            }
-            
-            text "toggle" {
-                "class" : "label";
-                "opacity" : "0";
-                "transition" : "opacity 0.15s ease";
-                "font-size" : "16px";
-                text_theme;
+                "white-space" : "nowrap";
+                "background-color" : "transparent";
+                
+                div icon {
+                    "width" : "30px";
+                    "height" : "30px";
+                    "background-color" : color;
+                    "flex-shrink" : "0";
+                }
+                
+                text label {
+                    "class" : "label";
+                    "opacity" : "0";
+                    "transition" : "opacity 0.15s ease";
+                    "font-size" : "16px";
+                    text_theme;
+                }
             }
         }
+
+        func_btn_temp("goTo('/new')","rgb(101, 157, 81)","New");
+        func_btn_temp("goTo('/build')","rgb(73, 135, 177)","Build");
+        func_btn_temp("goTo('/audit')","rgb(197, 148, 85)","Audit");
     }
     
     div main_section {
@@ -112,9 +127,55 @@ div side_bar {
         "display" : "flex";
         "flex-direction" : "column";
         "padding" : "8px 0px";
+
+        script "
+            function loadForm(el) {
+                document.querySelectorAll('.form_box').forEach(box => {
+                    box.style.backgroundColor = 'transparent';
+                });
+                el.style.backgroundColor = 'rgba(130, 43, 111, 0.12)';
+            }
+        ";
+
+
+        div form_temp(string words, string id) {
+            div form_box {
+                "class" : "form_box";
+                "id" : id;
+                "onclick" : "loadForm(this)";
+                "cursor" : "pointer";
+                "padding" : "8px";
+                "display" : "flex";
+                "align-items" : "center";
+                "gap" : "10px";
+                "width" : "100%";
+                "height" : "36px";
+                "white-space" : "nowrap";
+                "border-radius" : "6px";
+                "background-color" : "transparent";
+                "transition" : "background-color 0.15s ease";
+
+                "onmouseenter" : "if(this.style.backgroundColor==='transparent')this.style.backgroundColor='rgba(0,0,0,0.04)'";
+                "onmouseleave" : "console.log(this.style.backgroundColor); if(this.style.backgroundColor==='rgba(0, 0, 0, 0.04)')this.style.backgroundColor='transparent'";
+                
+                text words {
+                    "class" : "label";
+                    "opacity" : "0";
+                    "transition" : "opacity 0.15s ease";
+                    "font-size" : "14px";
+                    text_theme;
+                }
+            }
+        }
+
+        form_temp("Redberry expenses", "redberry");
+        form_temp("New travel expenses", "travel");
+        form_temp("WIP form", "wip");
     }
 
     script "
+        document.getElementById('redberry').click();
+
         function toggleSidebar() {
             const sidebar = document.getElementById('side_bar');
             const expanded = sidebar.style.width === '220px';
@@ -133,6 +194,78 @@ div side_bar {
 ##
     register root_path;
     "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+        
+    }
+##
+
+root_path {
+    div root {
+        div container {
+            background_theme;
+            "display" : "flex";
+            "min-height" : "100vh";
+                div content_panel {
+                    "flex" : "1";
+                    "display" : "flex";
+                    "flex-direction" : "column";
+                    "justify-content" : "center";
+                    "align-items" : "center";
+                        div actions {
+                            "display" : "flex";
+                            "justify-content" : "center";
+                            "align-items" : "center";
+                            "width" : "480px";
+                            "height" : "200px";
+                            "padding" : "40px";
+                            "gap" : "24px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                                button to_new {
+                                    "id" : "to_new";
+                                    "onclick" : "goTo('/new')";
+                                    text "New" {
+                                        "font-size" : "18px";
+                                        text_theme;
+                                    }
+                                    basic_button;
+                                }
+                                button to_todo {
+                                    "id" : "to_todo";
+                                    "onclick" : "goTo('/build')";
+                                    text "Build" {
+                                        "font-size" : "18px";
+                                        text_theme;
+                                    }
+                                    basic_button;
+                                }
+                                button to_sent {
+                                    "id" : "to_sent";
+                                    "onclick" : "goTo('/audit')";
+                                    text "Audit" {
+                                        "font-size" : "18px";
+                                        text_theme;
+                                    }
+                                    basic_button;
+                                }
+                        }
+                }
+        }
+
+        script "
+            function goTo(route) {
+                window.location.href = route;
+            }
+        ";
+    }
+}
+
+##
+    register r2;
+    "r2" {
         in htmlemiting {
             emit_contents;
         }
@@ -159,8 +292,16 @@ div side_bar {
     }
 ##
 
-root_path {
-    div root {
+r2 {
+    div contents {
+        "id" : "r2";
+        div testtxt {
+            "background-color" : "blue";
+            text "hello world" {
+                "color" : "red";
+            }
+        }
+
         script read_file("mixos-acorn/web/thistle.js");
 
         inlined abackground_theme {
@@ -195,27 +336,6 @@ root_path {
         }
 
         sheet;
-    }
-}
-
-##
-    register r2;
-    "r2" {
-        in htmlemiting {
-            emit_contents;
-        }
-    }
-##
-
-r2 {
-    div contents {
-        "id" : "r2";
-        div testtxt {
-            "background-color" : "blue";
-            text "hello world" {
-                "color" : "red";
-            }
-        }
     }
 }
 
@@ -332,6 +452,245 @@ login {
                                     "border-radius" : "4px";
                                     "background-color" : "rgb(230, 230, 230)";
                                 }
+                        }
+                }
+        }
+    }
+}
+
+
+
+
+
+
+##
+    register build;
+    "build" {
+        in htmlemiting {
+            emit_contents;
+        }
+        in fraging {
+            string src = ctx.source;
+            string target = src.slice(0,src.find(" "));
+            string instr = src.slice(" ",1,2);
+            string content = src.slice(src.find(" ",0,2)+1,src.length);
+            print("TARGET: ",target); 
+            print("INSTR: ",instr); 
+            print("CONTENT: ",content); 
+            Node to_edit = find_node(target,ctx.node);
+
+            if(instr=="ADD") {
+
+            } else {
+                ctx.source = "";
+                htmlemit to_edit;
+            }
+        }
+    }
+
+    register form_builder;
+    "form_builder" {
+
+    }
+##
+
+build {
+    div contents {
+        style "
+            td:hover {
+                background-color:rgb(234, 234, 234);
+            }
+            input:focus {
+                outline: none;
+            }
+            textarea:focus {
+                outline: none;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+        ";
+
+        script read_file("mixos-acorn/web/thistle.js");
+
+        background_theme;
+        div container {
+            "display" : "flex";
+            "min-height" : "100vh";
+                side_bar;
+
+                div content_panel {
+                    "flex" : "1";
+                    "display" : "flex";
+                    "flex-direction" : "column";
+                    "justify-content" : "center";
+                    "align-items" : "center";
+                        div top_bar {
+                            "height" : "5%";
+                            "width" : "100%";
+                            "display" : "flex";
+                            "gap" : "8px";
+                                div control_btns(string label, string behaviour) { 
+                                    button instance {
+                                        "onclick" : behaviour; 
+                                        "height" : "100%"; 
+                                        "width" : "40px"; 
+                                        text label { text_theme; }
+                                    } 
+                                }
+
+                                control_btns("+C","fragthree('sheet','add_column','')");
+                                control_btns("+R","fragthree('sheet','add_row','')");
+                        }
+
+                        div main_form {
+                            "display" : "flex";
+                            "justify-content" : "center";
+                            "align-items" : "end";
+                            "width" : "480px";
+                            "height" : "200px";
+                            "padding" : "40px";
+                            "gap" : "12px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                            div sheet_display {
+                                "id" : "sheet";
+                                sheet;
+                            }                          
+                        }
+                }
+        }
+    }
+}
+
+
+##
+    register new;
+    "new" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+new {
+    html read_file("mixos-acorn/web/newpage.twg");
+}
+
+
+
+
+
+##
+    register audit;
+    "audit" {
+        in htmlemiting {
+            emit_contents;
+        }
+        in fraging {
+            string src = ctx.source;
+            string target = src.slice(0,src.find(" "));
+            string instr = src.slice(" ",1,2);
+            string content = src.slice(src.find(" ",0,2)+1,src.length);
+            print("TARGET: ",target); 
+            print("INSTR: ",instr); 
+            print("CONTENT: ",content); 
+            Node to_edit = find_node(target,ctx.node);
+        }
+    }
+##
+
+audit {
+    div contents {
+        style "
+            td:hover {
+                background-color:rgb(234, 234, 234);
+            }
+            input:focus {
+                outline: none;
+            }
+            textarea:focus {
+                outline: none;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+        ";
+
+        script read_file("mixos-acorn/web/thistle.js");
+
+        background_theme;
+        div container {
+            "display" : "flex";
+            "min-height" : "100vh";
+                side_bar;
+
+                div content_panel {
+                    "flex" : "1";
+                    "display" : "flex";
+                    "flex-direction" : "column";
+                    "justify-content" : "center";
+                    "align-items" : "center";
+                        div main_card {
+                            "display" : "flex";
+                            "justify-content" : "flex-start";
+                            "align-items" : "stretch";
+                            "flex-direction" : "column";
+                            "width" : "480px";
+                            "padding" : "40px";
+                            "gap" : "12px";
+                            card_theme;
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+
+                            div sheet_display {
+                                "display" : "flex";
+                                "justify-content" : "center";
+                                "width" : "100%";
+                                sheet;
+                            }
+                            div actions {
+                                "display" : "flex";
+                                "justify-content" : "center";
+                                "align-items" : "center";
+                                "gap" : "12px";
+                                "margin-top" : "auto";
+                                "width" : "100%";
+                                    button approve {
+                                        "id" : "approve";
+                                        "display" : "flex";
+                                        "justify-content" : "center";
+                                        "align-items" : "center";
+                                        "height" : "36px";
+                                        "width" : "120px";
+                                        "border" : "none";
+                                        "border-radius" : "6px";
+                                        "cursor" : "pointer";
+                                        text "Approve" {
+                                            "font-size" : "14px";
+                                            text_theme;
+                                        }
+                                    }
+                                    button deny {
+                                        "id" : "deny";
+                                        "display" : "flex";
+                                        "justify-content" : "center";
+                                        "align-items" : "center";
+                                        "height" : "36px";
+                                        "width" : "120px";
+                                        "border" : "none";
+                                        "border-radius" : "6px";
+                                        "cursor" : "pointer";
+                                        text "Deny" {
+                                            "font-size" : "14px";
+                                            text_theme;
+                                        }
+                                    }
+                            }                            
                         }
                 }
         }

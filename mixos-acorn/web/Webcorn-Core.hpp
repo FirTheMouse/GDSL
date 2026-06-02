@@ -341,6 +341,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 int idx = *(int*)ctx.node().children()[0].value().get();
                 ctx.sub().source().push(TypeCol_to_html_table(types[idx]));
+                print(red("NODE\n"),node_to_string(ctx.sub().node()));
             };
 
             uint32_t display_node_id = make_tokenized_keyword("display_node");
@@ -500,6 +501,8 @@ namespace Acorn {
             };
 
             
+            // uint32_t 
+
         }
     };
 }

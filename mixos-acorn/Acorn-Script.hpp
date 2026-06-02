@@ -41,7 +41,6 @@ namespace Acorn {
         uint32_t to_type_id = make_tokenized_keyword("to_type");
         uint32_t DEBUG_ROOT_id = make_tokenized_keyword("DEBUG_ROOT");
 
-        uint32_t ptr_get_id = reg_id("PTR_GET");
         uint32_t ptr_take_id = reg_id("PTR_TAKE");
         uint32_t ptr_push_id = reg_id("PTR_PUSH");
         uint32_t ptr_length_id = reg_id("PTR_LENGTH");
@@ -51,6 +50,56 @@ namespace Acorn {
         uint32_t string_slice_id = reg_id("STRING_SLICE");
         uint32_t string_find_id = reg_id("STRING_FIND");
         uint32_t string_find_from_id = reg_id("STRING_FIND_FROM");
+
+
+        uint32_t ptr_get_id = overload_type(ptr_id,".\"get\"","PTR_GET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
+            standard_sub_process(ctx);
+            Node left = ctx.node().children()[0];
+            Node right = ctx.node().children()[1];
+            Value cv = right.value();
+            void* lv = left.value().get();
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr get")); return;});
+            Ptr ptr = *(Ptr*)lv;
+            Col& col = resolve_to_col(ptr);
+            if(!right.children().empty()) {
+                cv = right.children()[0].value();
+            }
+            if(cv.type()==int_id) {
+                int index = *(int*)cv.get();
+                if(index<col.length()) {
+                    Value value = ctx.node().value();
+                    ptr.sidx = index;
+                    value.data_ptr(ptr);
+                } else {
+                    print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
+                }
+            } else if(cv.type()==string_id||cv.type()==ptr_id||cv.type()==node_id) {
+                Col& ccol = resolve_to_col(*(Ptr*)cv.get());
+                ptr.sidx = col.getidx(ccol.storage,ccol.size);
+                ctx.node().value().data_ptr(ptr);
+            }
+        });
+        uint32_t ptr_put_id = overload_type(ptr_id,".\"put\"","PTR_PUT",deadptr,[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node left = ctx.node().children()[0];
+            Node right = ctx.node().children()[1];
+            DEBUG_ONLY(if(ERROR_FLAG) {return;})
+            void* lv = left.value().get();
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
+            Ptr ptr = *(Ptr*)lv;
+            Col& col = resolve_to_col(ptr);
+            Value keyv = right.children()[0].value();
+            Value elv = right.children()[1].value();
+            
+            void* key = nullptr;
+            uint32_t key_size = 0;
+            if(keyv.type()==string_id||keyv.type()==ptr_id||keyv.type()==node_id) {
+                Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+                key = keycol.storage;
+                key_size = keycol.size;
+            }
+            col.qput(elv.get(),key,key_size,keyv.type());
+        });
 
         uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
@@ -153,6 +202,13 @@ namespace Acorn {
             l.push(r.to_std());
             ctx.node().value(ctx.node().children()[0].value());
         });
+
+
+        uint32_t colsize_id = add_function("_colsize",[this](Context& ctx){
+            Node left = ctx.node().children()[0];
+            
+        },4,int_id);
+
 
         void e_stage_assignment_handler(Context& ctx) {
             Node left = ctx.node().children()[0];
@@ -270,9 +326,10 @@ namespace Acorn {
         uint32_t comment_brace = add_token_combo("comment_brace",'/','/');
 
         void init() override {
-            overload_type(ptr_id,".\"get\"",ptr_get_id,make_value(0)); //The value with no type means to take the subtype and subsize from left
-            overload_type(ptr_id,".\"take\"",ptr_take_id,make_value(0));
+            register_type("list",ptr_id,sizeof(Ptr));
+
             overload_type(ptr_id,".\"push\"",ptr_push_id);
+            overload_type(ptr_id,".\"take\"",ptr_take_id,make_value());
             overload_type(ptr_id,"<<any",ptr_push_id);
             overload_type(ptr_id,".\"length\"",ptr_length_id,make_value(int_id,4));
 
@@ -285,36 +342,7 @@ namespace Acorn {
 
             overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_value(ptr_id,sizeof(Ptr),0,int_id,4));
 
-            x_handlers[ptr_get_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                Node left = ctx.node().children()[0];
-                Node right = ctx.node().children()[1];
-                Value cv = right.value();
-                void* lv = left.value().get();
-                DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr get")); return;});
-                Ptr ptr = *(Ptr*)lv;
-                Col& col = resolve_to_col(ptr);
-                if(!right.children().empty()) {
-                    cv = right.children()[0].value();
-                }
-                if(cv.type()==int_id) {
-                    int index = *(int*)cv.get();
-                    if(index<col.length()) {
-                        Value value = ctx.node().value();
-                        if(ctx.root().type()==equals_id&&is_live(ctx.left())) {
-                            ptr.sidx = index;
-                            types[value.pool][value.idx].qset(value_data_offset,(void*)&ptr,sizeof(Ptr)); //Setting the data_ptr itself
-                        } else {
-                            value.set(col.get((uint32_t)index)); //Setting what the data_ptr points to
-                        }
-                    } else {
-                        print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
-                    }
-                } else if(cv.type()==string_id) {
-                    //Add suppourt for this and indexing by string later
-                    ctx.node().value().set(col.get(string(*(Ptr*)cv.get()).to_std()));
-                }
-            };
+            
             x_handlers[ptr_take_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node().children()[0];
@@ -522,8 +550,6 @@ namespace Acorn {
                 ctx.node().value().set((void*)&rv.data_ptr());
             };
 
-            register_type("list",ptr_id,sizeof(Ptr));
-
             r_handlers[var_decl_id] = [this](Context& ctx){
                 fire_quals(ctx,ctx.node().value());
             };
@@ -533,14 +559,23 @@ namespace Acorn {
 
 
             r_handlers[to_decl_id(star_id)] = [this](Context& ctx){
-                ctx.node().value().type(ptr_id);
-                ctx.node().value().size(sizeof(Ptr));
-                standard_sub_process(ctx);
+                if(ctx.node().value().type()!=ptr_id) {
+                    ctx.node().value().type(ptr_id);
+                    ctx.node().value().size(sizeof(Ptr));
+                    ctx.node().value().quals().insert(0,make_node(ptr_id,"Ptr",make_value(ptr_id,sizeof(Ptr)),ctx.node().in_scope()));
+                    fire_quals(ctx,ctx.node().value());
+                    standard_sub_process(ctx);
+                }
             };
             r_handlers[to_unary_id(amp_id)] = [this](Context& ctx){
-                ctx.node().value().type(ptr_id);
-                ctx.node().value().size(sizeof(Ptr));
-                standard_sub_process(ctx);
+                if(ctx.node().value().type()!=ptr_id) {
+                    ctx.node().value().type(ptr_id);
+                    ctx.node().value().size(sizeof(Ptr));
+                    ctx.node().value().quals().insert(0,make_node(ptr_id,"Ptr",make_value(ptr_id,sizeof(Ptr)),ctx.node().in_scope()));
+                    fire_quals(ctx,ctx.node().value());
+                    standard_sub_process(ctx);
+                    resolve_overload(ctx);
+                }
             };
 
             x_handlers[to_unary_id(amp_id)] = [this](Context& ctx){
@@ -891,17 +926,22 @@ namespace Acorn {
             x_handlers[var_decl_id] = [this](Context& ctx){
                 fire_quals(ctx,ctx.node().value());
             };
-            x_handlers[prefix_ptr_id] = [this](Context& ctx){
+            r_handlers[prefix_ptr_id] = [this](Context& ctx){
                 if(is_live(ctx.value())) {
-                    ctx.node().value().init_data();
                     if(ctx.value().quals().length()>1) {
                         Node left = ctx.value().quals()[1];
-                        Ptr ticket = get_ticket(data_store_id,left.value().size(),left.value().type());
-                        ctx.value().set((void*)&ticket);
                         ctx.value().sub_type(left.value().type());
                         ctx.value().sub_size(left.value().size());
                     } else {
-                        print(red("prefix_ptr_id::r_handler missing type for list"));
+                        print(red("prefix_ptr_id::r_handler missing type it points to!"));
+                    }
+                }
+            };
+            x_handlers[prefix_ptr_id] = [this](Context& ctx){
+                if(is_live(ctx.value())) {
+                    if(ctx.value().sub_type()!=0) {
+                        Ptr ticket = get_ticket(data_store_id,ctx.value().sub_size(),ctx.value().sub_type());
+                        ctx.value().set((void*)&ticket);
                     }
                 }
             };

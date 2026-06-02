@@ -97,6 +97,7 @@
         in htmlemiting {
             if(ctx.node.value.type==to_type("inlined")) {return;}
             if(ctx.node.value.type==to_type("invisible")) {return;}
+            if(0<ctx.node.children.length) {return;}
             ctx.source.append("<div");
             emit_inline_html;
             ctx.source.append(">");
@@ -132,14 +133,28 @@
         }
     }
 
+    register html;
+    "html" {
+        in naming {
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
+        }
+        in resolving {
+            gather_props;
+            resolv(ctx.node.children.get(0));
+        }
+        in htmlemiting {
+            execut(ctx.node.children.get(0));
+            ctx.source.append(ctx.node.children.get(0).value.getStr);
+        }
+    }
 ##
 
 print("Compiling");
 Node twig = compile(read_file("mixos-acorn/web/thistle.twg"));
-print("Compiled: ",twig);
+//print("Compiled: ",twig);
 Node page = twig.children.get(0);
 execut twig;
-print("Finished execution");
+print("Starting server");
 
 int fd = socket;
 bind(fd,8080);
@@ -195,7 +210,7 @@ while(0<1) {
         response.append(to_string(response_body.length));
         response.append("\r\n\r\n");
         response.append(response_body);
-        print("RESPONSE: ",response);
+        //print("RESPONSE: ",response);
     write(cfd,response); 
     close(cfd);
 }

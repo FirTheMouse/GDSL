@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ext/g_lib/util/util.hpp"
+#include "../../ext/g_lib/util/util.hpp"
 
 #define ACORN_DEBUG 1
 
@@ -209,11 +209,11 @@ namespace Acorn {
         inline void* operator[](uint32_t index) {return get(index);}
         inline void* last() {return get(size-1);}
 
-        void qput(const void* element, const void* key, uint32_t size, uint32_t tag) {
+        void qput(const void* element, const void* key, uint32_t key_size, uint32_t key_tag) {
             CCol c;
-            c.element_size = size; 
-            c.tag = tag;
-            c.hash = hashBytes(key, size);
+            c.element_size = key_size; 
+            c.tag = key_tag;
+            c.hash = hashBytes(key, key_size);
             c.index = length();
             c.push(key);
             push(element);
@@ -230,6 +230,18 @@ namespace Acorn {
                 }
             }
             return nullptr;
+        }
+        uint32_t getidx(const void* key, uint32_t size) {
+            uint32_t h = hashBytes(key, size);
+            for(int i = 0; i < cells.length(); i++) {
+                CCol& c = cells[i];
+                if(c.hash == h) {
+                    if(memcmp(c.storage, key, size) == 0) { //Collison check against the stored key
+                        return c.index;
+                    }
+                }
+            }
+            return 0;
         }
         bool hasKey(const void* key, uint32_t size) {
             uint32_t h = hashBytes(key, size);

@@ -15,6 +15,7 @@ typedef unsigned char uuid_t[16];
 
 namespace Acorn {
     struct Webcorn_Core : public virtual Acorn_Script {
+        Webcorn_Core(uint16_t _uid) : Unit(_uid) {init();}
         Webcorn_Core() {init();}
 
         uint32_t property_id = reg_id("property");
@@ -226,7 +227,7 @@ namespace Acorn {
         }
 
 
-        std::string TypeCol_to_html_table(TypeCol& t) {
+        std::string TypeCol_to_html_table(ColCol& t) {
             list<list<std::string>> lines = TypeCol_to_lines(t);
             std::string out = "<table style='border-collapse:collapse;font-family:system-ui;font-size:13px;'>";
             
@@ -325,7 +326,7 @@ namespace Acorn {
                 }
             };
 
-            TypeCol t;
+            ColCol t;
             for(int i=0;i<5;i++) {
                 Col c;
                 c.element_size = 4;

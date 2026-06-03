@@ -84,6 +84,7 @@ namespace Acorn {
     }
 
     struct Blackfeather_Unit : public virtual Unit {
+        Blackfeather_Unit(uint16_t _uid) : Unit(_uid) {init();}
         Blackfeather_Unit() {init();}
         
         void init() override {
@@ -630,7 +631,7 @@ namespace Acorn {
                                         }
                                     }
                                 }
-                                TypeCol& ptype = types[addr0];
+                                ColCol& ptype = types[addr0];
                                 if(cmds.length()==3) {
                                     if(do_print) {
                                         print(type_to_string(ptype));
@@ -651,7 +652,7 @@ namespace Acorn {
                                             list<list<std::string>> plines = type_to_lines(ptype);
                                             list<std::string> tline = plines[addr1];
                                             writeFile("mixos-acorn/tests/printout.txt","");
-                                            editTextFile("mixos-acorn/tests/printout.txt",[tline](std::string& src){
+                                            editTextFile("mixos-acorn/tests/printout.txt",[tline,this](std::string& src){
                                                 list<list<std::string>> col = {tline};
                                                 src = print_columnar_table(col);
                                             });
@@ -670,7 +671,7 @@ namespace Acorn {
                         if(cmds.length()==1) {is_invalid = true; continue;}
                         if(is_str_num(cmds[1])) {
                             uint32_t node_id = std::stoi(cmds[1]);
-                            Ptr nptr = {node_type_id,node_id,0};
+                            Ptr nptr(node_type_id,node_id,0);
                             on_node = (Node&)nptr;
                             print("on_node: ",node_info(on_node));
                         } else {

@@ -4,13 +4,13 @@
 #include "../mixos-acorn/util/Acorn-Type.hpp"
 #include "../ext/g_lib/core/q_object.hpp"
 
+#define NAMED_PTRS 0
+
 namespace Acorn {   
     static int _ctx_dummy_index = 0;
     class Unit;
     struct Node;
     struct Value;
-
-    map<uint32_t,std::string> labels;
 
     template<typename T>
     struct TCol : Col {
@@ -22,67 +22,35 @@ namespace Acorn {
         void push(T t){Col::push((void*)&t);}
     };
     
-    using TypeCol     = TCol<Col>;
-    using TypeTypeCol = TCol<TypeCol>;
-    TypeTypeCol types;
+    using ColCol       = TCol<Col>;
+    using ColColCol    = TCol<ColCol>;
+    using ColColColCol = TCol<ColColCol>;
 
-    inline void* resolve_ptr(const Ptr& ptr) {
-        return types[ptr.pool][ptr.idx].get(ptr.sidx);
+    std::string Ptr_to_string(Ptr p) {
+        return std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx)+"";
     }
 
-    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {
-        return types[ptr.pool][idx].get(ptr.sidx);
-    }
+    list<g_ptr<Unit>> units;
 
-    inline Ptr& resolve_to_ptr(const Ptr& ptr) {
-        return *(Ptr*)types[ptr.pool][ptr.idx].get(ptr.sidx);
-    }
+    ColColCol& init_first_unit();
 
-    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {
-        return *(Ptr*)types[ptr.pool][idx].get(ptr.sidx);
-    }
+    ColColCol& global = init_first_unit();
 
-    inline Col& resolve_to_col(const Ptr& ptr) {
-        return types[ptr.pool][ptr.idx];
-    }
 
-    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {
-        return types[ptr.pool][idx];
-    }
 
-    inline Col& to_col(const Ptr& ptr) {
-        return types[ptr.pool][ptr.idx];
-    }
 
-    inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
-        Ptr ticket{type_id,create_column(types[type_id],size,tag),0};
-        return ticket;
-    }
-
-    std::string tag_to_str(uint32_t tag, void* data);
-
-    list<Ptr> marked_ptrs;
-    map<uint64_t,std::function<void(std::string&)>> ptr_colors;
-    inline uint64_t Ptr_to_key(Ptr p) {
-        return ((uint64_t)p.pool << 32) | (uint64_t)p.idx;
-    }
-    inline Ptr key_to_Ptr(uint64_t key) {
-        return Ptr{(uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF), 0};
-    }
-    uint64_t make_overload_key(uint32_t root, uint32_t right) {
-        return ((uint64_t)root << 32) | right;
-    }
-    inline std::pair<uint32_t,uint32_t> decode_key(uint64_t key) {
-        return std::make_pair<uint32_t,uint32_t>((uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF));
-    }
-
-    void mark_error(Ptr ptr) {marked_ptrs << ptr;}
-
+    inline void* resolve_ptr(const Ptr& ptr);
+    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx);
+    inline Ptr& resolve_to_ptr(const Ptr& ptr);
+    inline Col& resolve_to_col(const Ptr& ptr);
+    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx);
+    inline Col& to_col(const Ptr& ptr);
+    inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag);
 
     struct string : Ptr {
         string() {}
-        string(Ptr p) {pool=p.pool;idx=p.idx;sidx=p.sidx;}
-        inline Col& col() {DEBUG_ONLY(if(idx>=types[pool].length()) {throw_error("invalid string col: ",idx," for type ",pool);}) return types[pool][idx]; }
+        string(Ptr p) {pool=p.pool;idx=p.idx;sidx=p.sidx;unit = p.unit;}
+        inline Col& col() {return resolve_to_col(*this); }
         inline char at(uint32_t idx) {return *(char*)col()[idx];}
         inline uint32_t length() {return col().length();}
         inline void push(char c) { col().push(&c); }
@@ -112,7 +80,7 @@ namespace Acorn {
             return found_at;
         }
     };
-    string get_string_ticket();
+    string get_global_string_ticket();
 
     struct type_and_value {
         uint32_t type;
@@ -128,6 +96,8 @@ namespace Acorn {
     uint32_t ptrs_col = subsizes_col + 1;
 
     uint32_t overloads_col = ptrs_col + 1;
+
+    inline Col& global_resolve_to_col(const Ptr& ptr, const uint32_t& idx) {return global[ptr.pool][idx];}
 
     struct _layout {
         _layout() {}
@@ -160,7 +130,7 @@ namespace Acorn {
         }
 
 
-        uint32_t add_prop(uint32_t tag, uint32_t size, const std::string& label, uint32_t subtag = 0, uint32_t subsize = 0, Ptr ptr = {0,0,0}) {
+        uint32_t add_prop(uint32_t tag, uint32_t size, const std::string& label, uint32_t subtag = 0, uint32_t subsize = 0, Ptr ptr = deadptr) {
             label_to_index.put(label,offsets.length());
             offsets << total_size;
             tags << tag;
@@ -170,44 +140,32 @@ namespace Acorn {
             subsizes << subsize;
             ptrs << ptr;
 
-            resolve_to_col(impl,impl.idx+offsets_col).push((void*)&total_size);
-            resolve_to_col(impl,impl.idx+tags_col).push((void*)&tag);
-            resolve_to_col(impl,impl.idx+sizes_col).push((void*)&size);
-            string label_ptr = get_string_ticket();
+            global_resolve_to_col(impl,impl.idx+offsets_col).push((void*)&total_size);
+            global_resolve_to_col(impl,impl.idx+tags_col).push((void*)&tag);
+            global_resolve_to_col(impl,impl.idx+sizes_col).push((void*)&size);
+            string label_ptr = get_global_string_ticket();
             label_ptr = label;
-            resolve_to_col(impl,impl.idx+labels_col).push((void*)&label_ptr);
-            resolve_to_col(impl,impl.idx+subtags_col).push((void*)&subtag);
-            resolve_to_col(impl,impl.idx+subsizes_col).push((void*)&subsize);
-            resolve_to_col(impl,impl.idx+ptrs_col).push((void*)&ptr);
+            global_resolve_to_col(impl,impl.idx+labels_col).push((void*)&label_ptr);
+            global_resolve_to_col(impl,impl.idx+subtags_col).push((void*)&subtag);
+            global_resolve_to_col(impl,impl.idx+subsizes_col).push((void*)&subsize);
+            global_resolve_to_col(impl,impl.idx+ptrs_col).push((void*)&ptr);
 
             uint32_t old_size = total_size;
             total_size += size;
             return old_size;
         }
-        void print_out() { //Make to_string later
-            for(int i=0;i<offsets.length();i++) {
-                print(i,": ",labels[i],": ",offsets[i],", ",Acorn::labels[tags[i]],", ",Acorn::labels[subtags[i]],"[",sizes[i],"]");
-            }
-            // for(auto e : overload.entrySet()) {
-            //     auto keyl = decode_key(e.key);
-            //     print(Acorn::labels[keyl.first]," ",Acorn::labels[keyl.second],"(",keyl.second,"): ",Acorn::labels[e.value.type]);
-            // }
-        }
     };
-    map<uint32_t,_layout> layouts;
 
-    bool is_live(Ptr p) {return (p.pool!=0||p.idx!=0)&&p.pool<types.length();}
+    bool is_live(Ptr p) {return (p.pool!=0||p.idx!=0);}
 
     uint32_t undefined_id = 0;
     uint32_t stages_id = 1;
     uint32_t ptr_id = 2;
 
-
-
     uint32_t add_type() {
-        uint32_t at = types.length();
-        TypeCol to_return;
-        types.push(to_return);
+        uint32_t at = global.length();
+        ColCol to_return;
+        global.push(to_return);
         return at;
     }
 
@@ -217,113 +175,79 @@ namespace Acorn {
     }
 
     uint32_t init_handler_type() {
-        TypeCol t;
-        uint32_t at = types.length();
+        ColCol t;
+        uint32_t at = global.length();
         note_value(t,"UNDEFINED",0,0);
         t.get(0).push_default(); //UNDEFINED cell
         note_value(t,"stages",sizeof(Ptr),ptr_id);
         t.get(1).put("Layouts",(void*)&deadptr); //Layouts label
         note_value(t,"ptr",sizeof(Ptr),ptr_id);
         t.get(2).push_default(); //Layout of Ptr
-        types.push(t);
+        global.push(t);
         return at;
     }
 
     uint32_t handler_type_id = init_handler_type();
     
     uint32_t init_layout_type() {
-        TypeCol t;
-        uint32_t at = types.length();
-        types.push(t);
+        ColCol t;
+        uint32_t at = global.length();
+        global.push(t);
         return at;
     }
     uint32_t layout_type_id = init_layout_type(); 
 
-    uint32_t reg_id(const std::string& label) {
-        uint32_t at = types[handler_type_id].length();
-        note_value(types[handler_type_id],label,sizeof(Ptr),ptr_id);
-        types[handler_type_id][at].push_default();
-        labels.put(at,label);
+    uint32_t global_reg_id(const std::string& label) {
+        uint32_t at = global[handler_type_id].length();
+        note_value(global[handler_type_id],label,sizeof(Ptr),ptr_id);
+        global[handler_type_id][at].push_default();
         return at;
     }
 
-    uint32_t prefix_ptr_id = reg_id("prefix_ptr"); uint32_t suffix_ptr_id = reg_id("suffix_ptr");
-    uint32_t float_id = reg_id("float"); uint32_t prefix_float_id = reg_id("prefix_float"); uint32_t suffix_float_id = reg_id("suffix_float");
-    uint32_t int_id = reg_id("int"); uint32_t prefix_int_id = reg_id("prefix_int"); uint32_t suffix_int_id = reg_id("suffix_int");
-    uint32_t bool_id = reg_id("bool"); uint32_t prefix_bool_id = reg_id("prefix_bool"); uint32_t suffix_bool_id = reg_id("suffix_bool");
-    uint32_t string_id = reg_id("string"); uint32_t prefix_string_id = reg_id("prefix_string"); uint32_t suffix_string_id = reg_id("suffix_string");
-    uint32_t char_id = reg_id("char"); uint32_t prefix_char_id = reg_id("prefix_char"); uint32_t suffix_char_id = reg_id("suffix_char");
-    uint32_t ptr4_id = reg_id("ptr4"); uint32_t prefix_ptr4_id = reg_id("prefix_ptr4"); uint32_t suffix_ptr4_id = reg_id("suffix_ptr4");
-    size_t list_id = reg_id("list");
-    size_t map_id = reg_id("map");
-    size_t weakptr_id = reg_id("weakptr");
-    size_t col_id = reg_id("col");
+    uint32_t prefix_ptr_id = global_reg_id("prefix_ptr"); uint32_t suffix_ptr_id = global_reg_id("suffix_ptr");
+    uint32_t float_id = global_reg_id("float"); uint32_t prefix_float_id = global_reg_id("prefix_float"); uint32_t suffix_float_id = global_reg_id("suffix_float");
+    uint32_t int_id = global_reg_id("int"); uint32_t prefix_int_id = global_reg_id("prefix_int"); uint32_t suffix_int_id = global_reg_id("suffix_int");
+    uint32_t bool_id = global_reg_id("bool"); uint32_t prefix_bool_id = global_reg_id("prefix_bool"); uint32_t suffix_bool_id = global_reg_id("suffix_bool");
+    uint32_t string_id = global_reg_id("string"); uint32_t prefix_string_id = global_reg_id("prefix_string"); uint32_t suffix_string_id = global_reg_id("suffix_string");
+    uint32_t char_id = global_reg_id("char"); uint32_t prefix_char_id = global_reg_id("prefix_char"); uint32_t suffix_char_id = global_reg_id("suffix_char");
+    uint32_t ptr4_id = global_reg_id("ptr4"); uint32_t prefix_ptr4_id = global_reg_id("prefix_ptr4"); uint32_t suffix_ptr4_id = global_reg_id("suffix_ptr4");
+    size_t list_id = global_reg_id("list");
+    size_t map_id = global_reg_id("map");
+    size_t weakptr_id = global_reg_id("weakptr");
+    size_t col_id = global_reg_id("col");
     
-    uint32_t silenced_id = reg_id("SILENCED");
-    uint32_t any_id = reg_id("any");
-    uint32_t null_id = reg_id("null");
-    size_t identifier_id = reg_id("IDENTIFIER");
-    size_t object_id = reg_id("OBJECT");
-    size_t literal_id = reg_id("LITERAL");
+    uint32_t silenced_id = global_reg_id("SILENCED");
+    uint32_t any_id = global_reg_id("any");
+    uint32_t null_id = global_reg_id("null");
+    size_t identifier_id = global_reg_id("IDENTIFIER");
+    size_t object_id = global_reg_id("OBJECT");
+    size_t literal_id = global_reg_id("LITERAL");
     
-    size_t node_id = reg_id("node"); size_t prefix_node_id = reg_id("prefix_node"); size_t suffix_node_id = reg_id("suffix_node");
-    size_t value_id = reg_id("value"); size_t prefix_value_id = reg_id("prefix_value"); size_t suffix_value_id = reg_id("suffix_value");
-    size_t context_id = reg_id("context"); size_t prefix_context_id = reg_id("prefix_context"); size_t suffix_context_id = reg_id("suffix_context");
+    size_t node_id = global_reg_id("node"); size_t prefix_node_id = global_reg_id("prefix_node"); size_t suffix_node_id = global_reg_id("suffix_node");
+    size_t value_id = global_reg_id("value"); size_t prefix_value_id = global_reg_id("prefix_value"); size_t suffix_value_id = global_reg_id("suffix_value");
+    size_t context_id = global_reg_id("context"); size_t prefix_context_id = global_reg_id("prefix_context"); size_t suffix_context_id = global_reg_id("suffix_context");
 
-    size_t var_decl_id = reg_id("VAR_DECL");
-    size_t func_call_id = reg_id("FUNC_CALL");
-    size_t method_call_id = reg_id("METHOD_CALL");
-    size_t function_id = reg_id("FUNCTION");
-    size_t method_id = reg_id("METHOD");
-    size_t func_decl_id = reg_id("FUNC_DECL");
-    size_t type_decl_id = reg_id("TYPE_DECL");
+    size_t var_decl_id = global_reg_id("VAR_DECL");
+    size_t func_call_id = global_reg_id("FUNC_CALL");
+    size_t method_call_id = global_reg_id("METHOD_CALL");
+    size_t function_id = global_reg_id("FUNCTION");
+    size_t method_id = global_reg_id("METHOD");
+    size_t func_decl_id = global_reg_id("FUNC_DECL");
+    size_t type_decl_id = global_reg_id("TYPE_DECL");
 
     size_t tombstone_col = 0; 
     size_t refs_col = 0;
 
-    std::string make_wrapper_for_layout(_layout& l, const std::string& name) {
-        std::string s = "";
-        std::string pad = "     ";
-        s+="struct "+name+" : Ptr {\n";
-        s += pad+name+"() {}\n";
-        s += pad+name+"(uint32_t p, uint32_t i, uint32_t s) { pool = p; idx = i; sidx = s; }\n";
-        s += pad+name+"(Ptr p) { pool = p.pool; idx = p.idx; sidx = p.sidx; }\n";
-        for(int i=0;i<l.offsets.length();i++) {
-            s+="\n";
-            std::string type = labels[l.tags[i]];
-            std::string label = l.labels[i];
-            uint32_t offset = l.offsets[i];
-            uint32_t size = l.sizes[i];
-
-            bool is_compound = layouts.hasKey(l.tags[i]);
-            bool is_ptr = l.tags[i]==ptr_id||l.tags[i]==string_id;
-
-            if(is_ptr) {
-                s += pad+pad_str("inline "+pad_str("Ptr&",12)+" "+label+"_ptr()",32)+"{return *(Ptr*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
-                s += pad+pad_str("inline "+pad_str("Col&",12)+" "+label+"_col()",32)+"{return resolve_to_col("+label+"_ptr());}\n";
-                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"(Ptr p)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&p, "+std::to_string(size)+"); }\n";
-            } else if(is_compound) {
-                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return {pool, idx, sidx+"+std::to_string(offset)+"}; }\n";
-                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", types[t.pool][t.idx].qget(t.sidx), "+std::to_string(size)+"); }\n";
-            } else {
-                s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return *("+type+"*)types[pool][idx].qget(sidx+"+std::to_string(offset)+"); }\n";
-                s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{types[pool][idx].qset(sidx+"+std::to_string(offset)+", (void*)&t, "+std::to_string(size)+"); }\n";
-            }
-        }
-        s+="};";
-        return s;
-    }
-
     Ptr add_layout_to_col(uint32_t type) {
-        Ptr p = {layout_type_id,note_value(types[layout_type_id],labels[type]+" Offsets",4,int_id),0};
-        note_value(types[layout_type_id],"Tags",4,int_id);
-        note_value(types[layout_type_id],"Sizes",4,int_id);
-        note_value(types[layout_type_id],"Labels",sizeof(Ptr),string_id);
-        note_value(types[layout_type_id],"Subtags",4,int_id);
-        note_value(types[layout_type_id],"Subsizes",4,int_id);
-        note_value(types[layout_type_id],"Ptrs",sizeof(Ptr),ptr_id);
-        note_value(types[layout_type_id],"Overloads",sizeof(Ptr4),ptr4_id);
-        types[handler_type_id][type].set(0,(void*)&p);
+        Ptr p(layout_type_id,note_value(global[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
+        note_value(global[layout_type_id],"Tags",4,int_id);
+        note_value(global[layout_type_id],"Sizes",4,int_id);
+        note_value(global[layout_type_id],"Labels",sizeof(Ptr),string_id);
+        note_value(global[layout_type_id],"Subtags",4,int_id);
+        note_value(global[layout_type_id],"Subsizes",4,int_id);
+        note_value(global[layout_type_id],"Ptrs",sizeof(Ptr),ptr_id);
+        note_value(global[layout_type_id],"Overloads",sizeof(Ptr4),ptr4_id);
+        global[handler_type_id][type].set(0,(void*)&p);
         return p;
     }
 
@@ -377,6 +301,10 @@ namespace Acorn {
     uint32_t context_sub_offset = 0;
     uint32_t context_source_offset = 0;
 
+    uint32_t node_total_size = 0;
+    uint32_t value_total_size = 0;
+    uint32_t context_total_size = 0;
+
     uint32_t init_node_type();
     uint32_t init_value_type();
     uint32_t init_context_type();
@@ -394,22 +322,20 @@ namespace Acorn {
     uint32_t data_store_id = make_store_type();
     uint32_t sub_value_store_id = make_store_type();
 
-    string get_string_ticket() {
-        return get_ticket(name_store_id,1,char_id);
+    string get_global_string_ticket() {
+        Ptr ticket(name_store_id,create_column(global[name_store_id],1,char_id),0);
+        return ticket;
     }
 
-    _layout& add_template(uint32_t for_type) {
+    Ptr add_template(uint32_t for_type) {
         Ptr p = add_layout_to_col(for_type);
-        _layout temp(p);
-        layouts[for_type] = temp;
-        return layouts.get(for_type);
+        return p;
     }
 
     uint32_t init_node_type() {
         uint32_t at = add_type();
-        TypeCol& t = types[at];
-
-        _layout& ntemp = add_template(node_id); //Node template
+        ColCol& t = global[at];
+        _layout ntemp(add_template(node_id)); //Node template
         node_type_offset = ntemp.add_prop(int_id,4,"type");
         node_sub_type_offset = ntemp.add_prop(int_id,4,"sub_type");
         node_name_offset = ntemp.add_prop(string_id,sizeof(Ptr),"name",char_id,1);
@@ -428,15 +354,15 @@ namespace Acorn {
         resolved_offset = ntemp.add_prop(bool_id,1,"resolved");
         node_opt_str_offset = ntemp.add_prop(string_id,sizeof(Ptr),"opt_str");
         mute_offset = ntemp.add_prop(bool_id,1,"mute");
-
+        node_total_size = ntemp.total_size;
         return at;
     }
 
     uint32_t init_value_type() {
         uint32_t at = add_type();
-        TypeCol& t = types[at];
+        ColCol& t = global[at];
 
-        _layout& vtemp = add_template(value_id); //Value template
+        _layout vtemp(add_template(value_id)); //Value template
         value_type_offset = vtemp.add_prop(int_id,4,"type");
         value_sub_type_offset = vtemp.add_prop(int_id,4,"sub_type");
         value_data_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"data");
@@ -449,14 +375,14 @@ namespace Acorn {
         value_sub_values_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"sub_values",value_id,sizeof(Ptr));
         type_scope_offset = vtemp.add_prop(node_id,sizeof(Ptr),"type_scope");
         store_offset = vtemp.add_prop(ptr_id,sizeof(Ptr),"store");
-
+        value_total_size = vtemp.total_size;
         return at;
     }
 
     uint32_t init_context_type() {
         uint32_t at = add_type();
-        TypeCol& t = types[at];
-        _layout& ctemp = add_template(context_id); //Context template
+        ColCol& t = global[at];
+        _layout ctemp(add_template(context_id)); //Context template
         context_node_offset = ctemp.add_prop(node_id,sizeof(Ptr),"node");
         context_qual_offset = ctemp.add_prop(node_id,sizeof(Ptr),"qual");
         context_left_offset = ctemp.add_prop(node_id,sizeof(Ptr),"left");
@@ -469,39 +395,16 @@ namespace Acorn {
         context_flag_offset = ctemp.add_prop(bool_id,1,"flag");
         context_sub_offset = ctemp.add_prop(context_id,sizeof(Ptr),"sub");
         context_source_offset = ctemp.add_prop(string_id,sizeof(Ptr),"source",char_id,1);
+        context_total_size = ctemp.total_size;
         return at;
     }
 
-    #define NAMED_PTRS 1
-
-    std::string Ptr_as_string(Ptr p) {
-        if(ERROR_FLAG||(p.pool>=types.length()||p.idx>=types[p.pool].length()||marked_ptrs.has(p))) {
-            return red(std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx));
-        }
-
-        #if NAMED_PTRS
-            std::string plabel = types[p.pool].label.empty()?std::to_string(p.pool):types[p.pool].label.to_std();
-            std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label.to_std();
-            std::string pstring = ""+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
-            uint64_t key = Ptr_to_key(p);
-        
-            if(ptr_colors.hasKey(key)) {ptr_colors.get(key)(pstring);}
-            return pstring;
-        #else
-            return ""+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx)+"";
-        #endif
-    }
-
-    std::ostream& operator<<(std::ostream& os, Acorn::string& s) {
-        os.write((const char*)s.col().storage, s.length());
-        return os;
-    }
 
     template<typename T>
     struct col_Ptr : Ptr {
         inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but col_ptr was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline Col& col()                    {DEBUG_ONLY(if(safety_check("col_ptr:col")){static Col d; return d;}) return types[pool][idx];}
+        inline Col& col()                    {DEBUG_ONLY(if(safety_check("col_ptr:col")){static Col d; return d;}) return resolve_to_col(*this);}
         inline uint32_t length()             {DEBUG_ONLY(if(safety_check("col_ptr:length")){return 0;}) return col().length();}
         inline bool empty()                  {DEBUG_ONLY(if(safety_check("col_ptr:empty")){return true;}) return col().empty();}
         inline void removeAt(uint32_t idx)   {DEBUG_ONLY(if(safety_check("col_ptr:removeAt")){return;}) col().removeAt(idx);}
@@ -527,52 +430,52 @@ namespace Acorn {
 
     struct Value : public Ptr {
         Value() {}
-        Value(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx;}
+        Value(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx; unit = p.unit;}
 
         inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but value was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline uint32_t  type()                {DEBUG_ONLY(if(safety_check("value:type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(value_type_offset);}
-        inline void      type(uint32_t t)      {DEBUG_ONLY(if(safety_check("value:type:set")){return;}) types[pool][idx].qset(value_type_offset,(void*)&t,4);}
-        inline uint32_t  sub_type()            {DEBUG_ONLY(if(safety_check("value:sub_type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(value_sub_type_offset);}
-        inline void      sub_type(uint32_t st) {DEBUG_ONLY(if(safety_check("value:sub_type:set")){return;}) types[pool][idx].qset(value_sub_type_offset,(void*)&st,4);}
+        inline uint32_t  type()                {DEBUG_ONLY(if(safety_check("value:type:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(value_type_offset);}
+        inline void      type(uint32_t t)      {DEBUG_ONLY(if(safety_check("value:type:set")){return;}) resolve_to_col(*this).qset(value_type_offset,(void*)&t,4);}
+        inline uint32_t  sub_type()            {DEBUG_ONLY(if(safety_check("value:sub_type:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(value_sub_type_offset);}
+        inline void      sub_type(uint32_t st) {DEBUG_ONLY(if(safety_check("value:sub_type:set")){return;}) resolve_to_col(*this).qset(value_sub_type_offset,(void*)&st,4);}
         
-        inline Ptr&      data_ptr()            {DEBUG_ONLY(if(safety_check("value:data_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(value_data_offset);}
+        inline Ptr&      data_ptr()            {DEBUG_ONLY(if(safety_check("value:data_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(value_data_offset);}
         inline void      data_ptr(Ptr ptr)     {DEBUG_ONLY(if(safety_check("value:data_ptr:set")){return;}) resolve_to_col(*this).qset(value_data_offset,(void*)&ptr,sizeof(Ptr));}
-        inline Col&      data_col()            {Ptr p = data_ptr(); return types[p.pool][p.idx];}
+        inline Col&      data_col()            {Ptr p = data_ptr(); return resolve_to_col(p);}
         
-        inline uint32_t  address()             {DEBUG_ONLY(if(safety_check("value:address:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(address_offset);}
-        inline void      address(uint32_t v)   {DEBUG_ONLY(if(safety_check("value:address:set")){return;}) types[pool][idx].qset(address_offset,(void*)&v,4);}
-        inline int       reg()                 {DEBUG_ONLY(if(safety_check("value:reg:get")){return -1;}) return *(int*)types[pool][idx].qget(reg_offset);}
-        inline void      reg(int i)            {DEBUG_ONLY(if(safety_check("value:reg:set")){return;}) types[pool][idx].qset(reg_offset,(void*)&i,4);}
-        inline int       loc()                 {DEBUG_ONLY(if(safety_check("value:loc:get")){return -1;}) return *(int*)types[pool][idx].qget(loc_offset);}
-        inline void      loc(int i)            {DEBUG_ONLY(if(safety_check("value:loc:set")){return;}) types[pool][idx].qset(loc_offset,(void*)&i,4);}
+        inline uint32_t  address()             {DEBUG_ONLY(if(safety_check("value:address:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(address_offset);}
+        inline void      address(uint32_t v)   {DEBUG_ONLY(if(safety_check("value:address:set")){return;}) resolve_to_col(*this).qset(address_offset,(void*)&v,4);}
+        inline int       reg()                 {DEBUG_ONLY(if(safety_check("value:reg:get")){return -1;}) return *(int*)resolve_to_col(*this).qget(reg_offset);}
+        inline void      reg(int i)            {DEBUG_ONLY(if(safety_check("value:reg:set")){return;}) resolve_to_col(*this).qset(reg_offset,(void*)&i,4);}
+        inline int       loc()                 {DEBUG_ONLY(if(safety_check("value:loc:get")){return -1;}) return *(int*)resolve_to_col(*this).qget(loc_offset);}
+        inline void      loc(int i)            {DEBUG_ONLY(if(safety_check("value:loc:set")){return;}) resolve_to_col(*this).qset(loc_offset,(void*)&i,4);}
         
-        inline uint32_t  size()                {DEBUG_ONLY(if(safety_check("value:size:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(size_offset);}
-        inline void      size(uint32_t s)      {DEBUG_ONLY(if(safety_check("value:size:set")){return;}) types[pool][idx].qset(size_offset,(void*)&s,4);}
-        inline uint32_t  sub_size()            {DEBUG_ONLY(if(safety_check("value:sub_size:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(sub_size_offset);}
-        inline void      sub_size(uint32_t s)  {DEBUG_ONLY(if(safety_check("value:sub_size:set")){return;}) types[pool][idx].qset(sub_size_offset,(void*)&s,4);}
+        inline uint32_t  size()                {DEBUG_ONLY(if(safety_check("value:size:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(size_offset);}
+        inline void      size(uint32_t s)      {DEBUG_ONLY(if(safety_check("value:size:set")){return;}) resolve_to_col(*this).qset(size_offset,(void*)&s,4);}
+        inline uint32_t  sub_size()            {DEBUG_ONLY(if(safety_check("value:sub_size:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(sub_size_offset);}
+        inline void      sub_size(uint32_t s)  {DEBUG_ONLY(if(safety_check("value:sub_size:set")){return;}) resolve_to_col(*this).qset(sub_size_offset,(void*)&s,4);}
         
-        inline Ptr&      quals_ptr()           {DEBUG_ONLY(if(safety_check("value:quals_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(value_quals_offset);}
-        inline Col&      quals_col()           {Ptr& p = quals_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&      quals_ptr()           {DEBUG_ONLY(if(safety_check("value:quals_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(value_quals_offset);}
+        inline Col&      quals_col()           {Ptr& p = quals_ptr(); return resolve_to_col(p);}
         inline node_col  quals()               {return (node_col&)quals_ptr();}
         
-        inline Ptr&       sub_values_ptr()     {DEBUG_ONLY(if(safety_check("value:sub_values_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(value_sub_values_offset);}
-        inline Col&       sub_values_col()     {Ptr& p = sub_values_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&       sub_values_ptr()     {DEBUG_ONLY(if(safety_check("value:sub_values_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(value_sub_values_offset);}
+        inline Col&       sub_values_col()     {Ptr& p = sub_values_ptr(); return resolve_to_col(p);}
         inline value_col  sub_values()         {return (value_col&)sub_values_ptr();}
         
         inline Node      type_scope();
-        inline void      type_scope(Ptr o)     {DEBUG_ONLY(if(safety_check("value:type_scope:set")){return;}) types[pool][idx].qset(type_scope_offset,(void*)&o,sizeof(Ptr));}
-        inline Ptr&      store()               {DEBUG_ONLY(if(safety_check("value:store:get")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(store_offset);}
-        inline void      store(Ptr p)          {DEBUG_ONLY(if(safety_check("value:store:set")){return;}) types[pool][idx].qset(store_offset,(void*)&p,sizeof(Ptr));}
+        inline void      type_scope(Ptr o)     {DEBUG_ONLY(if(safety_check("value:type_scope:set")){return;}) resolve_to_col(*this).qset(type_scope_offset,(void*)&o,sizeof(Ptr));}
+        inline Ptr&      store()               {DEBUG_ONLY(if(safety_check("value:store:get")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(store_offset);}
+        inline void      store(Ptr p)          {DEBUG_ONLY(if(safety_check("value:store:set")){return;}) resolve_to_col(*this).qset(store_offset,(void*)&p,sizeof(Ptr));}
     
         inline void setup(uint32_t _type, uint32_t _size, uint32_t _address = 0) {
             type(_type); size(_size); address(_address);
         }
     
         inline Ptr init_data() {
-            Ptr dataptr{data_store_id, create_column(types[data_store_id], size(), type()), 0};
-            types[data_store_id][dataptr.idx].push_default();
-            types[pool][idx].qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
+            Ptr dataptr = get_ticket_from_unit(unit,data_store_id,size(),type());
+            resolve_to_col(dataptr).push_default();
+            resolve_to_col(*this).qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
             return dataptr;
         }
     
@@ -585,52 +488,54 @@ namespace Acorn {
             // print("SET AT: ",Ptr_as_string(dataptr));
             // print("FROM: ",tag_to_str(types[dataptr.pool][dataptr.idx].tag,types[dataptr.pool][dataptr.idx].get(dataptr.sidx)));
             // print("TO: ",tag_to_str(types[dataptr.pool][dataptr.idx].tag,data));
-            types[dataptr.pool][dataptr.idx].set(dataptr.sidx, data);
+            resolve_to_col(dataptr).set(dataptr.sidx, data);
         }
     
         inline void* get() {
             DEBUG_ONLY(if(safety_check("value:get")){return nullptr;})
             Ptr dataptr = data_ptr();
-            return types[dataptr.pool][dataptr.idx].get(dataptr.sidx);
+            return resolve_to_col(dataptr).get(dataptr.sidx);
         }
 
         inline void* sget() {
             DEBUG_ONLY(if(safety_check("value:sget")){return nullptr;})
             Ptr dataptr = data_ptr();
-            return types[dataptr.pool][dataptr.idx].sget(dataptr.sidx);
+            return resolve_to_col(dataptr).sget(dataptr.sidx);
         }
         
         inline void* qget() {
             DEBUG_ONLY(if(safety_check("value:qget")){return nullptr;})
             Ptr dataptr = data_ptr();
-            return types[dataptr.pool][dataptr.idx].qget(dataptr.sidx);
+            return resolve_to_col(dataptr).qget(dataptr.sidx);
         }
 
         inline void copy(Value o, bool is_deep) {
-            Col& src = types[o.pool][o.idx];
-            Col& dst = types[pool][idx];
-            memcpy(dst.storage, src.storage, layouts[value_id].total_size);
+            Col& src = resolve_to_col(o);
+            Col& dst = resolve_to_col(*this);
+            memcpy(dst.storage, src.storage, value_total_size);
             if(is_deep) {
                 if(is_live(o.data_ptr())) {
                     init_data();
                     set(o.get());
                 }
 
-                Ptr qualsptr = get_ticket(quals_store_id, sizeof(Ptr), ptr_id);
+                Ptr qualsptr = get_ticket_from_unit(unit, quals_store_id, sizeof(Ptr), ptr_id);
                 Col& new_quals = resolve_to_col(qualsptr);
                 Col& old_quals = o.quals_col();
+
                 new_quals.reserve(old_quals.size);
                 memcpy(new_quals.storage, old_quals.storage, old_quals.size);
                 new_quals.size = old_quals.size;
-                types[pool][idx].qset(value_quals_offset,(void*)&qualsptr,sizeof(Ptr));
+                resolve_to_col(*this).qset(value_quals_offset,(void*)&qualsptr,sizeof(Ptr));
         
-                Ptr subvalsptr = get_ticket(sub_value_store_id, sizeof(Ptr), ptr_id);
+                Ptr subvalsptr = get_ticket_from_unit(unit, sub_value_store_id, sizeof(Ptr), ptr_id);
                 Col& new_subvals = resolve_to_col(subvalsptr);
                 Col& old_subvals = o.sub_values_col();
+
                 new_subvals.reserve(old_subvals.size);
                 memcpy(new_subvals.storage, old_subvals.storage, old_subvals.size);
                 new_subvals.size = old_subvals.size;
-                types[pool][idx].qset(value_sub_values_offset,(void*)&subvalsptr,sizeof(Ptr));
+                resolve_to_col(*this).qset(value_sub_values_offset,(void*)&subvalsptr,sizeof(Ptr));
             }
         }
 
@@ -649,82 +554,84 @@ namespace Acorn {
         inline void      sub_type(uint32_t st)    {memcpy(&storage[node_sub_type_offset],(void*)&st,4);}
     };
 
+
+
     struct Node : public Ptr {
         Node() {}
-        Node(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx;}
+        Node(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx; unit = p.unit;}
     
-        inline QNode& toQ() {return (QNode&)types[pool][idx];}
+        inline QNode& toQ() {return (QNode&)resolve_to_col(*this);}
 
-        inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but node was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
+        inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)||resolve_to_col(*this).empty()) {throw_error("Attempted ",log_msg," but node "+Ptr_to_string(*this)+" was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline uint32_t  type()                {DEBUG_ONLY(if(safety_check("node:type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(node_type_offset);}
-        inline void      type(uint32_t t)      {DEBUG_ONLY(if(safety_check("node:type:set")){return;}) types[pool][idx].qset(node_type_offset,(void*)&t,4);}
-        inline uint32_t  sub_type()            {DEBUG_ONLY(if(safety_check("node:sub_type:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(node_sub_type_offset);}
-        inline void      sub_type(uint32_t st) {DEBUG_ONLY(if(safety_check("node:sub_type:set")){return;}) types[pool][idx].qset(node_sub_type_offset,(void*)&st,4);}
+        inline uint32_t  type()                {DEBUG_ONLY(if(safety_check("node:type:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(node_type_offset);}
+        inline void      type(uint32_t t)      {DEBUG_ONLY(if(safety_check("node:type:set")){return;}) resolve_to_col(*this).qset(node_type_offset,(void*)&t,4);}
+        inline uint32_t  sub_type()            {DEBUG_ONLY(if(safety_check("node:sub_type:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(node_sub_type_offset);}
+        inline void      sub_type(uint32_t st) {DEBUG_ONLY(if(safety_check("node:sub_type:set")){return;}) resolve_to_col(*this).qset(node_sub_type_offset,(void*)&st,4);}
         
-        inline Ptr&      name_ptr()            {DEBUG_ONLY(if(safety_check("node:name_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_name_offset);}
-        inline Col&      name_col()            {Ptr& p = name_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&      name_ptr()            {DEBUG_ONLY(if(safety_check("node:name_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_name_offset);}
+        inline Col&      name_col()            {Ptr& p = name_ptr(); return resolve_to_col(p);}
         inline string    name()                {return string(name_ptr());}
         inline void      name(std::string s)   {DEBUG_ONLY(if(safety_check("node:name:set")){return;}) name() = s;}
         
-        inline float     x()                   {DEBUG_ONLY(if(safety_check("node:x:get")){return -1.0f;}) return *(float*)types[pool][idx].qget(x_offset);}
-        inline void      x(float v)            {DEBUG_ONLY(if(safety_check("node:x:set")){return;}) types[pool][idx].qset(x_offset,(void*)&v,4);}
-        inline float     y()                   {DEBUG_ONLY(if(safety_check("node:y:get")){return -1.0f;}) return *(float*)types[pool][idx].qget(y_offset);}
-        inline void      y(float v)            {DEBUG_ONLY(if(safety_check("node:y:set")){return;}) types[pool][idx].qset(y_offset,(void*)&v,4);}
-        inline float     z()                   {DEBUG_ONLY(if(safety_check("node:z:get")){return -1.0f;}) return *(float*)types[pool][idx].qget(z_offset);}
-        inline void      z(float v)            {DEBUG_ONLY(if(safety_check("node:z:set")){return;}) types[pool][idx].qset(z_offset,(void*)&v,4);}
+        inline float     x()                   {DEBUG_ONLY(if(safety_check("node:x:get")){return -1.0f;}) return *(float*)resolve_to_col(*this).qget(x_offset);}
+        inline void      x(float v)            {DEBUG_ONLY(if(safety_check("node:x:set")){return;}) resolve_to_col(*this).qset(x_offset,(void*)&v,4);}
+        inline float     y()                   {DEBUG_ONLY(if(safety_check("node:y:get")){return -1.0f;}) return *(float*)resolve_to_col(*this).qget(y_offset);}
+        inline void      y(float v)            {DEBUG_ONLY(if(safety_check("node:y:set")){return;}) resolve_to_col(*this).qset(y_offset,(void*)&v,4);}
+        inline float     z()                   {DEBUG_ONLY(if(safety_check("node:z:get")){return -1.0f;}) return *(float*)resolve_to_col(*this).qget(z_offset);}
+        inline void      z(float v)            {DEBUG_ONLY(if(safety_check("node:z:set")){return;}) resolve_to_col(*this).qset(z_offset,(void*)&v,4);}
         
-        inline Ptr       value_ptr()           {DEBUG_ONLY(if(safety_check("node:value_ptr")){return deadptr;}) return *(Ptr*)types[pool][idx].qget(node_value_offset);}
+        inline Ptr       value_ptr()           {DEBUG_ONLY(if(safety_check("node:value_ptr")){return deadptr;}) return *(Ptr*)resolve_to_col(*this).qget(node_value_offset);}
         inline Value     value()               {return Value(value_ptr());}
-        inline void      value(Ptr ptr)        {DEBUG_ONLY(if(safety_check("node:value:set")){return;}) types[pool][idx].qset(node_value_offset,(void*)&ptr,sizeof(Ptr));}
+        inline void      value(Ptr ptr)        {DEBUG_ONLY(if(safety_check("node:value:set")){return;}) resolve_to_col(*this).qset(node_value_offset,(void*)&ptr,sizeof(Ptr));}
         
-        inline Ptr&      children_ptr()        {DEBUG_ONLY(if(safety_check("node:children_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_children_offset);}
-        inline Col&      children_col()        {Ptr& p = children_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&      children_ptr()        {DEBUG_ONLY(if(safety_check("node:children_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_children_offset);}
+        inline Col&      children_col()        {Ptr& p = children_ptr(); return resolve_to_col(p);}
         inline node_col  children()            {return (node_col&)children_ptr();}
-        inline void      children(node_col l)  {DEBUG_ONLY(if(safety_check("node:children:set")){return;}) types[pool][idx].qset(node_children_offset,(void*)&l,sizeof(Ptr));}
+        inline void      children(node_col l)  {DEBUG_ONLY(if(safety_check("node:children:set")){return;}) resolve_to_col(*this).qset(node_children_offset,(void*)&l,sizeof(Ptr));}
         
-        inline Ptr&      quals_ptr()           {DEBUG_ONLY(if(safety_check("node:quals_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_quals_offset);}
-        inline Col&      quals_col()           {Ptr& p = quals_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&      quals_ptr()           {DEBUG_ONLY(if(safety_check("node:quals_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_quals_offset);}
+        inline Col&      quals_col()           {Ptr& p = quals_ptr(); return resolve_to_col(p);}
         inline node_col  quals()               {return (node_col&)quals_ptr();}
     
-        inline Ptr&        node_table_ptr()    {DEBUG_ONLY(if(safety_check("node:node_table_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_node_table_offset);}
-        inline Col&        node_table_col()    {Ptr& p = node_table_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&        node_table_ptr()    {DEBUG_ONLY(if(safety_check("node:node_table_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_node_table_offset);}
+        inline Col&        node_table_col()    {Ptr& p = node_table_ptr(); return resolve_to_col(p);}
         inline node_col    node_table()        {return (node_col&)node_table_ptr();}
         
-        inline Ptr&        value_table_ptr()   {DEBUG_ONLY(if(safety_check("node:value_table_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_value_table_offset);}
-        inline Col&        value_table_col()   {Ptr& p = value_table_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&        value_table_ptr()   {DEBUG_ONLY(if(safety_check("node:value_table_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_value_table_offset);}
+        inline Col&        value_table_col()   {Ptr& p = value_table_ptr(); return resolve_to_col(p);}
         inline value_col   value_table()       {return (value_col&)value_table_ptr();}
         
-        inline Ptr&      scopes_ptr()          {DEBUG_ONLY(if(safety_check("node:scopes_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_scopes_offset);}
-        inline Col&      scopes_col()          {Ptr& p = scopes_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&      scopes_ptr()          {DEBUG_ONLY(if(safety_check("node:scopes_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_scopes_offset);}
+        inline Col&      scopes_col()          {Ptr& p = scopes_ptr(); return resolve_to_col(p);}
         inline node_col  scopes()              {return (node_col&)scopes_ptr();}
         
-        inline Ptr&  parent_ptr()              {DEBUG_ONLY(if(safety_check("node:parent_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(parent_offset);}
+        inline Ptr&  parent_ptr()              {DEBUG_ONLY(if(safety_check("node:parent_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(parent_offset);}
         inline Node  parent()                  {return Node(parent_ptr());}
-        inline void  parent(Ptr p)             {DEBUG_ONLY(if(safety_check("node:parent:set")){return;}) types[pool][idx].qset(parent_offset,(void*)&p,sizeof(Ptr));}
+        inline void  parent(Ptr p)             {DEBUG_ONLY(if(safety_check("node:parent:set")){return;}) resolve_to_col(*this).qset(parent_offset,(void*)&p,sizeof(Ptr));}
         
-        inline Ptr&  owner_ptr()               {DEBUG_ONLY(if(safety_check("node:owner_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(owner_offset);}
+        inline Ptr&  owner_ptr()               {DEBUG_ONLY(if(safety_check("node:owner_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(owner_offset);}
         inline Node  owner()                   {return Node(owner_ptr());}
-        inline void  owner(Ptr p)              {DEBUG_ONLY(if(safety_check("node:owner:set")){return;}) types[pool][idx].qset(owner_offset,(void*)&p,sizeof(Ptr));}
+        inline void  owner(Ptr p)              {DEBUG_ONLY(if(safety_check("node:owner:set")){return;}) resolve_to_col(*this).qset(owner_offset,(void*)&p,sizeof(Ptr));}
         
-        inline Ptr&  in_scope_ptr()            {DEBUG_ONLY(if(safety_check("node:in_scope_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(in_scope_offset);}
+        inline Ptr&  in_scope_ptr()            {DEBUG_ONLY(if(safety_check("node:in_scope_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(in_scope_offset);}
         inline Node  in_scope()                {return Node(in_scope_ptr());}
-        inline void  in_scope(Ptr p)           {DEBUG_ONLY(if(safety_check("node:in_scope:set")){return;}) types[pool][idx].qset(in_scope_offset,(void*)&p,sizeof(Ptr));}
+        inline void  in_scope(Ptr p)           {DEBUG_ONLY(if(safety_check("node:in_scope:set")){return;}) resolve_to_col(*this).qset(in_scope_offset,(void*)&p,sizeof(Ptr));}
                 
-        inline Ptr&   opt_str_ptr()            {DEBUG_ONLY(if(safety_check("node:opt_str_ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(node_opt_str_offset);}
-        inline Col&   opt_str_col()            {Ptr& p = opt_str_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&   opt_str_ptr()            {DEBUG_ONLY(if(safety_check("node:opt_str_ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(node_opt_str_offset);}
+        inline Col&   opt_str_col()            {Ptr& p = opt_str_ptr(); return resolve_to_col(p);}
         inline string opt_str()                {return string(opt_str_ptr());}
         
-        inline bool  mute()                    {DEBUG_ONLY(if(safety_check("node:mute:get")){return false;}) return *(bool*)types[pool][idx].qget(mute_offset);}
-        inline void  mute(bool b)              {DEBUG_ONLY(if(safety_check("node:mute:set")){return;}) types[pool][idx].qset(mute_offset,(void*)&b,1);}
+        inline bool  mute()                    {DEBUG_ONLY(if(safety_check("node:mute:get")){return false;}) return *(bool*)resolve_to_col(*this).qget(mute_offset);}
+        inline void  mute(bool b)              {DEBUG_ONLY(if(safety_check("node:mute:set")){return;}) resolve_to_col(*this).qset(mute_offset,(void*)&b,1);}
     
-        inline bool  resolved()                {DEBUG_ONLY(if(safety_check("node:resolved:get")){return false;}) return *(bool*)types[pool][idx].qget(resolved_offset);}
-        inline void  resolved(bool b)          {DEBUG_ONLY(if(safety_check("node:resolved:set")){return;}) types[pool][idx].qset(resolved_offset,(void*)&b,1);}
+        inline bool  resolved()                {DEBUG_ONLY(if(safety_check("node:resolved:get")){return false;}) return *(bool*)resolve_to_col(*this).qget(resolved_offset);}
+        inline void  resolved(bool b)          {DEBUG_ONLY(if(safety_check("node:resolved:set")){return;}) resolve_to_col(*this).qset(resolved_offset,(void*)&b,1);}
     
         inline void copy(Node o) {
-            Col& src = types[o.pool][o.idx];
-            Col& dst = types[pool][idx];
-            memcpy(dst.storage, src.storage, layouts[node_id].total_size);
+            Col& src = resolve_to_col(o);
+            Col& dst = resolve_to_col(*this);
+            memcpy(dst.storage, src.storage, node_total_size);
         }
 
         int find_qual(uint32_t q_id) {
@@ -747,7 +654,7 @@ namespace Acorn {
         }
     };
 
-    inline Node Value::type_scope() {return Node(*(Ptr*)types[value_type_id][idx].qget(type_scope_offset));}
+    inline Node Value::type_scope() {return Node(*(Ptr*) resolve_to_col(*this).qget(type_scope_offset));}
     int Value::find_qual(uint32_t q_id) {
         for(int i=0;i<quals().length();i++){ 
             if(quals()[i].type()==q_id) {return i;}
@@ -762,257 +669,87 @@ namespace Acorn {
         return deadptr;
     } 
 
-    Node make_node(uint32_t type = 0, uint32_t sub_type = 0, std::string name = "", float x = -1.0f, float y = -1.0f, float z = -1.0f,
-        Value value = deadptr, Ptr childrenptr = deadptr, Ptr qualsptr = deadptr, Ptr nodetableptr = deadptr, 
-        Ptr valuetableptr = deadptr, Ptr scopesptr = deadptr, Ptr parent = deadptr, Ptr owner = deadptr, 
-        Ptr in_scope = deadptr, std::string opt_str = "", bool mute = false, bool resolved = false) 
-    {
-        Node n;
-        n.pool = node_type_id;
-        n.idx = push_column(types[node_type_id], layouts[node_id].total_size,node_id);
-        n.sidx = 0;
-        Col& col = types[node_type_id][n.idx];
-        col.heterogenous = true;
-
-        col.qset(node_type_offset,(void*)&type,4);
-        col.qset(node_sub_type_offset,(void*)&sub_type,4);
-
-        Ptr nameptr = get_ticket(name_store_id,sizeof(char),char_id);
-        col.qset(node_name_offset, (void*)&nameptr,sizeof(Ptr));
-        for(auto c : name) types[nameptr.pool][nameptr.idx].push((void*)&c);
-
-        col.qset(x_offset, (void*)&x,4);
-        col.qset(y_offset, (void*)&y,4);
-        col.qset(z_offset, (void*)&z,4);
-
-        col.qset(node_value_offset, (void*)&value,sizeof(Ptr));
-    
-        if(!is_live(childrenptr)) childrenptr = get_ticket(children_store_id,sizeof(Ptr),ptr_id);
-        col.qset(node_children_offset, (void*)&childrenptr,sizeof(Ptr));
-    
-        if(!is_live(qualsptr)) qualsptr = get_ticket(quals_store_id,sizeof(Ptr),ptr_id);
-        col.qset(node_quals_offset, (void*)&qualsptr,sizeof(Ptr));
-        
-        if(!is_live(nodetableptr)) nodetableptr = get_ticket(node_table_store_id,sizeof(Ptr),ptr_id);
-        col.qset(node_node_table_offset, (void*)&nodetableptr,sizeof(Ptr));
-    
-        if(!is_live(valuetableptr)) valuetableptr = get_ticket(value_table_store_id,sizeof(Ptr),ptr_id);
-        col.qset(node_value_table_offset, (void*)&valuetableptr,sizeof(Ptr));
-
-        if(!is_live(scopesptr)) scopesptr = get_ticket(scopes_store_id,sizeof(Ptr),ptr_id);
-        col.qset(node_scopes_offset, (void*)&scopesptr,sizeof(Ptr));
-        
-        col.qset(parent_offset, (void*)&parent,sizeof(Ptr));
-        col.qset(owner_offset, (void*)&owner,sizeof(Ptr));
-        col.qset(in_scope_offset, (void*)&in_scope,sizeof(Ptr));
-
-        Ptr optstrptr = get_ticket(opt_str_store_id,sizeof(char),char_id);
-        col.qset(node_opt_str_offset, (void*)&optstrptr,sizeof(Ptr));
-        for(auto c : opt_str) types[optstrptr.pool][optstrptr.idx].push((void*)&c);
-
-        col.qset(mute_offset, (void*)&mute,1);
-        col.qset(resolved_offset, (void*)&resolved,1);
-
-        return n;
-    }
-
-    Node make_node(uint32_t type, std::string name, Value value, Ptr in_scope) {
-        return make_node(type,0,name,-1.0f,-1.0f,-1.0f,value,deadptr,deadptr,deadptr,deadptr,deadptr,deadptr,deadptr,in_scope);
-    }
-
-    void recycle_column(Ptr p) {
-        recycle_column(types[p.pool], p.idx);
-    }
-
-    void recycle_node(Node n);
-
-    void recycle_value(Value v) {
-        if(is_live(v)&&resolve_to_col(v).live) {
-            for(int i=0;i<v.quals().length();i++) {
-                recycle_node(v.quals()[i]);
-            }
-            recycle_column(v.quals_ptr());
-
-            for(int i=0;i<v.sub_values().length();i++) {
-                recycle_value(v.sub_values()[i]);
-            }
-            recycle_column(v.sub_values_ptr());
-
-            recycle_column(v.data_ptr());
-        }
-    }
-
-    //Recycles everything
-    void recycle_node(Node n) {
-        if(is_live(n)&&resolve_to_col(n).live) {
-            for(int i=0;i<n.children().length();i++) {
-                recycle_node(n.children()[i]);
-            }
-            recycle_column(n.children_ptr());
-
-            for(int i=0;i<n.scopes().length();i++) {
-                recycle_node(n.scopes()[i]);
-            }
-            recycle_column(n.scopes_ptr());
-
-            for(int i=0;i<n.quals().length();i++) {
-                recycle_node(n.quals()[i]);
-            }
-            recycle_column(n.quals_ptr());
-
-            recycle_column(n.name_ptr());
-            recycle_value(n.value());
-            recycle_column(n.node_table_ptr());
-            recycle_column(n.value_table_ptr());
-            recycle_column(n.opt_str_ptr());
-            recycle_column(n);
-        }
-    }
-
-    //Doesn't recycle the value or children or scopes or quals
-    void soft_recycle_node(Node n) {
-        recycle_column(n.name_ptr());
-        recycle_column(n.children_ptr());
-        recycle_column(n.quals_ptr());
-        recycle_column(n.node_table_ptr());
-        recycle_column(n.value_table_ptr());
-        recycle_column(n.scopes_ptr());
-        recycle_column(n.opt_str_ptr());
-        recycle_column(n);
-    }
-
-    Value make_value(uint32_t type = 0, uint32_t size = 0, uint32_t address = 0, uint32_t sub_type = 0, 
-        uint32_t sub_size = 0, Ptr type_scope = deadptr, Ptr data = deadptr, Ptr quals = deadptr, 
-        Ptr sub_values = deadptr, Ptr store = deadptr, int reg = -1, int loc = -1) 
-    {
-        Value v;
-        v.pool = value_type_id;
-        v.idx = push_column(types[value_type_id], layouts[value_id].total_size, value_id);
-        v.sidx = 0;
-        Col& col = types[value_type_id][v.idx];
-        col.heterogenous = true;
-    
-        col.qset(value_type_offset, (void*)&type, 4);
-        col.qset(value_sub_type_offset, (void*)&sub_type, 4);
-        col.qset(size_offset, (void*)&size, 4);
-        col.qset(sub_size_offset, (void*)&sub_size, 4);
-        col.qset(address_offset, (void*)&address, 4);
-        col.qset(reg_offset, (void*)&reg, 4);
-        col.qset(loc_offset, (void*)&loc, 4);
-    
-        col.qset(value_data_offset, (void*)&data, sizeof(Ptr));
-        col.qset(type_scope_offset, (void*)&type_scope, sizeof(Ptr));
-        col.qset(store_offset, (void*)&store, sizeof(Ptr));
-    
-        if(!is_live(quals)) quals = get_ticket(quals_store_id, sizeof(Ptr), ptr_id);
-        col.qset(value_quals_offset, (void*)&quals, sizeof(Ptr));
-    
-        if(!is_live(sub_values)) sub_values = get_ticket(sub_value_store_id, sizeof(Ptr), ptr_id);
-        col.qset(value_sub_values_offset, (void*)&sub_values, sizeof(Ptr));
-    
-        return v;
-    }
-
-
-
     struct Context : public Ptr {
         Context() {}
-        Context(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx; }
+        Context(Ptr p){ pool = p.pool; sidx = p.sidx; idx = p.idx; unit = p.unit;}
     
         inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but context was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
-        inline Ptr&     node_ptr()           {DEBUG_ONLY(if(safety_check("context:node:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_node_offset);}
+        inline Ptr&     node_ptr()           {DEBUG_ONLY(if(safety_check("context:node:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_node_offset);}
         inline Node     node()               {return Node(node_ptr());}
-        inline void     node(Ptr p)          {DEBUG_ONLY(if(safety_check("context:node:set")){return;}) types[pool][idx].qset(context_node_offset,(void*)&p,sizeof(Ptr));}
+        inline void     node(Ptr p)          {DEBUG_ONLY(if(safety_check("context:node:set")){return;}) resolve_to_col(*this).qset(context_node_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     qual_ptr()           {DEBUG_ONLY(if(safety_check("context:qual:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_qual_offset);}
+        inline Ptr&     qual_ptr()           {DEBUG_ONLY(if(safety_check("context:qual:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_qual_offset);}
         inline Node     qual()               {return Node(qual_ptr());}
-        inline void     qual(Ptr p)          {DEBUG_ONLY(if(safety_check("context:qual:set")){return;}) types[pool][idx].qset(context_qual_offset,(void*)&p,sizeof(Ptr));}
+        inline void     qual(Ptr p)          {DEBUG_ONLY(if(safety_check("context:qual:set")){return;}) resolve_to_col(*this).qset(context_qual_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     left_ptr()           {DEBUG_ONLY(if(safety_check("context:left:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_left_offset);}
+        inline Ptr&     left_ptr()           {DEBUG_ONLY(if(safety_check("context:left:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_left_offset);}
         inline Node     left()               {return Node(left_ptr());}
-        inline void     left(Ptr p)          {DEBUG_ONLY(if(safety_check("context:left:set")){return;}) types[pool][idx].qset(context_left_offset,(void*)&p,sizeof(Ptr));}
+        inline void     left(Ptr p)          {DEBUG_ONLY(if(safety_check("context:left:set")){return;}) resolve_to_col(*this).qset(context_left_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     out_ptr()            {DEBUG_ONLY(if(safety_check("context:out:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_out_offset);}
+        inline Ptr&     out_ptr()            {DEBUG_ONLY(if(safety_check("context:out:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_out_offset);}
         inline Node     out()                {return Node(out_ptr());}
-        inline void     out(Ptr p)           {DEBUG_ONLY(if(safety_check("context:out:set")){return;}) types[pool][idx].qset(context_out_offset,(void*)&p,sizeof(Ptr));}
+        inline void     out(Ptr p)           {DEBUG_ONLY(if(safety_check("context:out:set")){return;}) resolve_to_col(*this).qset(context_out_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     root_ptr()           {DEBUG_ONLY(if(safety_check("context:root:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_root_offset);}
+        inline Ptr&     root_ptr()           {DEBUG_ONLY(if(safety_check("context:root:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_root_offset);}
         inline Node     root()               {return Node(root_ptr());}
-        inline void     root(Ptr p)          {DEBUG_ONLY(if(safety_check("context:root:set")){return;}) types[pool][idx].qset(context_root_offset,(void*)&p,sizeof(Ptr));}
+        inline void     root(Ptr p)          {DEBUG_ONLY(if(safety_check("context:root:set")){return;}) resolve_to_col(*this).qset(context_root_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     value_ptr()          {DEBUG_ONLY(if(safety_check("context:value:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_value_offset);}
+        inline Ptr&     value_ptr()          {DEBUG_ONLY(if(safety_check("context:value:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_value_offset);}
         inline Value    value()              {return Value(value_ptr());}
-        inline void     value(Ptr p)         {DEBUG_ONLY(if(safety_check("context:value:set")){return;}) types[pool][idx].qset(context_value_offset,(void*)&p,sizeof(Ptr));}
+        inline void     value(Ptr p)         {DEBUG_ONLY(if(safety_check("context:value:set")){return;}) resolve_to_col(*this).qset(context_value_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     result_ptr()         {DEBUG_ONLY(if(safety_check("context:result:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_result_offset);}
-        inline Col&     result_col()         {Ptr& p = result_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&     result_ptr()         {DEBUG_ONLY(if(safety_check("context:result:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_result_offset);}
+        inline Col&     result_col()         {Ptr& p = result_ptr(); return resolve_to_col(p);}
         inline node_col result()             {return (node_col&)result_ptr();}
-        inline void     result(Ptr p)        {DEBUG_ONLY(if(safety_check("context:result:set")){return;}) types[pool][idx].qset(context_result_offset,(void*)&p,sizeof(Ptr));}
+        inline void     result(Ptr p)        {DEBUG_ONLY(if(safety_check("context:result:set")){return;}) resolve_to_col(*this).qset(context_result_offset,(void*)&p,sizeof(Ptr));}
     
-        inline int&     index()              {DEBUG_ONLY(if(safety_check("context:index:get")){return _ctx_dummy_index;}) return *(int*)types[pool][idx].qget(context_index_offset);}
-        inline void     index(int i)         {DEBUG_ONLY(if(safety_check("context:index:set")){return;}) types[pool][idx].qset(context_index_offset,(void*)&i,4);}
+        inline int&     index()              {DEBUG_ONLY(if(safety_check("context:index:get")){return _ctx_dummy_index;}) return *(int*)resolve_to_col(*this).qget(context_index_offset);}
+        inline void     index(int i)         {DEBUG_ONLY(if(safety_check("context:index:set")){return;}) resolve_to_col(*this).qset(context_index_offset,(void*)&i,4);}
     
-        inline Ptr&     sub_ptr()            {DEBUG_ONLY(if(safety_check("context:sub:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_sub_offset);}
+        inline Ptr&     sub_ptr()            {DEBUG_ONLY(if(safety_check("context:sub:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_sub_offset);}
         inline Context  sub()                {return Context(sub_ptr());}
-        inline void     sub(Ptr p)           {DEBUG_ONLY(if(safety_check("context:sub:set")){return;}) types[pool][idx].qset(context_sub_offset,(void*)&p,sizeof(Ptr));}
+        inline void     sub(Ptr p)           {DEBUG_ONLY(if(safety_check("context:sub:set")){return;}) resolve_to_col(*this).qset(context_sub_offset,(void*)&p,sizeof(Ptr));}
     
-        inline Ptr&     source_ptr()         {DEBUG_ONLY(if(safety_check("context:source:ptr")){return dead_ref;}) return *(Ptr*)types[pool][idx].qget(context_source_offset);}
-        inline Col&     source_col()         {Ptr& p = source_ptr(); return types[p.pool][p.idx];}
+        inline Ptr&     source_ptr()         {DEBUG_ONLY(if(safety_check("context:source:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_source_offset);}
+        inline Col&     source_col()         {Ptr& p = source_ptr(); return resolve_to_col(p);}
         inline string   source()             {return string(source_ptr());}
-        inline void     source(Ptr p)        {DEBUG_ONLY(if(safety_check("context:source:set")){return;}) types[pool][idx].qset(context_source_offset,(void*)&p,sizeof(Ptr));}
+        inline void     source(Ptr p)        {DEBUG_ONLY(if(safety_check("context:source:set")){return;}) resolve_to_col(*this).qset(context_source_offset,(void*)&p,sizeof(Ptr));}
         inline void     source(std::string s){DEBUG_ONLY(if(safety_check("context:source:set")){return;}) source() = s;}
     
-        inline uint32_t state()              {DEBUG_ONLY(if(safety_check("context:state:get")){return 0;}) return *(uint32_t*)types[pool][idx].qget(context_state_offset);}
-        inline void     state(uint32_t s)    {DEBUG_ONLY(if(safety_check("context:state:set")){return;}) types[pool][idx].qset(context_state_offset,(void*)&s,4);}
+        inline uint32_t state()              {DEBUG_ONLY(if(safety_check("context:state:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(context_state_offset);}
+        inline void     state(uint32_t s)    {DEBUG_ONLY(if(safety_check("context:state:set")){return;}) resolve_to_col(*this).qset(context_state_offset,(void*)&s,4);}
     
-        inline bool     flag()               {DEBUG_ONLY(if(safety_check("context:flag:get")){return false;}) return *(bool*)types[pool][idx].qget(context_flag_offset);}
-        inline void     flag(bool b)         {DEBUG_ONLY(if(safety_check("context:flag:set")){return;}) types[pool][idx].qset(context_flag_offset,(void*)&b,1);}
+        inline bool     flag()               {DEBUG_ONLY(if(safety_check("context:flag:get")){return false;}) return *(bool*)resolve_to_col(*this).qget(context_flag_offset);}
+        inline void     flag(bool b)         {DEBUG_ONLY(if(safety_check("context:flag:set")){return;}) resolve_to_col(*this).qset(context_flag_offset,(void*)&b,1);}
     };
 
+    bool init_type_pool() {
+        global[handler_type_id].label = "handlers";
+        global[layout_type_id].label = "layouts";
+        global[node_type_id].label = "nodes";
+        global[value_type_id].label = "values";
+        global[context_type_id].label = "contexts";
+        global[name_store_id].label = "names";
+        global[children_store_id].label = "children";
+        global[quals_store_id].label = "quals";
+        global[node_table_store_id].label = "node table";
+        global[value_table_store_id].label = "value table";
+        global[scopes_store_id].label = "scopes";
+        global[opt_str_store_id].label = "opt_str";
+        global[data_store_id].label = "data";
+        global[sub_value_store_id].label = "sub_value";
 
-    Context make_context(Ptr result = deadptr, Ptr source = deadptr) {
-        Context c;
-        c.pool = context_type_id;
-        c.idx = push_column(types[context_type_id], layouts[context_id].total_size, context_id);
-        c.sidx = 0;
-        Col& col = types[context_type_id][c.idx];
-        col.heterogenous = true;
-    
-        Ptr dead_node = deadptr;
-        Ptr dead_value = deadptr;
-    
-        col.qset(context_node_offset,   (void*)&dead_node,  sizeof(Ptr));
-        col.qset(context_qual_offset,   (void*)&dead_node,  sizeof(Ptr));
-        col.qset(context_left_offset,   (void*)&dead_node,  sizeof(Ptr));
-        col.qset(context_out_offset,    (void*)&dead_node,  sizeof(Ptr));
-        col.qset(context_root_offset,   (void*)&dead_node,  sizeof(Ptr));
-        col.qset(context_value_offset,  (void*)&dead_value, sizeof(Ptr));
-        col.qset(context_sub_offset,    (void*)&dead_node,  sizeof(Ptr));
-    
-        if(!is_live(result)) result = get_ticket(children_store_id, sizeof(Ptr), ptr_id);
-        col.qset(context_result_offset, (void*)&result, sizeof(Ptr));
-        
-        if(!is_live(source)) source = get_ticket(name_store_id, sizeof(char), char_id);
-        col.qset(context_source_offset, (void*)&source, sizeof(Ptr));
-    
-        uint32_t zero = 0; bool f = false;
-        col.qset(context_index_offset,  (void*)&zero, 4);
-        col.qset(context_state_offset,  (void*)&zero, 4);
-        col.qset(context_flag_offset,   (void*)&f,    1);
-    
-        return c;
-    }
+        add_template(ptr_id);
+        add_template(string_id); 
 
-    void recycle_context(Context ctx) {
-        recycle_column(ctx);
+        // writeFile("mixos-acorn/tests/printout2.txt","");
+        // make_wrapper_for_layout(layouts[node_id],"Node","mixos-acorn/tests/printout2.txt");
+        return true;
     }
-    void deep_recycle_context(Context ctx) {
-        // recycle_column(ctx.result_ptr()); //Because this is often somebodies children
-        // recycle_column(ctx.source_ptr());
-        recycle_column(ctx);
-    }
-    
+    bool type_pool_intilized = init_type_pool();
+
+
     using Handler = std::function<void(Context&)>;
 
     struct Stage : q_object {
@@ -1053,594 +790,979 @@ namespace Acorn {
         Handler logger = nullptr;
     };  
 
-    std::string tag_to_str(uint32_t tag, void* data) {
-        DEBUG_ONLY(if(ERROR_FLAG) {return "ERROR";})
-        if(tag==int_id) {
-            return std::to_string(*(int*)data);
-        } else if(tag==float_id) {
-            return std::to_string(*(float*)data);
-        } else if(tag==bool_id) {
-            return (*(bool*)data?"true":"false");
-        } else if(tag==char_id) {
-            return std::string(1,*(char*)data);
-        } else if(tag==string_id) {
-            Ptr ptr = *(Ptr*)data;
-            if(ptr.pool>=types.length()) {
-                return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
-            }
-            std::string content = string(ptr).to_std();
-            return Ptr_as_string(ptr)+"> \""+escape_string(content)+"\"";
-        } else if(tag==ptr_id) {
-            return Ptr_as_string(*(Ptr*)data);
-        } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id) {
-            return Ptr_as_string(*(Ptr*)data);
-        } else if(tag==ptr4_id) {
-            Ptr4 p = *(Ptr4*)data;
-            std::string s = labels[p.midx]+"> "+Ptr_as_string(p.ptr);
-            return s;
-        } else if(tag==list_id||tag==col_id) {
-            Ptr ptr = *(Ptr*)data;
-            std::string s = Ptr_as_string(ptr)+"> [";
-            Col& col = resolve_to_col(ptr);
-            for(int i=0;i<col.length();i++) {
-                s+=tag_to_str(col.tag,col[i]);
-                if(i<col.length()-1) {s+=", ";}
-            }
-            s+="]";
-            return s;
-        } else if(tag==map_id) {
-            Ptr ptr = *(Ptr*)data;
-            std::string s = Ptr_as_string(ptr)+"> [";
-            Col& col = resolve_to_col(ptr);
-            // for(auto e : col.cells.entrySet()) {
-            //     s+="{"+e.key+": "+tag_to_str(col.tag,col[e.value])+"}";
-            // }
-            s+="]";
-            return s;
-        } else {
-            return labels[tag]+"?";
+    static void write_TypeCol(std::ostream& out, ColCol& type) {
+        write_col(out, type);
+        for(int c = 0; c < type.length(); c++) {
+            Col& col = type[c];
+            write_col(out, col);
         }
     }
     
-    std::string disassemble(uint32_t instr) {
-        if(instr==0) return "NULL";
-        if(instr==0xD65F03C0) return "ret";
-
-        uint32_t op9 = (instr >> 23) & 0b111111111;
-        uint32_t op7 = (instr >> 24) & 0b11111110;
-
-        if(op9 == 0b010100101) { // MOVZ sf=0
-            int rd    = instr & 0b11111;
-            int imm16 = (instr >> 5) & 0b1111111111111111;
-            return "movz " + std::to_string(rd) + " " + std::to_string(imm16) + " 0";
+    static ColCol read_TypeCol(std::istream& in) {
+        ColCol type = read_col(in);
+        for(uint32_t i = 0; i < type.length(); i++) {
+            Col col = read_col(in);
+            type.set(i,col);
         }
-        if(op9 == 0b110100101) { // MOVZ sf=1
-            int rd    = instr & 0b11111;
-            int imm16 = (instr >> 5) & 0b1111111111111111;
-            return "movz " + std::to_string(rd) + " " + std::to_string(imm16) + " 1";
-        }
-
-
-        if((instr & 0b01111111100000000000000000000000) == 0b01110010100000000000000000000000) {
-            int rd    =  instr & 0b11111;
-            int imm16 = (instr >> 5) & 0b1111111111111111;
-            int hw    = (instr >> 21) & 0b11;
-            int sf    = (instr >> 31) & 1;
-            return "movk " + std::to_string(rd) + " " + std::to_string(imm16) + " " + std::to_string(hw*16) + " " + std::to_string(sf);
-        }
-
-        if((instr & 0b01111111001000000000001111100000) == 0b00101010000000000000001111100000) {
-            int rd = instr & 0b11111;
-            int rm = (instr >> 16) & 0b11111;
-            int sf = (instr >> 31) & 1;
-            return "mov " + std::to_string(rd) + " " + std::to_string(rm) + " " + std::to_string(sf);
-        }
-
-        if((instr & 0b01111111111000000000000000000000) == 0b00001011000000000000000000000000) {
-            int rd = instr & 0b11111;
-            int rn = (instr >> 5) & 0b11111;
-            int rm = (instr >> 16) & 0b11111;
-            int sf = (instr >> 31) & 1;
-            return "add " + std::to_string(rd) + " " + std::to_string(rn) + " " + std::to_string(rm) + " " + std::to_string(sf);
-        }
-
-        if((instr & 0b01111111111000000000000000000000) == 0b00011011000000000000000000000000) {
-            int rd = instr & 0b11111;
-            int rn = (instr >> 5) & 0b11111;
-            int rm = (instr >> 16) & 0b11111;
-            int sf = (instr >> 31) & 1;
-            return "mul " + std::to_string(rd) + " " + std::to_string(rn) + " " + std::to_string(rm) + " " + std::to_string(sf);
-        }
-
-        if((instr & 0b11111111110000000000000000000000) == 0b10111001010000000000000000000000) {
-            int rt     = instr & 0b11111;
-            int rn     = (instr >> 5) & 0b11111;
-            int offset = ((instr >> 10) & 0b111111111111) * 4;
-            return "ldr32 " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
-        }
-
-        if((instr & 0b11111111110000000000000000000000) == 0b11111001010000000000000000000000) {
-            int rt     = instr & 0b11111;
-            int rn     = (instr >> 5) & 0b11111;
-            int offset = ((instr >> 10) & 0b111111111111) * 8;
-            return "ldr " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
-        }
-
-        if((instr & 0b11111111110000000000000000000000) == 0b10111001000000000000000000000000) {
-            int rt     = instr & 0b11111;
-            int rn     = (instr >> 5) & 0b11111;
-            int offset = ((instr >> 10) & 0b111111111111) * 4;
-            return "str32 " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
-        }
-
-        if((instr & 0b11111111110000000000000000000000) == 0b11111001000000000000000000000000) {
-            int rt     = instr & 0b11111;
-            int rn     = (instr >> 5) & 0b11111;
-            int offset = ((instr >> 10) & 0b111111111111) * 4;
-            return "str " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
-        }
-
-
-
-        return "   ?   ";
+        return type;
     }
 
-    std::string print_columnar_table(list<list<std::string>> lines) {
-        list<uint32_t> widths;
-        uint32_t longest_row = 0;
-        for(int l=0;l<lines.length();l++) {
-            list<std::string>& line = lines[l];
-            uint32_t widest_row = 0;
-            for(int i=0;i<line.length();i++) {
-                if(i==0&&line[i].empty()) {line[i] = std::to_string(l);}
-                if(line[i].length()>widest_row) {widest_row = line[i].length();}
-            }
-            widths << widest_row;
-            if(line.length()>longest_row) {longest_row = line.length();}
+    static void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
+        write_col(out, col);
+        for(int i = 0; i < col.length(); i++) {
+            write_TypeCol(out,col[i]);
         }
+    }
 
-        std::string to_return = "";
-        int lpadlen = digit_count(longest_row)+1;
-        for(int r=0;r<longest_row;r++) {
-            if(r==1) {
-                for(int l=0;l<lines.length();l++) {
-                    to_return+=std::string(widths[l]+lpadlen+3,'-')+"<|>";
-                }
-                to_return+="\n";
-            }
+    static ColColCol read_TypeTypeCol(std::istream& in) {
+        ColColCol col = read_col(in);
+        for(uint32_t p = 0; p < col.length(); p++) {
+            col.set(p,read_TypeCol(in));
+        }
+        return col;
+    }
 
-            for(int l=0;l<lines.length();l++) {
-                std::string line = "";
-                if(lines[l].length()>r) {line = lines[l][r];}
-                std::string rownum = std::to_string(r-1); //Minus 1 because indexes start at 0                    
-                if(r==0) { //If a header
-                    std::string column = std::to_string(l);
-                    if(line==column) {
-                        to_return += center_pad(line, widths[l]+lpadlen+3) + " | ";
-                    } else {
-                        to_return+=std::string(lpadlen-column.length(),' ')+column+" : ";
-                        to_return += center_pad(line, widths[l]) + " | ";
+    class Unit : public q_object {
+        public:
+
+        Stage* active_stage;
+        list<Watcher> watchers;
+
+        uint16_t derive_uid() {
+            DEBUG_ONLY(
+                Watcher def("core");
+                def.stagestart = [this](Context& ctx){
+                    if(active_stage) {
+                        newline(active_stage->label);
                     }
-                } else {
-                    if(!line.empty()) {
-                        to_return+=std::string(lpadlen-rownum.length(),' ')+rownum+" : ";
-                        std::string padding(widths[l]-line.length(),' ');
-                        to_return += line+padding+" | ";
-                    } else {
-                        to_return += center_pad("X",widths[l]+lpadlen+3)+" | ";
-                    }
-                }
+                };
+                def.prefix = [this](Context& ctx){
+                    newline(active_stage->label+": "+node_info(ctx.node()));
+                };
+                def.suffix = [this](Context& ctx){
+                    if(ERROR_FLAG) {log(red("Marked "+Ptr_as_string(ctx.node())+" as error")); mark_error(ctx.node());}
+                    log(green("After: "),node_info(ctx.node()));
+                    endline();
+                };
+                def.stagend = [this](Context& ctx){
+                    endline();
+                };
+                watchers << def;
+            )
 
-            }
-            to_return+="\n";
-
-            if(longest_row>1&&r==longest_row-1) {
-                for(int l=0;l<lines.length();l++) {
-                    to_return+=std::string(widths[l]+lpadlen+3,'=')+"/ \\";
-                }
-            }
-        }
-        return to_return;
-    }
-
-    list<list<std::string>> type_to_lines(TypeCol& t) {
-        list<list<std::string>> lines;
-        list<uint32_t> dtypes;
-        for(int c=0;c<t.length();c++) {
-            Col& col = t[c];
-            list<std::string> subline;
-            subline << col.label.to_std()+(col.live?"":" [FREE]");
-            if(col.heterogenous) {
-                if(layouts.hasKey(col.tag)) {
-                    _layout& l = layouts.get(col.tag);
-                    for(int o=0;o<l.offsets.length();o++) {
-                        std::string line = "";
-                        line+=pad_str(l.labels[o]+": ",12);
-                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                        subline << line;
-                    }
-                } else {
-                    print(red("core::type_to_string unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
-                }
-            } else {
-                for(int r=0;r<col.length();r++) {
-                    std::string line = ""; //v turn this into a 'show key as string' tag eventually and replace this cruft
-                    if(col.label=="stages") { //From the handler type
-                        std::string cell_label = ""; //col.get_cell_label(r);
-                        if(!cell_label.empty()) line+=cell_label;
-                        else line+="REIMPLMENT CELL KEYS LATER";
-                    } else {
-                        line+=tag_to_str(col.tag,col[r]);
-                    }
-                    subline << line;
-                }
-            }
-            lines << subline;
-        }
-        return lines;
-    }
-
-    std::string type_to_string(TypeCol& t) {
-        return print_columnar_table(type_to_lines(t));
-    }
-
-
-    list<list<std::string>> TypeCol_to_lines(TypeCol& t) {
-        list<list<std::string>> lines;
-        for(int c=0;c<t.length();c++) {
-            Col& col = t[c];
-            list<std::string> subline;
-            subline << col.label.to_std();
-            if(col.heterogenous) {
-                if(layouts.hasKey(col.tag)) {
-                    _layout& l = layouts.get(col.tag);
-                    for(int o=0;o<l.offsets.length();o++) {
-                        std::string line = "";
-                        line+=pad_str(l.labels[o]+": ",12);
-                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                        subline << line;
-                    }
-                } else {
-                    print(red("core::TypeCol_to_lines unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
-                }
-            } else {
-                for(int r=0;r<col.length();r++) {
-                    std::string line = "";
-                    line+=tag_to_str(col.tag,col[r]);
-                    subline << line;
-                }
-            }
-            lines << subline;
-        }
-        return lines;
-    }
-
-    void print_column(Col& col) {
-        print("COL: ",col.label," TAG: ",labels[col.tag]," [",std::to_string(col.length()),"]");
-        if(col.heterogenous) {
-            if(layouts.hasKey(col.tag)) {
-                _layout& l = layouts.get(col.tag);
-                for(int o=0;o<l.offsets.length();o++) {
-                    std::string line = "";
-                    line+=pad_str(l.labels[o]+": ",12);
-                    line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                    print(line);
-                }
-            } else {
-                print(red("core::print_column unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
-            }
-        } else {
-            for(int i=0;i<col.length();i++) {
-                print(i,": ",tag_to_str(col.tag,col[i]));
-            }
-        }
-    }
-
-    void dump_unit(bool clear_dump) {
-        if(clear_dump) writeFile("mixos-acorn/tests/printout.txt","");
-
-        for(int t=0;t<types.length();t++) {
-            std::string to_print = "";
-            to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+":\n";
-            to_print += type_to_string(types[t]);
-            to_print += "\n\n\n";
-
-            editTextFile("mixos-acorn/tests/printout.txt",[to_print](std::string& source){
-                source+=to_print;
-            });
-        }
-    }
-
-    std::string value_info(Value value) {
-        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" while another error was active")); return "";})
-
-        std::string to_return = "";
-        to_return += cyan("["+Ptr_as_string(value)+"]")+
-        + "(type: " + green(labels[value.type()])
-        + (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"");
-        if(is_live(value.data_ptr())) { //For post-mortems we want to see the adress, so it needs to be computed first, before the error
-            std::string ptr_addr = Ptr_as_string(value.data_ptr());
-            if(resolve_to_col(value.data_ptr()).empty()) {
-                to_return += ", value: "+gray("empty")+" @"+ptr_addr;
-            } else {
-                to_return += ", value: "+gray(tag_to_str(value.type(),value.get()))+" @"+ptr_addr;
-            }
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" but the value was invalid")); return to_return;})
-        }
-        to_return += (value.sub_type()!=0?", sub_type: "+labels[value.sub_type()]:"")
-        + (is_live(value.type_scope())?", type_scope: "+blue(Ptr_as_string(value.type_scope())):"")
-        + (value.size()!=0?", size: "+std::to_string(value.size()):"")
-        + (value.sub_size()!=0?", sub_size: "+std::to_string(value.sub_size()):"")
-        + (value.address()!=0?", address: "+std::to_string(value.address()):"")
-        + (value.loc()!=-1?", loc: "+std::to_string(value.loc()):"")
-        + (is_live(value.store())?", store: "+Ptr_as_string(value.store()):"")
-        + (!value.sub_values().empty()?", sub: "+std::to_string(value.sub_values().length()):"");
-        if(!value.quals().empty()) {
-            to_return += ", Quals: ";
-            for(int i=0;i<value.quals().length();i++) {
-                to_return += labels[value.quals()[i].type()]+(i!=value.quals().length()-1?", ":"");
-            }
-        }
-        to_return += ")";
-        return to_return;
-    }
+            types = global;
+          
+            ColCol& h = types[handler_type_id];
+            for(int i = 0; i < h.length(); i++) {
+                Col& handler_col = h[i];
     
-    std::string node_info(Node node) {
-        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
-
-        std::string to_return = "";
-        to_return += blue(Ptr_as_string(node)+" ")
-        + labels[node.type()]
-        + (node.sub_type()==0?"":":"+labels[node.sub_type()])
-        + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()))+" ") 
-        + (is_live(node.value())?value_info(node.value()):"")
-        + (node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"")
-        + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
-        + (!node.scopes().empty()?"[S:"+std::to_string(node.scopes().length())+"]":"")
-        + (is_live(node.owner())?"[O:"+blue(Ptr_as_string(node.owner()))+"]":"")
-        + (is_live(node.in_scope())?"{"+node.in_scope().name().to_std()+"}":"");
-        if(!node.quals().empty()) {
-            to_return += "[Q: ";
-            for(int i=0;i<node.quals().length();i++) {
-                if(node.quals()[i].mute()) {
-                    to_return += italic_str(Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()]);
-                } else {
-                    to_return += Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()];
-                }
-                to_return+=(i!=node.quals().length()-1?", ":"");
-            }
-            to_return += "]";
-        }
-        return to_return;
-    }
-
-    #define ACORN_MUTE_TABLES 1
-
-    std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
-        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
-        std::string indent(depth * 2, ' ');
-        std::string to_return = "";
+                labels.put(i,handler_col.label.to_std());
+    
+                if(handler_col.empty()) continue;
+                Ptr lptr = *(Ptr*)handler_col.sget(0);
+                if(!is_live(lptr)) continue;
         
-        to_return += indent + sigil + std::to_string(index) + ": " + node_info(node);
-    
-        #if !ACORN_MUTE_TABLES 
-        if(node.value_table().length()>0) {
-            to_return += "\n" + indent + "   Value table:";
-            QCellCol cells = node.value_table().col().cells;
-            for(int i=0;i<cells.length();i++) {
-                to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+value_info(node.value_table().get(cells.get(i).index));
-            }
-        }
-        if(node.node_table().length()>0) {
-            to_return += "\n" + indent + "   Node table:";
-            QCellCol cells = node.node_table().col().cells;
-            for(int i=0;i<cells.length();i++) {
-                to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+node_info(node.node_table().get(cells.get(i).index));
-            }
-        }
-        #endif
-    
-
-
-        // if(!node->opt_str.empty()) {
-        //     to_return +=  "\n" + indent + "  Opt_str: " + node->opt_str;
-        // }
-
-        if(!node.children().empty()) {
-            for(int i=0;i<node.children().length();i++) {
-                if(is_live(node.children()[i])) {
-                    if(node.children()[i].idx==node.idx) {
-                        to_return+="\n "+indent+red("  self refrence");
-                    } else {
-                        to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes,"c");
-                    }
-                }
-                else {
-                    to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i]);
-                }
-            }
-        }
-
-        if(!node.scopes().empty()) {
-            //to_return +=  "\n" + indent + "   Scopes: " + std::to_string(node.scopes().length());
-            int i = 0;
-            for(int s=0;s<node.scopes().length();s++) {
-                Node scope = node.scopes()[s];
-                if(scope.owner().idx==node.idx) {
-                    to_return += "\n " + node_to_string(scope, depth + 1, s, print_sub_scopes,"s");
-                }
-                else {
-                    to_return += "\n"+indent+"  s"+std::to_string(s)+": "+node_info(scope);
-                }
-            }
-        }
-    
-        return to_return;
-    }
-
-    bool init_type_pool() {
-        labels[undefined_id] = "UDEFINED";
-        labels[ptr_id] = "Ptr";
-
-        types[handler_type_id].label = "handlers";
-        types[layout_type_id].label = "layouts";
-        types[node_type_id].label = "nodes";
-        types[value_type_id].label = "values";
-        types[context_type_id].label = "contexts";
-        types[name_store_id].label = "names";
-        types[children_store_id].label = "children";
-        types[quals_store_id].label = "quals";
-        types[node_table_store_id].label = "node table";
-        types[value_table_store_id].label = "value table";
-        types[scopes_store_id].label = "scopes";
-        types[opt_str_store_id].label = "opt_str";
-        types[data_store_id].label = "data";
-        types[sub_value_store_id].label = "sub_value";
-
-
-
-        add_template(ptr_id);
-        add_template(string_id); 
-
-        // writeFile("mixos-acorn/tests/printout2.txt","");
-        // make_wrapper_for_layout(layouts[node_id],"Node","mixos-acorn/tests/printout2.txt");
-        return true;
-    }
-    bool type_pool_intilized = init_type_pool();
-
-    Node scan_for_node(const std::string& label, Node from) {
-        for(int i=0;i<from.children().length();i++) {
-            //print("CHECKING: ",from.children()[i].name().to_std());
-            if(from.children()[i].name().to_std()==label) {
-                return from.children()[i];
-            }
-            Node found = scan_for_node(label,from.children()[i]);
-            if(is_live(found)) {
-                return found;
-            }
-        }
-        for(int i=0;i<from.scopes().length();i++) {
-            Node found = scan_for_node(label,from.scopes()[i]);
-            if(is_live(found)) {
-                return found;
-            }
-        }
-        return deadptr;
-    }
-
-    void test_acorn() {
-        Node n = make_node();
-        Node m = make_node();
-        n.name("NODE N"); m.name("NODE M");
-        print("NODES WITH 2 NODES: ",types[node_type_id].length());
-        print("NAMES WITH 2 NODES: ",types[name_store_id].length());
-        print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
-        recycle_node(n);
-        print("NODES AFTER RECYCLE: ",types[node_type_id].length());
-        print("NAMES AFTER RECYCLE: ",types[name_store_id].length());
-        print("CHILDREN AFTER RECYCLE: ",types[children_store_id].length());
-        Node c = make_node();
-        print("NODES WITH 2 NODES: ",types[node_type_id].length());
-        print("NAMES WITH 2 NODES: ",types[name_store_id].length());
-        print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
-        c.name("C");
-        print(c.name().to_std());
-    }
-
-    void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
-        n.type(o.type());
-        n.sub_type(o.sub_type());
-        n.name(o.name().to_std());
-        n.x(o.x());
-        n.y(o.y());
-        n.z(o.z());
-        n.mute(o.mute());
-        n.resolved(o.resolved());
-    
-        n.children().clear();
-        for(int i = 0; i < o.children().length(); i++) {
-            Node newc = make_node();
-            deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
-            n.children() << newc;
-        }
-    
-        n.quals().clear();
-        for(int i = 0; i < o.quals().length(); i++) {
-            Node newq = make_node();
-            deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
-            n.quals() << newq;
-        }
-    
-        n.scopes().clear();
-        for(int i = 0; i < o.scopes().length(); i++) {
-            Node news = make_node();
-            deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
-            n.scopes() << news;
-        }
-    
-        if(value_alias_table.hasKey(o.value().idx)) {
-            Value aliased = value_alias_table.get(o.value().idx);
-            n.value(aliased);
-            if(is_live(aliased.type_scope())) {
-                if(!n.scopes().empty()) {
-                    Node ntyscope = aliased.type_scope();
-                    n.scopes().col().set(0,(void*)&ntyscope);
-                }
-                else
-                    n.scopes() << aliased.type_scope();
-            }
-        } else {
-            if(is_live(o.value())) {
-                if(!is_live(n.value())) {
-                    n.value(make_value());
-                }
-                n.value().copy(o.value(),true);
-            }
-        }
-    
-        types[n.pool][n.idx].qset(node_value_table_offset,
-            types[o.pool][o.idx].qget(node_value_table_offset), sizeof(Ptr));
-        types[n.pool][n.idx].qset(node_node_table_offset,
-            types[o.pool][o.idx].qget(node_node_table_offset), sizeof(Ptr));
-    
-        n.parent(o.parent_ptr());
-        n.owner(o.owner_ptr());
-        n.in_scope(o.in_scope_ptr());
-        n.opt_str() = o.opt_str().to_std();
-    }
-
-    Node copy_as_token(Node node) {
-        Node copy = make_node(node.type(),0,node.name().to_std(),node.x(),node.y(),node.z());
-        copy.mute(true);
-        for(int i=0;i<node.quals().length();i++) {
-            Node q = node.quals()[i];
-            if(q.mute()) {copy.quals() << q;}
-        }
-        return copy;
-    }
-
-    Node turn_into_token(Node node) {
-        node.mute(true);
-        return node;
-    }
-
-
-    void walk_nodenet(Node root, std::function<void(Node)> func) {
-        func(root);
-        for(int i=0;i<root.children().length();i++) walk_nodenet(root.children()[i],func);
-        for(int i=0;i<root.quals().length();i++) walk_nodenet(root.quals()[i],func);
-        for(int i=0;i<root.scopes().length();i++) if(root.scopes()[i].owner()==root) walk_nodenet(root.scopes()[i],func);
-        if(is_live(root.value())) {
-            for(int i=0;i<root.value().quals().length();i++) walk_nodenet(root.value().quals()[i],func);
-        }
-    }
+                _layout l(lptr);
         
-    struct Unit : public q_object {
-        Unit() {init();}
+                Col& offsets_c  = resolve_to_col(lptr, lptr.idx + offsets_col);
+                Col& tags_c     = resolve_to_col(lptr, lptr.idx + tags_col);
+                Col& sizes_c    = resolve_to_col(lptr, lptr.idx + sizes_col);
+                Col& labels_c   = resolve_to_col(lptr, lptr.idx + labels_col);
+                Col& subtags_c  = resolve_to_col(lptr, lptr.idx + subtags_col);
+                Col& subsizes_c = resolve_to_col(lptr, lptr.idx + subsizes_col);
+                Col& ptrs_c     = resolve_to_col(lptr, lptr.idx + ptrs_col);
+                l.overloads     = resolve_to_col(lptr, lptr.idx + overloads_col);
+        
+                uint32_t count = offsets_c.size / sizeof(uint32_t);
+                for(uint32_t f = 0; f < count; f++) {
+                    uint32_t offset  = *(uint32_t*)offsets_c.sget(f);
+                    uint32_t tag     = *(uint32_t*)tags_c.sget(f);
+                    uint32_t size    = *(uint32_t*)sizes_c.sget(f);
+                    Ptr      label_p = *(Ptr*)labels_c.sget(f);
+                    uint32_t subtag  = *(uint32_t*)subtags_c.sget(f);
+                    uint32_t subsize = *(uint32_t*)subsizes_c.sget(f);
+                    Ptr      ptr     = *(Ptr*)ptrs_c.sget(f);
+        
+                    std::string label_str = string(label_p).to_std();
+                    l.label_to_index.put(label_str, l.offsets.length());
+                    l.offsets  << offset;
+                    l.tags     << tag;
+                    l.sizes    << size;
+                    l.labels   << label_str;
+                    l.subtags  << subtag;
+                    l.subsizes << subsize;
+                    l.ptrs     << ptr;
+                }
+                l.total_size = l.offsets.length() > 0 
+                    ? l.offsets.last() + l.sizes.last() 
+                    : 0;
+                    
+                layouts[i] = l;
+            }
+            units << this;
+            return (uint16_t)units.length()-1;
+        }
 
-        map<std::string,g_ptr<Stage>> stages;
+        Unit(uint16_t _uid) : types(global), uid(derive_uid()) {init();}
+        Unit() {}
+        
+
+        map<uint32_t, std::string> labels;
+        map<uint32_t,_layout> layouts;
+        map<std::string, g_ptr<Stage>> stages;
+        uint32_t next_id = 0;
+        uint16_t uid;
+
         Node unit_root = deadptr;
         std::string unit_label = "";
+
+        ColColCol types;
+        ColCol& operator[](uint16_t index) {return types[index];}
+
+        virtual void init() {
+           
+        }
+        virtual Node process(std::string path) {return deadptr;}
+        virtual void run(Node root) {}
+
+        inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
+            Ptr ticket(type_id,create_column(types[type_id],size,tag),0,uid);
+            return ticket;
+        }
+
+        list<Ptr> marked_ptrs;
+        map<uint64_t,std::function<void(std::string&)>> ptr_colors;
+        inline uint64_t Ptr_to_key(Ptr p) {
+            return ((uint64_t)p.pool << 32) | (uint64_t)p.idx;
+        }
+        inline Ptr key_to_Ptr(uint64_t key) {
+            return Ptr{(uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF), 0};
+        }
+        uint64_t make_overload_key(uint32_t root, uint32_t right) {
+            return ((uint64_t)root << 32) | right;
+        }
+        inline std::pair<uint32_t,uint32_t> decode_key(uint64_t key) {
+            return std::make_pair<uint32_t,uint32_t>((uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFF));
+        }
+
+        std::string Ptr_as_string(Ptr p) {
+            if(ERROR_FLAG||(p.pool>=types.length()||p.idx>=types[p.pool].length()||marked_ptrs.has(p))) {
+                return red(std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx));
+            }
+
+            #if NAMED_PTRS
+                std::string plabel = types[p.pool].label.empty()?std::to_string(p.pool):types[p.pool].label.to_std();
+                std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label.to_std();
+                std::string pstring = ""+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
+                uint64_t key = Ptr_to_key(p);
+            
+                if(ptr_colors.hasKey(key)) {ptr_colors.get(key)(pstring);}
+                return pstring;
+            #else
+                return std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx)+"";
+            #endif
+        }
+
+        void mark_error(Ptr ptr) {marked_ptrs << ptr;}
+
+        void print_layout(_layout& l) {
+            for(int i=0;i<l.offsets.length();i++) {
+                print(i,": ",labels[i],": ",l.offsets[i],", ",labels[l.tags[i]],", ",labels[l.subtags[i]],"[",l.sizes[i],"]");
+            }
+            // for(auto e : l.overload.entrySet()) {
+            //     auto keyl = decode_key(e.key);
+            //     print(labels[keyl.first]," ",labels[keyl.second],"(",keyl.second,"): ",labels[e.value.type]);
+            // }
+        }
+
+
+        uint32_t reg_id(const std::string& label) {
+            uint32_t at = types[handler_type_id].length();
+            note_value(types[handler_type_id],label,sizeof(Ptr),ptr_id);
+            types[handler_type_id][at].push_default();
+            labels[at] = label;
+            return at;
+        }
+
+        std::string make_wrapper_for_layout(_layout& l, const std::string& name) {
+            std::string s = "";
+            std::string pad = "     ";
+            s+="struct "+name+" : Ptr {\n";
+            s += pad+name+"() {}\n";
+            s += pad+name+"(uint32_t p, uint32_t i, uint32_t s) { pool = p; idx = i; sidx = s; }\n";
+            s += pad+name+"(Ptr p) { pool = p.pool; idx = p.idx; sidx = p.sidx; }\n";
+            for(int i=0;i<l.offsets.length();i++) {
+                s+="\n";
+                std::string type = labels[l.tags[i]];
+                std::string label = l.labels[i];
+                uint32_t offset = l.offsets[i];
+                uint32_t size = l.sizes[i];
+
+                bool is_compound = layouts.hasKey(l.tags[i]);
+                bool is_ptr = l.tags[i]==ptr_id||l.tags[i]==string_id;
+
+                if(is_ptr) {
+                    s += pad+pad_str("inline "+pad_str("Ptr&",12)+" "+label+"_ptr()",32)+"{return *(Ptr*)resolve_to_col(*this).qget(sidx+"+std::to_string(offset)+"); }\n";
+                    s += pad+pad_str("inline "+pad_str("Col&",12)+" "+label+"_col()",32)+"{return resolve_to_col("+label+"_ptr());}\n";
+                    s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"(Ptr p)",32)+"{resolve_to_col(*this).qset(sidx+"+std::to_string(offset)+", (void*)&p, "+std::to_string(size)+"); }\n";
+                } else if(is_compound) {
+                    s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return {pool, idx, sidx+"+std::to_string(offset)+"}; }\n";
+                    s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{resolve_to_col(*this).qset(sidx+"+std::to_string(offset)+", types[t.pool][t.idx].qget(t.sidx), "+std::to_string(size)+"); }\n";
+                } else {
+                    s += pad+pad_str("inline "+pad_str(type,12)+" "+label+"()",32)+"{return *("+type+"*)resolve_to_col(*this).qget(sidx+"+std::to_string(offset)+"); }\n";
+                    s += pad+pad_str("inline "+pad_str("void",12)+" "+label+"("+type+" t)",32)+"{resolve_to_col(*this).qset(sidx+"+std::to_string(offset)+", (void*)&t, "+std::to_string(size)+"); }\n";
+                }
+            }
+            s+="};";
+            return s;
+        }
+
+        Node make_node(uint32_t type = 0, uint32_t sub_type = 0, std::string name = "", float x = -1.0f, float y = -1.0f, float z = -1.0f,
+            Value value = deadptr, Ptr childrenptr = deadptr, Ptr qualsptr = deadptr, Ptr nodetableptr = deadptr, 
+            Ptr valuetableptr = deadptr, Ptr scopesptr = deadptr, Ptr parent = deadptr, Ptr owner = deadptr, 
+            Ptr in_scope = deadptr, std::string opt_str = "", bool mute = false, bool resolved = false) 
+        {
+            Node n;
+            n.pool = node_type_id;
+            n.idx = push_column(types[node_type_id], layouts[node_id].total_size,node_id);
+            n.sidx = 0;
+            n.unit = uid;
+            Col& col = types[node_type_id][n.idx];
+            col.heterogenous = true;
+    
+            col.qset(node_type_offset,(void*)&type,4);
+            col.qset(node_sub_type_offset,(void*)&sub_type,4);
+    
+            Ptr nameptr = get_ticket(name_store_id,sizeof(char),char_id);
+            col.qset(node_name_offset, (void*)&nameptr,sizeof(Ptr));
+            for(auto c : name) types[nameptr.pool][nameptr.idx].push((void*)&c);
+    
+            col.qset(x_offset, (void*)&x,4);
+            col.qset(y_offset, (void*)&y,4);
+            col.qset(z_offset, (void*)&z,4);
+    
+            col.qset(node_value_offset, (void*)&value,sizeof(Ptr));
+        
+            if(!is_live(childrenptr)) childrenptr = get_ticket(children_store_id,sizeof(Ptr),ptr_id);
+            col.qset(node_children_offset, (void*)&childrenptr,sizeof(Ptr));
+        
+            if(!is_live(qualsptr)) qualsptr = get_ticket(quals_store_id,sizeof(Ptr),ptr_id);
+            col.qset(node_quals_offset, (void*)&qualsptr,sizeof(Ptr));
+            
+            if(!is_live(nodetableptr)) nodetableptr = get_ticket(node_table_store_id,sizeof(Ptr),ptr_id);
+            col.qset(node_node_table_offset, (void*)&nodetableptr,sizeof(Ptr));
+        
+            if(!is_live(valuetableptr)) valuetableptr = get_ticket(value_table_store_id,sizeof(Ptr),ptr_id);
+            col.qset(node_value_table_offset, (void*)&valuetableptr,sizeof(Ptr));
+    
+            if(!is_live(scopesptr)) scopesptr = get_ticket(scopes_store_id,sizeof(Ptr),ptr_id);
+            col.qset(node_scopes_offset, (void*)&scopesptr,sizeof(Ptr));
+            
+            col.qset(parent_offset, (void*)&parent,sizeof(Ptr));
+            col.qset(owner_offset, (void*)&owner,sizeof(Ptr));
+            col.qset(in_scope_offset, (void*)&in_scope,sizeof(Ptr));
+    
+            Ptr optstrptr = get_ticket(opt_str_store_id,sizeof(char),char_id);
+            col.qset(node_opt_str_offset, (void*)&optstrptr,sizeof(Ptr));
+            for(auto c : opt_str) types[optstrptr.pool][optstrptr.idx].push((void*)&c);
+    
+            col.qset(mute_offset, (void*)&mute,1);
+            col.qset(resolved_offset, (void*)&resolved,1);
+    
+            return n;
+        }
+    
+        Node make_node(uint32_t type, std::string name, Value value, Ptr in_scope) {
+            return make_node(type,0,name,-1.0f,-1.0f,-1.0f,value,deadptr,deadptr,deadptr,deadptr,deadptr,deadptr,deadptr,in_scope);
+        }
+    
+        void recycle_column(Ptr p) {
+            Acorn::recycle_column(types[p.pool], p.idx);
+        }
+        
+        void recycle_value(Value v) {
+            if(is_live(v)&&resolve_to_col(v).live) {
+                for(int i=0;i<v.quals().length();i++) {
+                    recycle_node(v.quals()[i]);
+                }
+                recycle_column(v.quals_ptr());
+    
+                for(int i=0;i<v.sub_values().length();i++) {
+                    recycle_value(v.sub_values()[i]);
+                }
+                recycle_column(v.sub_values_ptr());
+    
+                recycle_column(v.data_ptr());
+            }
+        }
+    
+        //Recycles everything
+        void recycle_node(Node n) {
+            if(is_live(n)&&resolve_to_col(n).live) {
+                for(int i=0;i<n.children().length();i++) {
+                    recycle_node(n.children()[i]);
+                }
+                recycle_column(n.children_ptr());
+    
+                for(int i=0;i<n.scopes().length();i++) {
+                    recycle_node(n.scopes()[i]);
+                }
+                recycle_column(n.scopes_ptr());
+    
+                for(int i=0;i<n.quals().length();i++) {
+                    recycle_node(n.quals()[i]);
+                }
+                recycle_column(n.quals_ptr());
+    
+                recycle_column(n.name_ptr());
+                recycle_value(n.value());
+                recycle_column(n.node_table_ptr());
+                recycle_column(n.value_table_ptr());
+                recycle_column(n.opt_str_ptr());
+                recycle_column(n);
+            }
+        }
+    
+        //Doesn't recycle the value or children or scopes or quals
+        void soft_recycle_node(Node n) {
+            recycle_column(n.name_ptr());
+            recycle_column(n.children_ptr());
+            recycle_column(n.quals_ptr());
+            recycle_column(n.node_table_ptr());
+            recycle_column(n.value_table_ptr());
+            recycle_column(n.scopes_ptr());
+            recycle_column(n.opt_str_ptr());
+            recycle_column(n);
+        }
+    
+        Value make_value(uint32_t type = 0, uint32_t size = 0, uint32_t address = 0, uint32_t sub_type = 0, 
+            uint32_t sub_size = 0, Ptr type_scope = deadptr, Ptr data = deadptr, Ptr quals = deadptr, 
+            Ptr sub_values = deadptr, Ptr store = deadptr, int reg = -1, int loc = -1) 
+        {
+            Value v;
+            v.pool = value_type_id;
+            v.idx = push_column(types[value_type_id], layouts[value_id].total_size, value_id);
+            v.sidx = 0;
+            v.unit = uid;
+            Col& col = types[value_type_id][v.idx];
+            col.heterogenous = true;
+        
+            col.qset(value_type_offset, (void*)&type, 4);
+            col.qset(value_sub_type_offset, (void*)&sub_type, 4);
+            col.qset(size_offset, (void*)&size, 4);
+            col.qset(sub_size_offset, (void*)&sub_size, 4);
+            col.qset(address_offset, (void*)&address, 4);
+            col.qset(reg_offset, (void*)&reg, 4);
+            col.qset(loc_offset, (void*)&loc, 4);
+        
+            col.qset(value_data_offset, (void*)&data, sizeof(Ptr));
+            col.qset(type_scope_offset, (void*)&type_scope, sizeof(Ptr));
+            col.qset(store_offset, (void*)&store, sizeof(Ptr));
+        
+            if(!is_live(quals)) quals = get_ticket(quals_store_id, sizeof(Ptr), ptr_id);
+            col.qset(value_quals_offset, (void*)&quals, sizeof(Ptr));
+        
+            if(!is_live(sub_values)) {sub_values = get_ticket(sub_value_store_id, sizeof(Ptr), ptr_id);}
+            col.qset(value_sub_values_offset, (void*)&sub_values, sizeof(Ptr));
+        
+            return v;
+        }
+        Context make_context(Ptr result = deadptr, Ptr source = deadptr) {
+            Context c;
+            c.pool = context_type_id;
+            c.idx = push_column(types[context_type_id], layouts[context_id].total_size, context_id);
+            c.sidx = 0;
+            c.unit = uid;
+            Col& col = types[context_type_id][c.idx];
+            col.heterogenous = true;
+        
+            Ptr dead_node = deadptr;
+            Ptr dead_value = deadptr;
+        
+            col.qset(context_node_offset,   (void*)&dead_node,  sizeof(Ptr));
+            col.qset(context_qual_offset,   (void*)&dead_node,  sizeof(Ptr));
+            col.qset(context_left_offset,   (void*)&dead_node,  sizeof(Ptr));
+            col.qset(context_out_offset,    (void*)&dead_node,  sizeof(Ptr));
+            col.qset(context_root_offset,   (void*)&dead_node,  sizeof(Ptr));
+            col.qset(context_value_offset,  (void*)&dead_value, sizeof(Ptr));
+            col.qset(context_sub_offset,    (void*)&dead_node,  sizeof(Ptr));
+        
+            if(!is_live(result)) result = get_ticket(children_store_id, sizeof(Ptr), ptr_id);
+            col.qset(context_result_offset, (void*)&result, sizeof(Ptr));
+            
+            if(!is_live(source)) source = get_ticket(name_store_id, sizeof(char), char_id);
+            col.qset(context_source_offset, (void*)&source, sizeof(Ptr));
+        
+            uint32_t zero = 0; bool f = false;
+            col.qset(context_index_offset,  (void*)&zero, 4);
+            col.qset(context_state_offset,  (void*)&zero, 4);
+            col.qset(context_flag_offset,   (void*)&f,    1);
+        
+            return c;
+        }
+    
+        void recycle_context(Context ctx) {
+            recycle_column(ctx);
+        }
+        void deep_recycle_context(Context ctx) {
+            // recycle_column(ctx.result_ptr()); //Because this is often somebodies children
+            // recycle_column(ctx.source_ptr());
+            recycle_column(ctx);
+        }
+
+        std::string tag_to_str(uint32_t tag, void* data) {
+            DEBUG_ONLY(if(ERROR_FLAG) {return "ERROR";})
+            if(tag==int_id) {
+                return std::to_string(*(int*)data);
+            } else if(tag==float_id) {
+                return std::to_string(*(float*)data);
+            } else if(tag==bool_id) {
+                return (*(bool*)data?"true":"false");
+            } else if(tag==char_id) {
+                return std::string(1,*(char*)data);
+            } else if(tag==string_id) {
+                Ptr ptr = *(Ptr*)data;
+                if(ptr.pool>=types.length()) {
+                    return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
+                }
+                std::string content = string(ptr).to_std();
+                return Ptr_as_string(ptr)+"> \""+escape_string(content)+"\"";
+            } else if(tag==ptr_id) {
+                return Ptr_as_string(*(Ptr*)data);
+            } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id) {
+                return Ptr_as_string(*(Ptr*)data);
+            } else if(tag==ptr4_id) {
+                Ptr4 p = *(Ptr4*)data;
+                std::string s = labels[p.midx]+"> "+Ptr_as_string(p.ptr);
+                return s;
+            } else if(tag==list_id||tag==col_id) {
+                Ptr ptr = *(Ptr*)data;
+                std::string s = Ptr_as_string(ptr)+"> [";
+                Col& col = resolve_to_col(ptr);
+                for(int i=0;i<col.length();i++) {
+                    s+=tag_to_str(col.tag,col[i]);
+                    if(i<col.length()-1) {s+=", ";}
+                }
+                s+="]";
+                return s;
+            } else if(tag==map_id) {
+                Ptr ptr = *(Ptr*)data;
+                std::string s = Ptr_as_string(ptr)+"> [";
+                Col& col = resolve_to_col(ptr);
+                // for(auto e : col.cells.entrySet()) {
+                //     s+="{"+e.key+": "+tag_to_str(col.tag,col[e.value])+"}";
+                // }
+                s+="]";
+                return s;
+            } else {
+                return labels[tag]+"?";
+            }
+        }
+        
+        std::string disassemble(uint32_t instr) {
+            if(instr==0) return "NULL";
+            if(instr==0xD65F03C0) return "ret";
+
+            uint32_t op9 = (instr >> 23) & 0b111111111;
+            uint32_t op7 = (instr >> 24) & 0b11111110;
+
+            if(op9 == 0b010100101) { // MOVZ sf=0
+                int rd    = instr & 0b11111;
+                int imm16 = (instr >> 5) & 0b1111111111111111;
+                return "movz " + std::to_string(rd) + " " + std::to_string(imm16) + " 0";
+            }
+            if(op9 == 0b110100101) { // MOVZ sf=1
+                int rd    = instr & 0b11111;
+                int imm16 = (instr >> 5) & 0b1111111111111111;
+                return "movz " + std::to_string(rd) + " " + std::to_string(imm16) + " 1";
+            }
+
+
+            if((instr & 0b01111111100000000000000000000000) == 0b01110010100000000000000000000000) {
+                int rd    =  instr & 0b11111;
+                int imm16 = (instr >> 5) & 0b1111111111111111;
+                int hw    = (instr >> 21) & 0b11;
+                int sf    = (instr >> 31) & 1;
+                return "movk " + std::to_string(rd) + " " + std::to_string(imm16) + " " + std::to_string(hw*16) + " " + std::to_string(sf);
+            }
+
+            if((instr & 0b01111111001000000000001111100000) == 0b00101010000000000000001111100000) {
+                int rd = instr & 0b11111;
+                int rm = (instr >> 16) & 0b11111;
+                int sf = (instr >> 31) & 1;
+                return "mov " + std::to_string(rd) + " " + std::to_string(rm) + " " + std::to_string(sf);
+            }
+
+            if((instr & 0b01111111111000000000000000000000) == 0b00001011000000000000000000000000) {
+                int rd = instr & 0b11111;
+                int rn = (instr >> 5) & 0b11111;
+                int rm = (instr >> 16) & 0b11111;
+                int sf = (instr >> 31) & 1;
+                return "add " + std::to_string(rd) + " " + std::to_string(rn) + " " + std::to_string(rm) + " " + std::to_string(sf);
+            }
+
+            if((instr & 0b01111111111000000000000000000000) == 0b00011011000000000000000000000000) {
+                int rd = instr & 0b11111;
+                int rn = (instr >> 5) & 0b11111;
+                int rm = (instr >> 16) & 0b11111;
+                int sf = (instr >> 31) & 1;
+                return "mul " + std::to_string(rd) + " " + std::to_string(rn) + " " + std::to_string(rm) + " " + std::to_string(sf);
+            }
+
+            if((instr & 0b11111111110000000000000000000000) == 0b10111001010000000000000000000000) {
+                int rt     = instr & 0b11111;
+                int rn     = (instr >> 5) & 0b11111;
+                int offset = ((instr >> 10) & 0b111111111111) * 4;
+                return "ldr32 " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+            }
+
+            if((instr & 0b11111111110000000000000000000000) == 0b11111001010000000000000000000000) {
+                int rt     = instr & 0b11111;
+                int rn     = (instr >> 5) & 0b11111;
+                int offset = ((instr >> 10) & 0b111111111111) * 8;
+                return "ldr " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+            }
+
+            if((instr & 0b11111111110000000000000000000000) == 0b10111001000000000000000000000000) {
+                int rt     = instr & 0b11111;
+                int rn     = (instr >> 5) & 0b11111;
+                int offset = ((instr >> 10) & 0b111111111111) * 4;
+                return "str32 " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+            }
+
+            if((instr & 0b11111111110000000000000000000000) == 0b11111001000000000000000000000000) {
+                int rt     = instr & 0b11111;
+                int rn     = (instr >> 5) & 0b11111;
+                int offset = ((instr >> 10) & 0b111111111111) * 4;
+                return "str " + std::to_string(rt) + " " + std::to_string(rn) + " " + std::to_string(offset);
+            }
+
+
+
+            return "   ?   ";
+        }
+
+        std::string print_columnar_table(list<list<std::string>> lines) {
+            list<uint32_t> widths;
+            uint32_t longest_row = 0;
+            for(int l=0;l<lines.length();l++) {
+                list<std::string>& line = lines[l];
+                uint32_t widest_row = 0;
+                for(int i=0;i<line.length();i++) {
+                    if(i==0&&line[i].empty()) {line[i] = std::to_string(l);}
+                    if(line[i].length()>widest_row) {widest_row = line[i].length();}
+                }
+                widths << widest_row;
+                if(line.length()>longest_row) {longest_row = line.length();}
+            }
+
+            std::string to_return = "";
+            int lpadlen = digit_count(longest_row)+1;
+            for(int r=0;r<longest_row;r++) {
+                if(r==1) {
+                    for(int l=0;l<lines.length();l++) {
+                        to_return+=std::string(widths[l]+lpadlen+3,'-')+"<|>";
+                    }
+                    to_return+="\n";
+                }
+
+                for(int l=0;l<lines.length();l++) {
+                    std::string line = "";
+                    if(lines[l].length()>r) {line = lines[l][r];}
+                    std::string rownum = std::to_string(r-1); //Minus 1 because indexes start at 0                    
+                    if(r==0) { //If a header
+                        std::string column = std::to_string(l);
+                        if(line==column) {
+                            to_return += center_pad(line, widths[l]+lpadlen+3) + " | ";
+                        } else {
+                            to_return+=std::string(lpadlen-column.length(),' ')+column+" : ";
+                            to_return += center_pad(line, widths[l]) + " | ";
+                        }
+                    } else {
+                        if(!line.empty()) {
+                            to_return+=std::string(lpadlen-rownum.length(),' ')+rownum+" : ";
+                            std::string padding(widths[l]-line.length(),' ');
+                            to_return += line+padding+" | ";
+                        } else {
+                            to_return += center_pad("X",widths[l]+lpadlen+3)+" | ";
+                        }
+                    }
+
+                }
+                to_return+="\n";
+
+                if(longest_row>1&&r==longest_row-1) {
+                    for(int l=0;l<lines.length();l++) {
+                        to_return+=std::string(widths[l]+lpadlen+3,'=')+"/ \\";
+                    }
+                }
+            }
+            return to_return;
+        }
+
+        list<list<std::string>> type_to_lines(ColCol& t) {
+            list<list<std::string>> lines;
+            list<uint32_t> dtypes;
+            for(int c=0;c<t.length();c++) {
+                Col& col = t[c];
+                list<std::string> subline;
+                subline << col.label.to_std()+(col.live?"":" [FREE]");
+                if(col.heterogenous) {
+                    if(layouts.hasKey(col.tag)) {
+                        _layout& l = layouts.get(col.tag);
+                        for(int o=0;o<l.offsets.length();o++) {
+                            std::string line = "";
+                            line+=pad_str(l.labels[o]+": ",12);
+                            line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
+                            subline << line;
+                        }
+                    } else {
+                        print(red("core::type_to_string unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
+                    }
+                } else {
+                    for(int r=0;r<col.length();r++) {
+                        std::string line = ""; //v turn this into a 'show key as string' tag eventually and replace this cruft
+                        if(col.label=="stages") { //From the handler type
+                            std::string cell_label = ""; //col.get_cell_label(r);
+                            if(!cell_label.empty()) line+=cell_label;
+                            else line+="REIMPLMENT CELL KEYS LATER";
+                        } else {
+                            line+=tag_to_str(col.tag,col[r]);
+                        }
+                        subline << line;
+                    }
+                }
+                lines << subline;
+            }
+            return lines;
+        }
+
+        std::string type_to_string(ColCol& t) {
+            return print_columnar_table(type_to_lines(t));
+        }
+
+        list<list<std::string>> TypeCol_to_lines(ColCol& t) {
+            list<list<std::string>> lines;
+            for(int c=0;c<t.length();c++) {
+                Col& col = t[c];
+                list<std::string> subline;
+                subline << col.label.to_std();
+                if(col.heterogenous) {
+                    if(layouts.hasKey(col.tag)) {
+                        _layout& l = layouts.get(col.tag);
+                        for(int o=0;o<l.offsets.length();o++) {
+                            std::string line = "";
+                            line+=pad_str(l.labels[o]+": ",12);
+                            line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
+                            subline << line;
+                        }
+                    } else {
+                        print(red("core::TypeCol_to_lines unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
+                    }
+                } else {
+                    for(int r=0;r<col.length();r++) {
+                        std::string line = "";
+                        line+=tag_to_str(col.tag,col[r]);
+                        subline << line;
+                    }
+                }
+                lines << subline;
+            }
+            return lines;
+        }
+
+        void print_column(Col& col) {
+            print("COL: ",col.label," TAG: ",labels[col.tag]," [",std::to_string(col.length()),"]");
+            if(col.heterogenous) {
+                if(layouts.hasKey(col.tag)) {
+                    _layout& l = layouts.get(col.tag);
+                    for(int o=0;o<l.offsets.length();o++) {
+                        std::string line = "";
+                        line+=pad_str(l.labels[o]+": ",12);
+                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
+                        print(line);
+                    }
+                } else {
+                    print(red("core::print_column unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
+                }
+            } else {
+                for(int i=0;i<col.length();i++) {
+                    print(i,": ",tag_to_str(col.tag,col[i]));
+                }
+            }
+        }
+
+        void dump_unit(bool clear_dump) {
+            if(clear_dump) writeFile("mixos-acorn/tests/printout.txt","");
+
+            for(int t=0;t<types.length();t++) {
+                std::string to_print = "";
+                to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+":\n";
+                to_print += type_to_string(types[t]);
+                to_print += "\n\n\n";
+
+                editTextFile("mixos-acorn/tests/printout.txt",[to_print](std::string& source){
+                    source+=to_print;
+                });
+            }
+        }
+
+        std::string value_info(Value value) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" while another error was active")); return "";})
+
+            std::string to_return = "";
+            to_return += cyan("["+Ptr_as_string(value)+"]")+
+            + "(type: " + green(labels[value.type()])
+            + (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"");
+            if(is_live(value.data_ptr())) { //For post-mortems we want to see the adress, so it needs to be computed first, before the error
+                std::string ptr_addr = Ptr_as_string(value.data_ptr());
+                if(resolve_to_col(value.data_ptr()).empty()) {
+                    to_return += ", value: "+gray("empty")+" @"+ptr_addr;
+                } else {
+                    to_return += ", value: "+gray(tag_to_str(value.type(),value.get()))+" @"+ptr_addr;
+                }
+                DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" but the value was invalid")); return to_return;})
+            }
+            to_return += (value.sub_type()!=0?", sub_type: "+labels[value.sub_type()]:"")
+            + (is_live(value.type_scope())?", type_scope: "+blue(Ptr_as_string(value.type_scope())):"")
+            + (value.size()!=0?", size: "+std::to_string(value.size()):"")
+            + (value.sub_size()!=0?", sub_size: "+std::to_string(value.sub_size()):"")
+            + (value.address()!=0?", address: "+std::to_string(value.address()):"")
+            + (value.loc()!=-1?", loc: "+std::to_string(value.loc()):"")
+            + (is_live(value.store())?", store: "+Ptr_as_string(value.store()):"")
+            + (!value.sub_values().empty()?", sub: "+std::to_string(value.sub_values().length()):"");
+            if(!value.quals().empty()) {
+                to_return += ", Quals: ";
+                for(int i=0;i<value.quals().length();i++) {
+                    to_return += labels[value.quals()[i].type()]+(i!=value.quals().length()-1?", ":"");
+                }
+            }
+            to_return += ")";
+            return to_return;
+        }
+        
+        std::string node_info(Node node) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
+
+            std::string to_return = "";
+            to_return += blue(Ptr_as_string(node)+" ")
+            + labels[node.type()]
+            + (node.sub_type()==0?"":":"+labels[node.sub_type()])
+            + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()))+" ") 
+            + (is_live(node.value())?value_info(node.value()):"")
+            + (node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"")
+            + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
+            + (!node.scopes().empty()?"[S:"+std::to_string(node.scopes().length())+"]":"")
+            + (is_live(node.owner())?"[O:"+blue(Ptr_as_string(node.owner()))+"]":"")
+            + (is_live(node.in_scope())?"{"+node.in_scope().name().to_std()+"}":"");
+            if(!node.quals().empty()) {
+                to_return += "[Q: ";
+                for(int i=0;i<node.quals().length();i++) {
+                    if(node.quals()[i].mute()) {
+                        to_return += italic_str(Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()]);
+                    } else {
+                        to_return += Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()];
+                    }
+                    to_return+=(i!=node.quals().length()-1?", ":"");
+                }
+                to_return += "]";
+            }
+            return to_return;
+        }
+
+        #define ACORN_MUTE_TABLES 1
+
+        std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
+            std::string indent(depth * 2, ' ');
+            std::string to_return = "";
+            
+            to_return += indent + sigil + std::to_string(index) + ": " + node_info(node);
+        
+            #if !ACORN_MUTE_TABLES 
+            if(node.value_table().length()>0) {
+                to_return += "\n" + indent + "   Value table:";
+                QCellCol cells = node.value_table().col().cells;
+                for(int i=0;i<cells.length();i++) {
+                    to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+value_info(node.value_table().get(cells.get(i).index));
+                }
+            }
+            if(node.node_table().length()>0) {
+                to_return += "\n" + indent + "   Node table:";
+                QCellCol cells = node.node_table().col().cells;
+                for(int i=0;i<cells.length();i++) {
+                    to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+node_info(node.node_table().get(cells.get(i).index));
+                }
+            }
+            #endif
+        
+
+
+            // if(!node->opt_str.empty()) {
+            //     to_return +=  "\n" + indent + "  Opt_str: " + node->opt_str;
+            // }
+
+            if(!node.children().empty()) {
+                for(int i=0;i<node.children().length();i++) {
+                    if(is_live(node.children()[i])) {
+                        if(node.children()[i].idx==node.idx) {
+                            to_return+="\n "+indent+red("  self refrence");
+                        } else {
+                            to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes,"c");
+                        }
+                    }
+                    else {
+                        to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i]);
+                    }
+                }
+            }
+
+            if(!node.scopes().empty()) {
+                //to_return +=  "\n" + indent + "   Scopes: " + std::to_string(node.scopes().length());
+                int i = 0;
+                for(int s=0;s<node.scopes().length();s++) {
+                    Node scope = node.scopes()[s];
+                    if(scope.owner().idx==node.idx) {
+                        to_return += "\n " + node_to_string(scope, depth + 1, s, print_sub_scopes,"s");
+                    }
+                    else {
+                        to_return += "\n"+indent+"  s"+std::to_string(s)+": "+node_info(scope);
+                    }
+                }
+            }
+        
+            return to_return;
+        }
+
+        Node scan_for_node(const std::string& label, Node from) {
+            for(int i=0;i<from.children().length();i++) {
+                //print("CHECKING: ",from.children()[i].name().to_std());
+                if(from.children()[i].name().to_std()==label) {
+                    return from.children()[i];
+                }
+                Node found = scan_for_node(label,from.children()[i]);
+                if(is_live(found)) {
+                    return found;
+                }
+            }
+            for(int i=0;i<from.scopes().length();i++) {
+                Node found = scan_for_node(label,from.scopes()[i]);
+                if(is_live(found)) {
+                    return found;
+                }
+            }
+            return deadptr;
+        }
+
+        void test_acorn() {
+            Node n = make_node();
+            Node m = make_node();
+
+            print("UNITS: ",units.length());
+            print("TYPES: ",types.length());
+
+            n.name("NODE N"); m.name("NODE M");
+            print("NODES WITH 2 NODES: ",types[node_type_id].length());
+            print("NAMES WITH 2 NODES: ",types[name_store_id].length());
+            print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
+            recycle_node(n);
+            print("NODES AFTER RECYCLE: ",types[node_type_id].length());
+            print("NAMES AFTER RECYCLE: ",types[name_store_id].length());
+            print("CHILDREN AFTER RECYCLE: ",types[children_store_id].length());
+            Node c = make_node();
+            print("NODES WITH 2 NODES: ",types[node_type_id].length());
+            print("NAMES WITH 2 NODES: ",types[name_store_id].length());
+            print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
+            c.name("C");
+            print(c.name().to_std());
+        }
+
+        void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
+            n.type(o.type());
+            n.sub_type(o.sub_type());
+            n.name(o.name().to_std());
+            n.x(o.x());
+            n.y(o.y());
+            n.z(o.z());
+            n.mute(o.mute());
+            n.resolved(o.resolved());
+        
+            n.children().clear();
+            for(int i = 0; i < o.children().length(); i++) {
+                Node newc = make_node();
+                deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
+                n.children() << newc;
+            }
+        
+            n.quals().clear();
+            for(int i = 0; i < o.quals().length(); i++) {
+                Node newq = make_node();
+                deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
+                n.quals() << newq;
+            }
+        
+            n.scopes().clear();
+            for(int i = 0; i < o.scopes().length(); i++) {
+                Node news = make_node();
+                deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
+                n.scopes() << news;
+            }
+        
+            if(value_alias_table.hasKey(o.value().idx)) {
+                Value aliased = value_alias_table.get(o.value().idx);
+                n.value(aliased);
+                if(is_live(aliased.type_scope())) {
+                    if(!n.scopes().empty()) {
+                        Node ntyscope = aliased.type_scope();
+                        n.scopes().col().set(0,(void*)&ntyscope);
+                    }
+                    else
+                        n.scopes() << aliased.type_scope();
+                }
+            } else {
+                if(is_live(o.value())) {
+                    if(!is_live(n.value())) {
+                        n.value(make_value());
+                    }
+                    n.value().copy(o.value(),true);
+                }
+            }
+        
+            types[n.pool][n.idx].qset(node_value_table_offset,
+                types[o.pool][o.idx].qget(node_value_table_offset), sizeof(Ptr));
+            types[n.pool][n.idx].qset(node_node_table_offset,
+                types[o.pool][o.idx].qget(node_node_table_offset), sizeof(Ptr));
+        
+            n.parent(o.parent_ptr());
+            n.owner(o.owner_ptr());
+            n.in_scope(o.in_scope_ptr());
+            n.opt_str() = o.opt_str().to_std();
+        }
+
+        Node copy_as_token(Node node) {
+            Node copy = make_node(node.type(),0,node.name().to_std(),node.x(),node.y(),node.z());
+            copy.mute(true);
+            for(int i=0;i<node.quals().length();i++) {
+                Node q = node.quals()[i];
+                if(q.mute()) {copy.quals() << q;}
+            }
+            return copy;
+        }
+
+        Node turn_into_token(Node node) {
+            node.mute(true);
+            return node;
+        }
+
+        void walk_nodenet(Node root, std::function<void(Node)> func) {
+            func(root);
+            for(int i=0;i<root.children().length();i++) walk_nodenet(root.children()[i],func);
+            for(int i=0;i<root.quals().length();i++) walk_nodenet(root.quals()[i],func);
+            for(int i=0;i<root.scopes().length();i++) if(root.scopes()[i].owner()==root) walk_nodenet(root.scopes()[i],func);
+            if(is_live(root.value())) {
+                for(int i=0;i<root.value().quals().length();i++) walk_nodenet(root.value().quals()[i],func);
+            }
+        }
     
         Stage& reg_stage(std::string label) {
             g_ptr<Stage> new_stage = make<Stage>();
@@ -1653,30 +1775,20 @@ namespace Acorn {
             return *new_stage.getPtr();
         }
 
-        Stage& print_handlers = reg_stage("printing");
-
+        map<uint32_t,Handler> value_printers; 
 
         std::string value_as_string(Value v) {
             Context ctx = make_context(); ctx.value(v);
-            print_handlers.run(v.type())(ctx);
+            if(value_printers.hasKey(v.type())) {
+                value_printers[v.type()](ctx);
+            } else {
+                return labels[v.type()]+"?";
+            }
             deep_recycle_context(ctx);
             return ctx.source().to_std();
         }
     
-        Stage& a_handlers = reg_stage("assembling");
-        Stage& s_handlers = reg_stage("scoping");
-        Stage& t_handlers = reg_stage("typing");
-    
-        Stage& d_handlers = reg_stage("discovering");
-        Stage& r_handlers = reg_stage("resolving");
-        Stage& e_handlers = reg_stage("evaluating");
-    
-        Stage& m_handlers = reg_stage("modeling");
-        Stage& i_handlers = reg_stage("inspecting");
-        Stage& x_handlers = reg_stage("executing");
-    
-        Stage* active_stage;
-        list<Watcher> watchers;
+
         std::string GLOBAL_MSG = "";
         void log_to_watcher(Context& ctx, const std::string& msg) {
             GLOBAL_MSG = msg;
@@ -1704,37 +1816,6 @@ namespace Acorn {
             start_stage(*stage_ptr);
         }
 
-        virtual void init() {
-            DEBUG_ONLY(
-                Watcher def("core");
-                def.stagestart = [this](Context& ctx){
-                    if(active_stage) {
-                        newline(active_stage->label);
-                    }
-                };
-                def.prefix = [this](Context& ctx){
-                    newline(active_stage->label+": "+node_info(ctx.node()));
-                };
-                def.suffix = [this](Context& ctx){
-                    if(ERROR_FLAG) {log(red("Marked "+Ptr_as_string(ctx.node())+" as error")); mark_error(ctx.node());}
-                    log(green("After: "),node_info(ctx.node()));
-                    endline();
-                };
-                def.stagend = [this](Context& ctx){
-                    endline();
-                };
-                watchers << def;
-            )
-        }
-    
-        virtual Node process(std::string path) {
-            return deadptr;
-        }
-    
-        virtual void run(Node root) {
-            
-        }
-    
         bool standard_travel_pass(Node root, Context sub = deadptr);
 
         inline void standard_process(Context& ctx, uint32_t type) {
@@ -1997,8 +2078,46 @@ namespace Acorn {
             }
             endline();
             deep_recycle_context(ctx);
+        }   
+
+
+        void save_acorn(const std::string& path) {
+            auto out = openWriteStream(path);
+            write_TypeTypeCol(out,types);
+    
+        }
+        void load_acorn(const std::string& path) {
+            auto in = openReadStream(path);
+            types = read_TypeTypeCol(in);
+            init();
+            ERROR_FLAG = false;
         }
     };
+
+    template<typename T>
+    inline g_ptr<T> make_unit() {
+        g_ptr<T> u = make<T>((uint16_t)units.length());
+        units << u;
+        return u;
+    }
+
+    inline void* resolve_ptr(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
+    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {return (*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
+    inline Ptr& resolve_to_ptr(const Ptr& ptr) {return *(Ptr*)(*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
+    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {return *(Ptr*)(*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
+    inline Col& resolve_to_col(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool][ptr.idx];}
+    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {return (*units[ptr.unit])[ptr.pool][idx];}
+    inline Col& to_col(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool][ptr.idx];}
+
+    inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag) {
+        Ptr ticket(type_id,create_column((*units[unit_id])[type_id],size,tag),0,unit_id);
+        return ticket;
+    }
+
+    std::ostream& operator<<(std::ostream& os, Acorn::string& s) {
+        os.write((const char*)s.col().storage, s.length());
+        return os;
+    }
 
     //Returns true if flagged for a return/break
     bool Unit::standard_travel_pass(Node root, Context sub) {
@@ -2026,102 +2145,9 @@ namespace Acorn {
         return false;
     }
 
-
-
-    static void write_TypeCol(std::ostream& out, TypeCol& type) {
-        write_col(out, type);
-        for(int c = 0; c < type.length(); c++) {
-            Col& col = type[c];
-            write_col(out, col);
-        }
-    }
-    
-    static TypeCol read_TypeCol(std::istream& in) {
-        TypeCol type = read_col(in);
-        for(uint32_t i = 0; i < type.length(); i++) {
-            Col col = read_col(in);
-            type.set(i,col);
-        }
-        return type;
-    }
-
-    static void write_TypeTypeCol(std::ostream& out, TypeTypeCol& col) {
-        write_col(out, col);
-        for(int i = 0; i < col.length(); i++) {
-            write_TypeCol(out,col[i]);
-        }
-    }
-
-    static TypeTypeCol read_TypeTypeCol(std::istream& in) {
-        TypeTypeCol col = read_col(in);
-        for(uint32_t p = 0; p < col.length(); p++) {
-            col.set(p,read_TypeCol(in));
-        }
-        return col;
-    }
-
-    void init_from_disk(std::istream& in) {
-        labels.clear();
-        layouts.clear();
-
-        TypeCol& h = types[handler_type_id];
-        for(int i = 0; i < h.length(); i++) {
-            Col& handler_col = h[i];
-
-            labels.put(i,handler_col.label.to_std());
-
-            if(handler_col.empty()) continue;
-            Ptr lptr = *(Ptr*)handler_col.sget(0);
-            if(!is_live(lptr)) continue;
-    
-            _layout l(lptr);
-    
-            Col& offsets_c  = resolve_to_col(lptr, lptr.idx + offsets_col);
-            Col& tags_c     = resolve_to_col(lptr, lptr.idx + tags_col);
-            Col& sizes_c    = resolve_to_col(lptr, lptr.idx + sizes_col);
-            Col& labels_c   = resolve_to_col(lptr, lptr.idx + labels_col);
-            Col& subtags_c  = resolve_to_col(lptr, lptr.idx + subtags_col);
-            Col& subsizes_c = resolve_to_col(lptr, lptr.idx + subsizes_col);
-            Col& ptrs_c     = resolve_to_col(lptr, lptr.idx + ptrs_col);
-            l.overloads     = resolve_to_col(lptr, lptr.idx + overloads_col);
-    
-            uint32_t count = offsets_c.size / sizeof(uint32_t);
-            for(uint32_t f = 0; f < count; f++) {
-                uint32_t offset  = *(uint32_t*)offsets_c.sget(f);
-                uint32_t tag     = *(uint32_t*)tags_c.sget(f);
-                uint32_t size    = *(uint32_t*)sizes_c.sget(f);
-                Ptr      label_p = *(Ptr*)labels_c.sget(f);
-                uint32_t subtag  = *(uint32_t*)subtags_c.sget(f);
-                uint32_t subsize = *(uint32_t*)subsizes_c.sget(f);
-                Ptr      ptr     = *(Ptr*)ptrs_c.sget(f);
-    
-                std::string label_str = string(label_p).to_std();
-                l.label_to_index.put(label_str, l.offsets.length());
-                l.offsets  << offset;
-                l.tags     << tag;
-                l.sizes    << size;
-                l.labels   << label_str;
-                l.subtags  << subtag;
-                l.subsizes << subsize;
-                l.ptrs     << ptr;
-            }
-            l.total_size = l.offsets.length() > 0 
-                ? l.offsets.last() + l.sizes.last() 
-                : 0;
-                
-            layouts[i] = l;
-        }
-    }
-
-    void save_acorn(const std::string& path) {
-        auto out = openWriteStream(path);
-        write_TypeTypeCol(out,types);
-
-    }
-    void load_acorn(const std::string& path) {
-        auto in = openReadStream(path);
-        types = read_TypeTypeCol(in);
-        init_from_disk(in);
-        ERROR_FLAG = false;
+    ColColCol& init_first_unit() {
+        g_ptr<Unit> u = make<Unit>();
+        units << u;
+        return u->types;
     }
 }

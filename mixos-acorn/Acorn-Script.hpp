@@ -8,6 +8,7 @@
 
 namespace Acorn {
     struct Acorn_Script : public virtual Compiler_Unit {
+        Acorn_Script(uint16_t _uid) : Unit(_uid) {init();}
         Acorn_Script() {init();}
 
         uint32_t test_id = reg_id("TEST");

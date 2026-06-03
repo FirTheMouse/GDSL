@@ -35,10 +35,13 @@ namespace Acorn {
 
     struct Ptr {
         Ptr() {}
+        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx, uint16_t _unit) : pool(_pool), idx(_idx), sidx(_sidx), unit(_unit) {}
         Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
         uint32_t pool = 0; //Pool it's at
         uint32_t idx = 0; //Column
         uint32_t sidx = 0; //Row
+        
+        uint16_t unit = 0;
 
         inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
@@ -51,8 +54,8 @@ namespace Acorn {
         Ptr ptr;
     };
 
-    static const Ptr deadptr = {0,0,0};
-    static Ptr dead_ref = {0,0,0};
+    static const Ptr deadptr = {0,0,0,0};
+    static Ptr dead_ref = {0,0,0,0};
 
     struct QCol {
         QCol() {}
@@ -317,7 +320,7 @@ namespace Acorn {
         }
         return at;
     }
-    void recycle_column(Col& col, uint32_t id) {
+    static void recycle_column(Col& col, uint32_t id) {
        (*(Col*)col.sget(id)).live = false;
     }
 

@@ -2260,9 +2260,9 @@ namespace Acorn {
         void push(T t){Col::push((void*)&t);}
     };
     
-    using TypeCol     = TCol<Col>;
-    using TypeTypeCol = TCol<TypeCol>;
-    TypeTypeCol types;
+    using ColCol     = TCol<Col>;
+    using ColColCol = TCol<ColCol>;
+    ColColCol types;
 
     inline void* resolve_ptr(const Ptr& ptr) {
         return types[ptr.pool][ptr.idx].get(ptr.sidx);
@@ -2479,7 +2479,7 @@ namespace Acorn {
 
     uint32_t add_type() {
         uint32_t at = types.length();
-        TypeCol to_return;
+        ColCol to_return;
         types.push(to_return);
         return at;
     }
@@ -2490,7 +2490,7 @@ namespace Acorn {
     }
 
     uint32_t init_handler_type() {
-        TypeCol t;
+        ColCol t;
         uint32_t at = types.length();
         note_value(t,"UNDEFINED",0,0);
         t.get(0).push_default(); //UNDEFINED cell
@@ -2505,7 +2505,7 @@ namespace Acorn {
     uint32_t handler_type_id = init_handler_type();
     
     uint32_t init_layout_type() {
-        TypeCol t;
+        ColCol t;
         uint32_t at = types.length();
         types.push(t);
         return at;
@@ -2647,7 +2647,7 @@ namespace Acorn {
 
     uint32_t init_node_type() {
         uint32_t at = add_type();
-        TypeCol& t = types[at];
+        ColCol& t = types[at];
 
         _layout& ntemp = add_template(node_id); //Node template
         node_type_offset = ntemp.add_prop(int_id,4,"type");
@@ -2674,7 +2674,7 @@ namespace Acorn {
 
     uint32_t init_value_type() {
         uint32_t at = add_type();
-        TypeCol& t = types[at];
+        ColCol& t = types[at];
 
         _layout& vtemp = add_template(value_id); //Value template
         value_type_offset = vtemp.add_prop(int_id,4,"type");
@@ -2695,7 +2695,7 @@ namespace Acorn {
 
     uint32_t init_context_type() {
         uint32_t at = add_type();
-        TypeCol& t = types[at];
+        ColCol& t = types[at];
         _layout& ctemp = add_template(context_id); //Context template
         context_node_offset = ctemp.add_prop(node_id,sizeof(Ptr),"node");
         context_qual_offset = ctemp.add_prop(node_id,sizeof(Ptr),"qual");
@@ -3483,7 +3483,7 @@ namespace Acorn {
         return to_return;
     }
 
-    list<list<std::string>> type_to_lines(TypeCol& t) {
+    list<list<std::string>> type_to_lines(ColCol& t) {
         list<list<std::string>> lines;
         list<uint32_t> dtypes;
         for(int c=0;c<t.length();c++) {
@@ -3520,12 +3520,12 @@ namespace Acorn {
         return lines;
     }
 
-    std::string type_to_string(TypeCol& t) {
+    std::string type_to_string(ColCol& t) {
         return print_columnar_table(type_to_lines(t));
     }
 
 
-    list<list<std::string>> TypeCol_to_lines(TypeCol& t) {
+    list<list<std::string>> TypeCol_to_lines(ColCol& t) {
         list<list<std::string>> lines;
         for(int c=0;c<t.length();c++) {
             Col& col = t[c];
@@ -4268,7 +4268,7 @@ namespace Acorn {
 
 
 
-    static void write_TypeCol(std::ostream& out, TypeCol& type) {
+    static void write_TypeCol(std::ostream& out, ColCol& type) {
         write_col(out, type);
         for(int c = 0; c < type.length(); c++) {
             Col& col = type[c];
@@ -4276,8 +4276,8 @@ namespace Acorn {
         }
     }
     
-    static TypeCol read_TypeCol(std::istream& in) {
-        TypeCol type = read_col(in);
+    static ColCol read_TypeCol(std::istream& in) {
+        ColCol type = read_col(in);
         for(uint32_t i = 0; i < type.length(); i++) {
             Col col = read_col(in);
             type.set(i,col);
@@ -4285,15 +4285,15 @@ namespace Acorn {
         return type;
     }
 
-    static void write_TypeTypeCol(std::ostream& out, TypeTypeCol& col) {
+    static void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
         write_col(out, col);
         for(int i = 0; i < col.length(); i++) {
             write_TypeCol(out,col[i]);
         }
     }
 
-    static TypeTypeCol read_TypeTypeCol(std::istream& in) {
-        TypeTypeCol col = read_col(in);
+    static ColColCol read_TypeTypeCol(std::istream& in) {
+        ColColCol col = read_col(in);
         for(uint32_t p = 0; p < col.length(); p++) {
             col.set(p,read_TypeCol(in));
         }
@@ -4304,7 +4304,7 @@ namespace Acorn {
         labels.clear();
         layouts.clear();
 
-        TypeCol& h = types[handler_type_id];
+        ColCol& h = types[handler_type_id];
         for(int i = 0; i < h.length(); i++) {
             Col& handler_col = h[i];
 

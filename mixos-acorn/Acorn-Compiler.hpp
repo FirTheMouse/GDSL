@@ -3,8 +3,20 @@
 
 namespace Acorn {
     struct Compiler_Unit : public virtual Blackfeather_Unit {
+        Compiler_Unit(uint16_t _uid) : Unit(_uid) { init(); }
         Compiler_Unit() {init();}
         
+        Stage& a_handlers = reg_stage("assembling");
+        Stage& s_handlers = reg_stage("scoping");
+        Stage& t_handlers = reg_stage("typing");
+    
+        Stage& d_handlers = reg_stage("discovering");
+        Stage& r_handlers = reg_stage("resolving");
+        Stage& e_handlers = reg_stage("evaluating");
+    
+        Stage& m_handlers = reg_stage("modeling");
+        Stage& i_handlers = reg_stage("inspecting");
+        Stage& x_handlers = reg_stage("executing");
 
         map<std::string,Value> keywords;
         //Qual handlers which act on the value
@@ -27,6 +39,7 @@ namespace Acorn {
                         }
                     }
                 }
+
                 if(is_live(node.value())) {
                     context =  node.value().sub_type();
                 }
@@ -747,15 +760,15 @@ namespace Acorn {
         }
 
         void init_literals() {
-            print_handlers[object_id] = [](Context& ctx) {ctx.source(Ptr_as_string(ctx.value().data_ptr()));};
-            print_handlers[ptr_id] = [](Context& ctx) {ctx.source(Ptr_as_string(ctx.value().data_ptr()));};
-            print_handlers[float_id] = [](Context& ctx) {ctx.source(std::to_string(*(float*)ctx.value().get()));};
-            print_handlers[int_id] = [](Context& ctx) {void* p = ctx.value().get(); DEBUG_ONLY(if(ERROR_FLAG) {return;}) ctx.source(std::to_string(*(int*)p));};
-            print_handlers[char_id] = [](Context& ctx) {ctx.source(std::string(1,*(char*)ctx.value().get()));};
-            print_handlers[bool_id] = [](Context& ctx) {ctx.source((*(bool*)ctx.value().get()) ? "TRUE" : "FALSE");};
-            print_handlers[string_id] = [this](Context& ctx) {void* p = ctx.value().get(); DEBUG_ONLY(if(ERROR_FLAG) {return;}) ctx.source((*(Ptr*)p));};
-            print_handlers[node_id] = [this](Context& ctx) {ctx.source(node_to_string((Node&)(*(Ptr*)ctx.value().get())));};
-            print_handlers[value_id] = [this](Context& ctx) {ctx.source(value_info((Value&)(*(Ptr*)ctx.value().get())));};
+            value_printers[object_id] = [this](Context& ctx) {ctx.source(Ptr_as_string(ctx.value().data_ptr()));};
+            value_printers[ptr_id] = [this](Context& ctx) {ctx.source(Ptr_as_string(ctx.value().data_ptr()));};
+            value_printers[float_id] = [](Context& ctx) {ctx.source(std::to_string(*(float*)ctx.value().get()));};
+            value_printers[int_id] = [](Context& ctx) {void* p = ctx.value().get(); DEBUG_ONLY(if(ERROR_FLAG) {return;}) ctx.source(std::to_string(*(int*)p));};
+            value_printers[char_id] = [](Context& ctx) {ctx.source(std::string(1,*(char*)ctx.value().get()));};
+            value_printers[bool_id] = [](Context& ctx) {ctx.source((*(bool*)ctx.value().get()) ? "TRUE" : "FALSE");};
+            value_printers[string_id] = [this](Context& ctx) {void* p = ctx.value().get(); DEBUG_ONLY(if(ERROR_FLAG) {return;}) ctx.source((*(Ptr*)p));};
+            value_printers[node_id] = [this](Context& ctx) {ctx.source(node_to_string((Node&)(*(Ptr*)ctx.value().get())));};
+            value_printers[value_id] = [this](Context& ctx) {ctx.source(value_info((Value&)(*(Ptr*)ctx.value().get())));};
                 
             t_handlers[float_id] = [this](Context& ctx) {
                 float stof = std::stof(ctx.node().name().to_std());
@@ -996,7 +1009,7 @@ namespace Acorn {
             }
 
             layouts[type].add_overload(make_overload_key(root_type,right_type),overload_to,value);
-            recycle_node(expr);
+            //recycle_node(expr);
 
         }
         uint32_t overload_type(uint32_t type, const std::string& instr, const std::string& f, Value value = deadptr) {

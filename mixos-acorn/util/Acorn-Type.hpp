@@ -59,6 +59,54 @@ namespace Acorn {
 
     struct QCol {
         QCol() {}
+        QCol(const QCol& o) {
+            storage = nullptr;
+            size = 0;
+            capacity = 0;
+            if(o.storage && o.size > 0) {
+                resize(o.size);
+                memcpy(storage, o.storage, o.size);
+            }
+        }
+        QCol(QCol&& o) {
+            storage = o.storage;
+            size = o.size;
+            capacity = o.capacity;
+            o.storage = nullptr;
+            o.size = 0;
+            o.capacity = 0;
+        }
+        QCol& operator=(const QCol& o) {
+            if(this == &o) return *this;
+            if(storage) delete[] storage;
+            size = o.size;
+            capacity = o.capacity;
+            if(o.storage && o.capacity > 0) {
+                storage = new uint8_t[o.capacity];
+                memcpy(storage, o.storage, o.size);
+            } else {
+                storage = nullptr;
+            }
+            return *this;
+        }
+        QCol& operator=(QCol&& o) {
+            if(this == &o) return *this;
+            if(storage) delete[] storage;
+            storage = o.storage;
+            size = o.size;
+            capacity = o.capacity;
+            o.storage = nullptr;
+            o.size = 0;
+            o.capacity = 0;
+            return *this;
+        }
+        ~QCol() {
+            if(storage) {
+                delete[] storage;
+                storage = nullptr;
+            }
+        }
+
         uint8_t* storage = nullptr;
         uint32_t size = 0;
         uint32_t capacity = 0;
@@ -101,7 +149,7 @@ namespace Acorn {
             memcpy(&storage[byte_pos], element, width);
             size = new_size;
         }
-        inline void* qget(uint32_t offset) {
+        inline void* qget(uint32_t offset) const {
             DEBUG_ONLY(if(offset>=size) {throw_error(red("col:qget "),"offset ",offset," out of bounds for size ",size);return nullptr;})
             return &storage[offset];
         }
@@ -124,6 +172,20 @@ namespace Acorn {
     struct QString : QCol {
         QString() {}
         QString(QCol q) : QCol(q) {}
+        QString(const QString& o) : QCol(o) {}
+        QString(QString&& o) : QCol(std::move(o)) {}
+        QString& operator=(const QString& o) {
+            if(this == &o) return *this;
+            QCol::operator=(o);
+            return *this;
+        }
+        QString& operator=(QString&& o) {
+            if(this == &o) return *this;
+            QCol::operator=(std::move(o));
+            return *this;
+        }
+        ~QString() {}
+        
         char& at(uint32_t idx) {return *(char*)qget(idx);}
         char& operator[](uint32_t idx) {return *(char*)qget(idx);}
         void push(char c) {QCol::push((void*)&c,1);}
@@ -155,13 +217,20 @@ namespace Acorn {
         CCol() {}
         CCol(uint32_t _size) : element_size(_size) {}
         CCol(QCol q) : QCol(q) {}
+        CCol(const CCol& o) : QCol(o) {
+            element_size = o.element_size;
+            tag = o.tag;
+            hash = o.hash;
+            index = o.index;
+            live = o.live;
+        }
         uint32_t element_size = 1;
         uint32_t tag = 0;
         uint32_t hash = 0;
         uint32_t index = 0;
         bool live = true;
 
-        inline uint32_t length() {return size / element_size;}
+        inline uint32_t length() const {return size / element_size;}
         void push(const void* element) {
             QCol::push(element,element_size);
         }
@@ -171,7 +240,7 @@ namespace Acorn {
             QCol::insert(index, element, element_size);
         }
         
-        inline void* sget(uint32_t index) {
+        inline void* sget(uint32_t index) const {
             DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
             return &storage[index * element_size];
         }
@@ -188,15 +257,29 @@ namespace Acorn {
     struct QCellCol : QCol {
         QCellCol() {}
         QCellCol(QCol q) : QCol(q) {}
-        CCol& get(uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
+        QCellCol(const QCellCol& o) : QCol() {
+            for(uint32_t i = 0; i < o.length(); i++) {
+                CCol copy(o.get(i)); 
+                push(copy);
+                copy.storage = nullptr;
+            }
+        }
+        ~QCellCol() {
+            if(!storage) return;
+            for(uint32_t i = 0; i < length(); i++) {
+                get(i).~CCol();
+            }
+        }
+        CCol& get(uint32_t idx) const {return *(CCol*)qget(idx*sizeof(CCol));}
         CCol& operator[](uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
-        void push(CCol c) {QCol::push((void*)&c,sizeof(CCol));}
-        uint32_t length() {return size/sizeof(CCol);}
+        void push(CCol c) {QCol::push((void*)&c,sizeof(CCol)); c.storage = nullptr;}
+        uint32_t length() const {return size/sizeof(CCol);}
     };
 
     struct Col : CCol {
         Col() {}
         Col(uint32_t _size) :  CCol(_size) {}
+        Col(const Col& o) : CCol(o), heterogenous(o.heterogenous), label(o.label), cells(o.cells) {}
         Col(CCol q) : CCol(q) {}
         bool heterogenous = false;
         QString label;
@@ -321,7 +404,12 @@ namespace Acorn {
         return at;
     }
     static void recycle_column(Col& col, uint32_t id) {
-       (*(Col*)col.sget(id)).live = false;
+       Col* c = ((Col*)col.sget(id));
+       if(c) {
+        c->live = false;
+       } else {
+        print(red("UNABLE TO RECYLE COL AT "+std::to_string(id)));
+       }
     }
 
 

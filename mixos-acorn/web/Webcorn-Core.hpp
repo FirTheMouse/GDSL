@@ -13,10 +13,42 @@ typedef unsigned char uuid_t[16];
 #include <fcntl.h>
 #include <arpa/inet.h>
 
+#include <mach/mach.h>
+
+size_t current_memory_usage() {
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t size = MACH_TASK_BASIC_INFO_COUNT;
+    task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &size);
+    return info.resident_size; // current RSS in bytes
+}
+
 namespace Acorn {
     struct Webcorn_Core : public virtual Acorn_Script {
         Webcorn_Core(uint16_t _uid) : Unit(_uid) {init();}
         Webcorn_Core() {init();}
+
+        struct Server : q_object {
+            int fd;
+            std::string label;
+            g_ptr<Thread> thread;
+            Unit* unit;
+        };
+    
+        list<g_ptr<Server>> servers;
+    
+        g_ptr<Server> get_server(int fd) {
+            for(auto& s : servers) {
+                if(s->fd == fd) return s;
+            }
+            return nullptr;
+        }
+    
+        g_ptr<Server> get_server(const std::string& label) {
+            for(auto& s : servers) {
+                if(s->label == label) return s;
+            }
+            return nullptr;
+        }
 
         uint32_t property_id = reg_id("property");
         uint32_t properties_id = reg_id("properties");
@@ -111,6 +143,18 @@ namespace Acorn {
                 s += "\""; 
             }
             ctx.sub().source().push(s);
+        }
+
+        std::string emit_inline_html(Context& ctx, Node node) {
+            Node old_node = ctx.node();
+            std::string old_source = ctx.source().to_std();
+            ctx.source().col().clear();
+            ctx.node(node);
+            emit_inline_html(ctx);
+            std::string to_reutrn = ctx.source().to_std();
+            ctx.node(old_node);
+            ctx.source() = old_source;
+            return to_reutrn;
         }
 
        Node make_property(Node type, Node value, Node parent) {
@@ -226,14 +270,60 @@ namespace Acorn {
             return deadptr;
         }
 
+        struct style_manager : public q_object {
+            style_manager(Webcorn_Core* _unit) : unit(_unit) {}
+            style_manager(Webcorn_Core* _unit, list<std::string> init) : unit(_unit) {
+                for(auto s : init) add_prop(s);
+            }
+            Webcorn_Core* unit;
+            list<Node> props;
+            list<std::string> prop_names;
 
-        std::string TypeCol_to_html_table(ColCol& t) {
+            void add_prop(const std::string& name, Node prop = deadptr) {
+                props << prop;
+                prop_names << name;
+            }
+
+            void match_prop(const std::string& name, Node prop) {
+                for(int i=0;i<prop_names.length();i++) {
+                    if(prop_names[i]==name) {
+                        props[i] = prop;
+                        return;
+                    }
+                }
+            }
+
+            std::string resolve_prop(Context& ctx, const std::string& name) {
+                for(int i=0;i<prop_names.length();i++) {
+                    if(prop_names[i]==name&&is_live(props[i])) {
+                        return unit->emit_inline_html(ctx,props[i]);
+                    }
+                }
+                return "";
+            }
+        };
+
+        std::string TypeCol_to_html_table(Context& ctx, ColCol& t) {
+            g_ptr<style_manager> styles = make<style_manager>(this);
             list<list<std::string>> lines = TypeCol_to_lines(t);
-            std::string out = "<table style='border-collapse:collapse;font-family:system-ui;font-size:13px;'>";
-            
-            out += "<tr>";
+
+            std::string out = "";
+            out += "<table id='" + ctx.sub().node().name().to_std() + "' ";
+            out += emit_inline_html(ctx, ctx.sub().node());
+            if(!ctx.sub().node().scopes().empty()) {
+                node_col props = ctx.sub().node().scopes()[0].children();
+                for(int i=0;i<props.length();i++) {
+                    styles->add_prop(props[i].name().to_std(),props[i].scopes()[0]);
+                }    
+            }
+            out += ">\n";
+            out+= "<tr "; 
+            out+=styles->resolve_prop(ctx, "row_style"); 
+            out+=">\n";
             for(auto& col : lines) {
-                out += "<th style='border:1px solid rgb(200,200,200);padding:6px 12px;background:rgb(240,240,240);'>";
+                out += "<th ";
+                out+=styles->resolve_prop(ctx, "header_style"); 
+                out+=">";
                 out += col.empty() ? "" : col[0];
                 out += "</th>";
             }
@@ -243,9 +333,13 @@ namespace Acorn {
             for(auto& col : lines) if(col.length() > max_rows) max_rows = col.length();
             
             for(int r = 1; r < max_rows; r++) {
-                out += "<tr>";
+                out += "<tr ";
+                out+=styles->resolve_prop(ctx, "row_style"); 
+                out+=">";
                 for(auto& col : lines) {
-                    out += "<td style='border:1px solid rgb(200,200,200);padding:6px 12px;'>";
+                    out += "<td ";
+                    out+=styles->resolve_prop(ctx, "column_style"); 
+                    out+=">";
                     out += r < col.length() ? col[r] : "";
                     out += "</td>";
                 }
@@ -341,8 +435,8 @@ namespace Acorn {
             x_handlers[make_tokenized_keyword("render_col")] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 int idx = *(int*)ctx.node().children()[0].value().get();
-                ctx.sub().source().push(TypeCol_to_html_table(types[idx]));
-                print(red("NODE\n"),node_to_string(ctx.sub().node()));
+                ctx.sub().source().push(TypeCol_to_html_table(ctx,types[idx]));
+                print(red("RENDER_COL NODE\n"),node_to_string(ctx.sub().node()));
             };
 
             uint32_t display_node_id = make_tokenized_keyword("display_node");
@@ -395,8 +489,29 @@ namespace Acorn {
             uint32_t socket_id = make_tokenized_keyword("socket");
             r_handlers[socket_id] = make_int_node;
             x_handlers[socket_id] = [this](Context& ctx){
-                int fd = socket(AF_INET, SOCK_STREAM, 0);
-                ctx.node().value().set((void*)&fd);
+                int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+                if(server_fd < 0) {
+                    print(red("server_id::x_handler socket() failed"));
+                    return;
+                }        
+                ctx.node().value().set((void*)&server_fd);
+            };
+
+            x_handlers[make_tokenized_keyword("run_server")] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                int server_fd = *(int*)ctx.node().children()[0].value().get();
+                g_ptr<Server> new_server = make<Server>();
+                new_server->fd = server_fd;
+                new_server->thread = make<Thread>();
+                new_server->unit = this;
+                servers << new_server;
+                
+                if(!ctx.node().scopes().empty()) {
+                    Node scope = ctx.node().scopes()[0];
+                    new_server->thread->run_blocking([this, scope, ctx]() mutable {
+                        standard_travel_pass(scope, ctx);
+                    });
+                }
             };
         
             uint32_t bind_id = make_tokenized_keyword("bind");
@@ -460,7 +575,7 @@ namespace Acorn {
                     request += buffer;
                     if(bytes < (int)sizeof(buffer)-1) break;
                 }
-                Ptr ticket(name_store_id, note_value(types[name_store_id],"request",sizeof(char),char_id), 0);
+                Ptr ticket = get_ticket(name_store_id,1,char_id);
                 for(auto c : request) types[name_store_id][ticket.idx].push((void*)&c);
                 ctx.node().value().set((void*)&ticket);
             };
@@ -501,8 +616,170 @@ namespace Acorn {
                 }
             };
 
+
+            x_handlers[make_tokenized_keyword("mem_test")] = [this](Context& ctx){
+                uint32_t host_before = 0;
+                uint32_t host_after = 0;
+                for(int t = 0; t < types.length(); t++) {
+                    for(int c = 0; c < types[t].length(); c++) {
+                        host_before += types[t][c].size;
+                    }
+                }
+
+                int iterations = 200;
+                //readFile("mixos-acorn/web/webtest.gld");
+                std::string sample = 
+                //"int i = 5; print(i);"; 
+                "Ptr Ptr Ptr int double_nested;\n"
+                "Ptr Ptr int nested;\n"
+                "Ptr int nums;\n"
+                "nums.push(3);\n"
+                "nums.push(8);\n"
+                "nested.push(nums);\n"
+                "Ptr int tums;\n"
+                "tums.push(12);\n"
+                "tums.push(14);\n"
+                "nested.push(tums);\n"
+                "double_nested.push(nested);\n"
+                "print(double_nested.get(0).get(0).get(0));\n"
+                "print(double_nested.get(0).get(0).get(1));\n"
+                "print(double_nested.get(0).get(1).get(0));\n"
+                "print(double_nested.get(0).get(1).get(1));\n";
             
-            // uint32_t 
+                list<size_t> snapshots;
+                
+                for(int i = 0; i < iterations; i++) {
+                    size_t before = current_memory_usage();
+                    
+                    Log::Line total; total.start();
+                    Log::Line l; l.start();
+                    g_ptr<Webcorn_Core> twig = make_unit<Webcorn_Core>();
+                    print("INIT TIME: ",ftime(l.end())); l.start();
+                    Node root = twig->process(sample);
+                    print("PROCESS TIME: ",ftime(l.end())); l.start();
+                    twig->compile(root);
+                    print("COMPILE TIME: ",ftime(l.end())); l.start();
+                    twig->start_stage(x_handlers);
+                    twig->standard_travel_pass(root);
+                    print("EXECUTE TIME: ",ftime(l.end())); l.start();
+                    print("TOTAL TIME: ",ftime(total.end()));
+
+                    units.removeAt(twig->uid);
+                    twig->release();
+
+                    size_t after = current_memory_usage();
+                    snapshots << after;
+                    print("iter ",i,": ",before," -> ",after," (delta: ",((int64_t)after-(int64_t)before),")");
+                }
+
+                for(int t = 0; t < types.length(); t++) {
+                    for(int c = 0; c < types[t].length(); c++) {
+                        host_after += types[t][c].size;
+                    }
+                }
+                print("Host pool growth: ", (int)host_after - (int)host_before);
+                
+                // Print overall trend
+                if(snapshots.length() > 1) {
+                    int64_t total_growth = (int64_t)snapshots.last() - (int64_t)snapshots[0];
+                    print("Total growth over ",iterations," iterations: ",total_growth," bytes");
+                    print("Average per iteration: ",total_growth/iterations," bytes");
+                }
+            };
+
+            x_handlers[make_tokenized_keyword("fragment_highlight")] = [this](Context& ctx) {
+                std::string source = ctx.sub().source().to_std();
+    
+                size_t first = source.find(" ");
+                size_t second = source.find(" ", first + 1);
+                
+                std::string target = source.substr(0, first);
+                std::string instruction = source.substr(first + 1, second - first - 1);
+                std::string content = source.substr(second + 1);
+
+                print("TARGET: ",target);
+                print("INSTRUCTION: ",instruction);
+                print("CONTENT: ",content);
+
+                print("MEMORY USED: ",current_memory_usage());
+
+                std::string out = "";
+                g_ptr<Webcorn_Core> twig = make_unit<Webcorn_Core>();
+                if(instruction=="compile") {
+                    Log::Line l; l.start();
+                    Node root = twig->process(content);
+                    twig->compile(root);
+                    double a_time = l.end(); l.start();
+                    out += fnodenet_to_string(root,Stamper{[this](Node n, list<int>& offsets){
+                        std::string to_return = n.name().to_std();
+                        if(n.type()!=0) {
+                            std::string nreturn = "<span class='"+labels[n.type()]+"'>"+to_return+"</span>";
+                            while((int)n.y()>=offsets.length()) {offsets<<0;}
+                            n.x(n.x()+offsets[(int)n.y()]);
+                            offsets[(int)n.y()]+=nreturn.length()-to_return.length();
+                            to_return = nreturn;
+                        }
+                        return to_return;
+                    },[this](Node n){
+                        list<Node> stamps;
+                        map<uint64_t,bool> visited;
+                        collect_stamps(n,stamps,visited);
+                        return stamps;
+                    }});
+                    double b_time = l.end(); 
+                    // l.start();
+                    //print_root(root);
+                    // double c_time = l.end();
+
+                    print("A: ",ftime(a_time));
+                    print("B: ",ftime(b_time));
+                    //print("C: ",ftime(c_time));
+
+                    // print(node_to_string(root));
+
+                    // recycle_node(root); //Deal with memory managment later, like in the mem_test
+                    // units.erase(twig);
+
+                    print("POST TWIG: ",current_memory_usage());
+
+                } else if(instruction=="end") {
+                    // print("REQUEST TO END: ",target," OF ",servers.length());
+                    // g_ptr<Server> to_end = get_server(target);
+                    // if(to_end) {
+                    //     ::close(to_end->fd); 
+                    //     to_end->fd = -1;
+                    //     to_end->thread->end();
+                    //     servers.erase(to_end);
+                    // } else {
+                    //     print(red("Unable to find server "+target+" to end"));
+                    // }
+                } else if(instruction=="preview") {
+                    Node root = twig->process(content);
+                    twig->run(root);
+
+                    int port_num = 8081;
+                    // for(auto c : root->children) {
+                    //     if(c->type==server_id) {
+                    //         for(auto sc : c->scope()->children) {
+                    //             if(sc->type==port_id) {
+                    //                 port_num = sc->left()->value->get<int>();
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    servers << twig->servers;
+                    servers.last()->label = target;
+                    print("SPINNING UP A NEW SERVER ON ",port_num," CALLED ",servers.last()->label);
+                    out = std::to_string(port_num);
+                } else if(instruction=="read") {
+                    out = readFile(content);
+                } else {
+                    print(red("Unrecognized instruction for fragment: "+ctx.sub().source().to_std()));
+                }
+                ctx.sub().source() = out;
+            };
+            
+
 
         }
     };

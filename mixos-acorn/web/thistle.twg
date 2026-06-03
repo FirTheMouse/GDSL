@@ -478,6 +478,7 @@ login {
             print("INSTR: ",instr); 
             print("CONTENT: ",content); 
             Node to_edit = find_node(target,ctx.node);
+            print("TO EDIT: ",to_edit);
 
             if(instr=="ADD") {
 
@@ -540,8 +541,8 @@ build {
                                     } 
                                 }
 
-                                control_btns("+C","fragthree('sheet','add_column','')");
-                                control_btns("+R","fragthree('sheet','add_row','')");
+                                control_btns("+C","fragthree('main_sheet','add_column','')");
+                                control_btns("+R","fragthree('main_sheet','add_row','')");
                         }
 
                         div main_form {
@@ -557,8 +558,21 @@ build {
                             "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
 
                             div sheet_display {
-                                "id" : "sheet";
-                                sheet;
+                                sheet main_sheet {
+                                    invisible header_style {
+                                        "background-color" : "rgb(240, 240, 240)";
+                                        "padding" : "10px 12px";
+                                        "font-size" : "14px";
+                                        "color" : "rgb(26, 26, 26)";
+                                        text_theme;
+                                    }
+                                    invisible column_style {
+                                        "border-right" : "1px solid rgb(200,200,200)";
+                                    }
+                                    invisible row_style {
+                                        "border-bottom" : "1px solid rgb(220,220,220)";
+                                    }
+                                }
                             }                          
                         }
                 }
@@ -651,7 +665,9 @@ audit {
                                 "display" : "flex";
                                 "justify-content" : "center";
                                 "width" : "100%";
-                                sheet;
+                                sheet main_sheet {
+                                    
+                                }
                             }
                             div actions {
                                 "display" : "flex";

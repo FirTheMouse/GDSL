@@ -1,2 +1,1 @@
-int i = 5;
-print(i);
+mem_test;

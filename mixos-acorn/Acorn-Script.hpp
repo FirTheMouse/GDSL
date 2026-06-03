@@ -935,6 +935,7 @@ namespace Acorn {
                         ctx.value().sub_size(left.value().size());
                     } else {
                         print(red("prefix_ptr_id::r_handler missing type it points to!"));
+                        print(node_to_string(ctx.node()));
                     }
                 }
             };
@@ -1155,7 +1156,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);
 
-            launch_blackfeather(root);
+            //launch_blackfeather(root);
         }
 
 

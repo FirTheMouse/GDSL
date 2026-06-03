@@ -978,7 +978,9 @@ namespace Acorn {
 
 
         void overload_type(uint32_t type, const std::string& instr, uint32_t overload_to, Value value = deadptr) {
-            if(!layouts.hasKey(type)) layouts.put(type,_layout());
+            if(!layouts.hasKey(type)) {
+                layouts.put(type,_layout(add_template(type)));
+            }
             Node expr = tokenize(instr);
             Stage* old_stage = active_stage;
             start_stage(a_handlers);
@@ -1007,9 +1009,8 @@ namespace Acorn {
                     }
                 }
             }
-
-            layouts[type].add_overload(make_overload_key(root_type,right_type),overload_to,value);
-            //recycle_node(expr);
+            layouts.get(type).add_overload(make_overload_key(root_type,right_type),overload_to,value);
+            recycle_node(expr);
 
         }
         uint32_t overload_type(uint32_t type, const std::string& instr, const std::string& f, Value value = deadptr) {

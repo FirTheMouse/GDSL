@@ -32,18 +32,26 @@ void strip_pragmas_and_system_includes(std::string& s) {
         s.erase(pos, line_end - pos + 1);
         pos = s.find("#pragma once");
     }
+
     pos = s.find("#include <");
     while (pos != std::string::npos) {
-        size_t path_start = pos + 10;
-        size_t path_end = s.find(">", path_start);
+        size_t last_ifdef = s.rfind("#ifdef", pos);
+        size_t last_endif = s.rfind("#endif", pos);
         
-        std::string include = s.substr(path_start, path_end - path_start);
-        system_includes.push_if_absent(include);
-        
-        size_t line_end = s.find("\n", path_end);
-        s.erase(pos, line_end - pos + 1);
-        
-        pos = s.find("#include <");
+        if(last_ifdef == std::string::npos || (last_endif != std::string::npos && last_endif > last_ifdef)) {
+            size_t path_start = pos + 10;
+            size_t path_end = s.find(">", path_start);
+            
+            std::string include = s.substr(path_start, path_end - path_start);
+            system_includes.push_if_absent(include);
+            
+            size_t line_end = s.find("\n", path_end);
+            s.erase(pos, line_end - pos + 1);
+    
+            pos = s.find("#include <", pos);
+        } else {
+            pos = s.find("#include <", pos + 1);
+        }
     }
 }
 

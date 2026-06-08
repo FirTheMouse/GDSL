@@ -131,8 +131,19 @@
         in naming {
             ctx.node.name = ctx.result.take(ctx.index+1).name;
         }
+        in resolving {
+            gather_props;
+            ctx.node.value = make_value(to_type("int"),4);
+        }
         in htmlemiting {
-            render_col(14);
+            int vloc = ctx.node.value.loc;
+            if(vloc<0) {
+                render_sheet(ctx.node.value.getInt,0,"sheet");
+            } else if(vloc<5) {
+                render_sheet(ctx.node.value.getInt,vloc,"sheet");
+            } else {
+                render_sheet(ctx.node.value.getInt,vloc,"form");
+            }
         }
     }
 
@@ -150,13 +161,27 @@
             ctx.source.append(ctx.node.children.get(0).value.getStr);
         }
     }
+
+    register img; 
+    "img" {
+        in htmlemiting {
+            ctx.source.append("<img ");
+            emit_inline_html;
+            ctx.source.append(">");
+        }
+        in resolving {
+            gather_props;
+        }
+    }
+
+    //save_sheet(create_sheet,"wip");
+    //save_sheet(create_sheet,"redberry");
 ##
 
 print("Compiling");
-Node twig = compile(read_file("mixos-acorn/web/thistle.twg"));
+Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
 //print("Compiled: ",twig);
 Node page = twig.children.get(0);
-execut twig;
 print("Starting server");
 
 int fd = socket;

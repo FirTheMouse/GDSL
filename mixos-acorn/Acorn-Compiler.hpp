@@ -307,15 +307,15 @@ namespace Acorn {
     
             tokenizer_state_functions.put(in_digit_id,[this](Context& ctx) {
                 char c = ctx.source().at(ctx.index());
-                if(char_is_split.getOrDefault(c,false)) {
-                    if(c=='.') {
-                        ctx.node().type(float_id);
-                    } else {
-                        ctx.state(0); 
-                        at_x-=1.0f;
-                        --ctx.index();
-                        return;
-                    }
+                if(c=='.') {
+                    ctx.node().type(float_id);
+                } else if(c=='|') {
+                    ctx.node().type(ptr_id);
+                } else if(char_is_split.getOrDefault(c,false)) {
+                    ctx.state(0); 
+                    at_x-=1.0f;
+                    --ctx.index();
+                    return;
                 } else if(std::isalpha(c)) {
                     ctx.state(in_alpha_id);
                 }
@@ -770,6 +770,11 @@ namespace Acorn {
             value_printers[node_id] = [this](Context& ctx) {ctx.source(node_to_string((Node&)(*(Ptr*)ctx.value().get())));};
             value_printers[value_id] = [this](Context& ctx) {ctx.source(value_info((Value&)(*(Ptr*)ctx.value().get())));};
                 
+            t_handlers[ptr_id] = [this](Context& ctx) {
+                Ptr p = string_to_Ptr(ctx.node().name().to_std());
+                resolve_node_literal(ctx,(void*)&p,ptr_id,sizeof(Ptr));
+            }; 
+
             t_handlers[float_id] = [this](Context& ctx) {
                 float stof = std::stof(ctx.node().name().to_std());
                 resolve_node_literal(ctx,(void*)&stof,float_id,4);
@@ -800,6 +805,7 @@ namespace Acorn {
 
         void resolve_identifier(Context& ctx) {
             Node node = ctx.node();
+            
             Value decl_value = make_value();
             bool found_a_value = find_value_in_scope(ctx.node());
             // if(is_live(node.value())) decl_value = node.value();

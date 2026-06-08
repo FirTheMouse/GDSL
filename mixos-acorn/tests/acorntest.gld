@@ -1,1 +1,9 @@
-mem_test;
+Node n;
+n.value = make_value(to_type("int"),4);
+n.value.loc = 8;
+print(n.value.loc);
+if(6<n.value.loc) {
+    print("Yes");
+} else {
+    print("No");
+}

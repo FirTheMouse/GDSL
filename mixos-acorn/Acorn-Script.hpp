@@ -101,6 +101,31 @@ namespace Acorn {
             }
             col.qput(elv.get(),key,key_size,keyv.type());
         });
+        uint32_t ptr_qset_id = overload_type(ptr_id,".\"qset\"","PTR_QSET",deadptr,[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node left = ctx.node().children()[0];
+            Node right = ctx.node().children()[1];
+            DEBUG_ONLY(if(ERROR_FLAG) {return;})
+            void* lv = left.value().get();
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
+            Ptr ptr = *(Ptr*)lv;
+            Col& col = resolve_to_col(ptr);
+            void* data = right.children()[0].value().get();
+            int width  = *(int*)right.children()[1].value().get();
+            col.qset(ptr.sidx,data,width);
+        });
+        uint32_t ptr_set_id = overload_type(ptr_id,".\"set\"","PTR_SET",deadptr,[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node left = ctx.node().children()[0];
+            Node right = ctx.node().children()[1];
+            DEBUG_ONLY(if(ERROR_FLAG) {return;})
+            void* lv = left.value().get();
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
+            Ptr ptr = *(Ptr*)lv;
+            Col& col = resolve_to_col(ptr);
+            void* data = right.children()[0].value().get();
+            col.set(ptr.sidx,data);
+        });
 
         uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
@@ -163,7 +188,18 @@ namespace Acorn {
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
+        uint32_t valueGetInt_id = overload_type(value_id,".\"getInt\"","VALUE_GETINT",make_value(int_id,4),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
+            ctx.node().value(v);
+        });
 
+        uint32_t value_set_id = overload_type(value_id,".\"set\"","VALUE_SET",deadptr,[this](Context& ctx){
+            standard_sub_process(ctx);
+            Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
+            void* d = ctx.node().children()[1].children()[0].value().get();
+            v.set(d);
+        });
 
 
         uint32_t string_equals_id = overload_type(string_id,"=string","STRING_EQUALS",deadptr,[this](Context& ctx){
@@ -190,8 +226,14 @@ namespace Acorn {
 
         uint32_t string_func_append_id = overload_type(string_id,".\"append\"","STRING_FUNC_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
-            string l(*(Ptr*)ctx.node().children()[0].value().get());
-            string r(*(Ptr*)ctx.node().children()[1].children()[0].value().get());
+            Node left = ctx.node().children()[0]; Node right = ctx.node().children()[1];
+            DEBUG_ONLY(if(ERROR_FLAG) return;)
+            Node right_child = ctx.node().children()[1].children()[0];
+            DEBUG_ONLY(if(ERROR_FLAG) return;)
+            void* lv = left.value().get(); void* rv = right_child.value().get();
+            DEBUG_ONLY(if(ERROR_FLAG) return;)
+            string l(*(Ptr*)lv);
+            string r(*(Ptr*)rv);
             l.push(r.to_std());
             ctx.node().value(ctx.node().children()[0].value());
         });        
@@ -208,6 +250,36 @@ namespace Acorn {
         uint32_t colsize_id = add_function("_colsize",[this](Context& ctx){
             Node left = ctx.node().children()[0];
             
+        },4,int_id);
+
+        uint32_t ptr_size_id = add_function("ptr_size",[this](Context& ctx){
+            uint32_t s = sizeof(Ptr);
+            ctx.node().value().set((void*)&s);
+        },4,int_id);
+
+        uint32_t make_value_id = add_function("make_value",[this](Context& ctx){
+            Value v = make_value();
+            if(ctx.node().children().length()==2) {
+                standard_sub_process(ctx);
+                int type = *(int*)ctx.node().children()[0].value().get();
+                int size = *(int*)ctx.node().children()[1].value().get();
+                v.type(type); v.size(size);
+                v.init_data();
+            }
+            ctx.node().value().set((void*)&v);
+        },sizeof(Ptr),value_id);
+
+        uint32_t recycle_id = add_function("recycle",[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node to_recycle = (Node&)(*(Ptr*)ctx.node().children()[0].value().get());
+            recycle_node(to_recycle);
+        });
+
+        uint32_t stoi_id = add_function("stoi",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string s = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            int stoid = std::stoi(s.to_std());
+            ctx.node().value().set((void*)&stoid);
         },4,int_id);
 
 
@@ -661,13 +733,13 @@ namespace Acorn {
                 }
             };
 
-            x_handlers[make_tokenized_keyword("make_value")] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                int type = *(int*)ctx.node().children()[0].value().get();
-                int size = *(int*)ctx.node().children()[1].value().get();
-                ctx.sub().node().value(make_value(type,size));
-                ctx.sub().node().value().init_data();
-            };
+            // x_handlers[make_tokenized_keyword("make_value")] = [this](Context& ctx){
+            //     standard_sub_process(ctx);
+            //     int type = *(int*)ctx.node().children()[0].value().get();
+            //     int size = *(int*)ctx.node().children()[1].value().get();
+            //     ctx.sub().node().value(make_value(type,size));
+            //     ctx.sub().node().value().init_data();
+            // };
 
 
             s_handlers[string_id] = [this](Context& ctx){
@@ -934,8 +1006,9 @@ namespace Acorn {
                         ctx.value().sub_type(left.value().type());
                         ctx.value().sub_size(left.value().size());
                     } else {
-                        print(red("prefix_ptr_id::r_handler missing type it points to!"));
-                        print(node_to_string(ctx.node()));
+                        //It's just a normal Ptr
+                        // print(red("prefix_ptr_id::r_handler missing type it points to!"));
+                        // print(node_to_string(ctx.node()));
                     }
                 }
             };
@@ -982,6 +1055,8 @@ namespace Acorn {
                     int i = std::stoi(name); ctx.node().value().set((void*)&i);
                 } else if(vtype==float_id) {
                     float f = std::stof(name); ctx.node().value().set((void*)&f);
+                } else if(vtype==ptr_id) {
+                    Ptr p = string_to_Ptr(name); ctx.node().value().set((void*)&p);
                 } else if(vtype==string_id) {
                     Ptr p = get_ticket(name_store_id,1,char_id); string s(p); s = name; ctx.node().value().set((void*)&p);
                 } else if(vtype==bool_id) {
@@ -1086,6 +1161,18 @@ namespace Acorn {
             walk_nodenet(root,[](Node n){n.resolved(false);});
         }
 
+        Node compile_literal(const std::string& literal) {
+            Node root = tokenize(literal);
+            Node n = root.children()[0];
+            if(n.type()==identifier_id) {n.type(string_id);}
+            Context ctx = make_context(); ctx.node(n);
+            t_handlers.run(n.type())(ctx);
+            m_handlers.run(n.type())(ctx);
+            x_handlers.run(n.type())(ctx);
+            // print(node_to_string(n));
+            return n;
+        }
+
         void print_stage_header(const std::string& label) {print_and_pause(0.7f,"\n\n\n\n\n\n\n\n=="+label+" STAGE==\n\n\n\n\n\n\n\n");} 
 
         void compile(Node root, bool prune = true) {
@@ -1156,7 +1243,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);
 
-            //launch_blackfeather(root);
+            launch_blackfeather(root);
         }
 
 

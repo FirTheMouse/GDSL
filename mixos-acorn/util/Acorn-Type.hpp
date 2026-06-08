@@ -372,6 +372,7 @@ namespace Acorn {
         col.push((void*)&ncol);
         return col.length()-1;
     }
+
     
     uint32_t note_value(Col& col, const std::string& key, uint32_t size, uint32_t tag) {
         uint32_t at = add_column(col, size, tag);

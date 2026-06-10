@@ -264,6 +264,32 @@ namespace Acorn {
                 copy.storage = nullptr;
             }
         }
+        QCellCol& operator=(QCellCol&& o) {
+            if(this == &o) return *this;
+            // destruct existing embedded CCols
+            for(uint32_t i = 0; i < length(); i++) get(i).~CCol();
+            if(storage) delete[] storage;
+            storage = o.storage;
+            size = o.size;
+            capacity = o.capacity;
+            o.storage = nullptr;
+            o.size = 0;
+            o.capacity = 0;
+            return *this;
+        }
+        
+        QCellCol& operator=(const QCellCol& o) {
+            if(this == &o) return *this;
+            for(uint32_t i = 0; i < length(); i++) get(i).~CCol();
+            if(storage) delete[] storage;
+            storage = nullptr; size = 0; capacity = 0;
+            for(uint32_t i = 0; i < o.length(); i++) {
+                CCol copy(o.get(i));
+                push(copy);
+                copy.storage = nullptr;
+            }
+            return *this;
+        }
         ~QCellCol() {
             if(!storage) return;
             for(uint32_t i = 0; i < length(); i++) {
@@ -429,6 +455,7 @@ namespace Acorn {
     }
 
     static void write_ccol(std::ostream& out, CCol& col) {
+        //print("write_ccol size: ", col.size, " storage: ", (void*)col.storage);
         write_qcol(out,col);
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
@@ -445,17 +472,64 @@ namespace Acorn {
         return col;
     }
 
+    static void write_qcellcol(std::ostream& out, QCellCol& cells) {
+        write_raw<uint32_t>(out, cells.length());
+        //print("Writting qcellcol, count: ", cells.length(), " stream pos: ", out.tellp());
+        for(uint32_t i = 0; i < cells.length(); i++) {
+            write_ccol(out, cells.get(i));
+        }
+    }
+    
+    static QCellCol read_qcellcol(std::istream& in) {
+        QCellCol cells;
+        uint32_t count = read_raw<uint32_t>(in);
+        //print("Reading qcellcol, count: ", count, " stream pos: ", in.tellg());
+        for(uint32_t i = 0; i < count; i++) {
+            CCol c = read_ccol(in);
+            // print("Key bytes: ", c.size, " storage: ", (void*)c.storage," esize ",c.element_size," tag ",c.tag);
+            // for(uint32_t b = 0; b < c.size; b++) print((char)c.storage[b]);
+            cells.push(c);
+            c.storage = nullptr;
+        }
+        return cells;
+    }
+
     static void write_col(std::ostream& out, Col& col) {
         write_ccol(out,col);
         write_raw<bool>(out, col.heterogenous);
-        write_qcol(out,col.cells);
+        write_qcellcol(out, col.cells);
         write_qcol(out,col.label);
     }
 
     static Col read_col(std::istream& in) {
         Col col = read_ccol(in);
         col.heterogenous = read_raw<bool>(in);
-        col.cells = read_qcol(in);
+        col.cells = read_qcellcol(in);
+        col.label = read_qcol(in);
+        return col;
+    }
+
+    static void write_col_header(std::ostream& out, Col& col) {
+        //write_raw<uint32_t>(out, col.size);
+        write_raw<uint32_t>(out, col.element_size);
+        write_raw<uint32_t>(out, col.tag);
+        write_raw<uint32_t>(out, col.hash);
+        write_raw<bool>(out, col.live);
+        write_raw<bool>(out, col.heterogenous);
+        write_qcellcol(out, col.cells);
+        write_qcol(out,col.label);
+    }
+
+    static Col read_col_header(std::istream& in) {
+        Col col;
+        // uint32_t size = read_raw<uint32_t>(in);
+        // col.resize(size);
+        col.element_size = read_raw<uint32_t>(in);
+        col.tag = read_raw<uint32_t>(in);
+        col.hash = read_raw<uint32_t>(in);
+        col.live = read_raw<bool>(in);
+        col.heterogenous = read_raw<bool>(in);
+        col.cells = read_qcellcol(in);
         col.label = read_qcol(in);
         return col;
     }

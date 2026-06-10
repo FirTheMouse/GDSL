@@ -1366,7 +1366,7 @@ namespace Acorn {
                         ascend_call_scope(ctx.node().parent().scopes()[0]);
                     }
                 }
-                ctx.flag(true);
+                ctx.state(1);
                 return;
             };
 

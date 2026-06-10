@@ -523,90 +523,63 @@ namespace Acorn {
 
             uint32_t max_rows = 0;
             for(int c = 0;c<sheetsheet.length();c++) if(sheetsheet[c].length() > max_rows) max_rows = sheetsheet[c].length();
-            
+            print("Max rows: ",max_rows);
             for(int r = 0; r < max_rows; r++) {
                 ptr.sidx = r;
                 for(int c = 0; c < sheetsheet.length(); c++) {
+                    ptr.idx = c;
                     Col& sheetcol = sheetsheet[c];
                     Col& datacol = datasheet[c];
                     Col& metacol = metadatasheet[c];
                     
                     std::string label = datacol.label.to_std();
-        
-                    std::string current = "";
+                    Ptr metadata = *(Ptr*)metacol[r];
+                    uint32_t widget_type = metadata.pool;
+
+                    // std::string current = "";
                     if(datacol.length() > 0) {
                         Ptr p = *(Ptr*)datacol[r];
                         if(is_live(p)) {
                             Col& vcol = resolve_to_col(p);
-                            current = value_as_string(vcol.tag, p);
+                            std::string val = value_as_string(vcol.tag, p);
+
+                            
+                            //This is a bit dangerous and janky, in the future we'll use tags to ensure we're casting the right type of key
+                            QString str = (QString&)vcol.cells[r]; //To retrive the key as a string
+
+                            out += "<div ";
+                            out += styles->resolve_prop(ctx, "field_style");
+                            out += ">\n<label ";
+                            out += styles->resolve_prop(ctx, "label_style");
+                            out += ">" + str.to_std() + "</label>\n";
+
+                            if(widget_type==0) {
+                                out += "<select ";
+                                out += styles->resolve_prop(ctx, "select_style");
+                                ptr.pool = offset; //Targeting the sheet cell itself
+                                out += " onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value);";
+                                ptr.pool = target_pool; //Targeting the form selector (so we store the value selected)
+                                out += "fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value)";
+                                out += "\">\n";
+                                std::string selected = (r==0) ? " selected" : ""; //For now, in the future add a check against the value at 0 for this column
+                                out += "<option value='"+val+"'"+selected+">"+val+"</option>\n";
+                                out += "</select>\n";
+                            } else if(widget_type==1) {
+                                out += "<input ";
+                                out += styles->resolve_prop(ctx, "form_input_style");
+                                out += " value=\""+val+"\"";
+                                ptr.pool = offset; //Targeting the sheet cell itself
+                                out += " onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value);";
+                                ptr.pool = target_pool; //Targeting the form selector (so we store the value selected)
+                                out += "fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value)";
+                                out += "/>\n";
+                            } else {
+
+                            }
                         }
                     }
-
-                    Ptr metadata = *(Ptr*)metacol[r];
                 }
             }
-        
-            // for(int c = 0; c < datasheet.length(); c++) {
-            //     Col& sheetcol = sheetsheet[c];
-            //     Col& datacol = datasheet[c];
-            //     Col& metacol = metadatasheet[c];
-        
-            //     std::string label = datacol.label.to_std();
-        
-            //     std::string current = "";
-            //     if(datacol.length() > 0) {
-            //         Ptr p = *(Ptr*)datacol[0];
-            //         if(is_live(p)) {
-            //             Col& vcol = resolve_to_col(p);
-            //             current = value_as_string(vcol.tag, p);
-            //         }
-            //     }
-        
-            //     // Read widget type from metadata col tag
-            //     // 0 = auto (decide by row count), else explicit widget type
-            //     uint32_t widget_type = metacol.tag;
-        
-            //     ptr.idx  = c;
-            //     ptr.sidx = 0;
-            //     std::string ptr_str = Ptr_to_string(ptr);
-            //     std::string node_name = ctx.sub().node().name().to_std();
-        
-            //     out += "<div ";
-            //     out += styles->resolve_prop(ctx, "field_style");
-            //     out += ">\n<label ";
-            //     out += styles->resolve_prop(ctx, label_sub+"label_style");
-            //     out += ">" + label + "</label>\n";
-        
-            //     bool is_select = widget_type == select_widget_id 
-            //                   || (widget_type == 0 && datacol.length() > 1);
-        
-            //     if(is_select) {
-            //         out += "<select ";
-            //         out += styles->resolve_prop(ctx, "select_style");
-            //         out += " onchange=\"fragthree('"+node_name+"','setcell','"+ptr_str+"='+this.value)\">\n";
-            //         // rows 1+ are options
-            //         for(int r = 1; r < datacol.length(); r++) {
-            //             Ptr op = *(Ptr*)datacol[r];
-            //             std::string opt_val = "";
-            //             if(is_live(op)) {
-            //                 Col& ocol = resolve_to_col(op);
-            //                 opt_val = value_as_string(ocol.tag, op);
-            //             }
-            //             std::string selected = (opt_val == current) ? " selected" : "";
-            //             out += "<option value='"+opt_val+"'"+selected+">"+opt_val+"</option>\n";
-            //         }
-            //         out += "</select>\n";
-            //     } else {
-            //         out += "<input ";
-            //         out += styles->resolve_prop(ctx, "form_input_style");
-            //         out += " value=\""+current+"\"";
-            //         out += " onchange=\"fragthree('"+node_name+"','setcell','"+ptr_str+"='+this.value)\"";
-            //         out += "/>\n";
-            //     }
-        
-            //     out += "</div>\n";
-            // }
-        
             out += "</div>";
             return out;
         }
@@ -686,7 +659,7 @@ namespace Acorn {
             int sheetid = *(int*)ctx.node().children()[0].value().get();
             int poolid = *(int*)ctx.node().children()[1].value().get();
             string renderas = (string&)*(Ptr*)ctx.node().children()[2].value().get();
-            print("RENDERING POOL: ",poolid);
+            print("RENDERING POOL: ",poolid," AS ",renderas);
             if(sheetid!=0) {
                 Ptr ptr(poolid,0,0,sheetid);
                 if(renderas.to_std()=="static") {
@@ -709,13 +682,64 @@ namespace Acorn {
         uint32_t create_sheet_id = add_function("create_sheet",[this](Context& ctx){
             ColColCol sheet;
             ColCol data_pool; data_pool.tag=1; sheet.push(data_pool); //Tag 1 means that everything here is a Ptr to something else
-            ColCol metadata_pool; metadata_pool.tag=0; sheet.push(metadata_pool); //Tag 0 means that direct values are stored here
+            ColCol metadata_pool; metadata_pool.tag=1; sheet.push(metadata_pool); 
             ColCol notes_pool; notes_pool.tag=1; sheet.push(notes_pool);
             ColCol scripts_pool; scripts_pool.tag=1; sheet.push(scripts_pool);
-            ColCol store_pool; store_pool.tag=0; sheet.push(store_pool);
+            ColCol store_pool; store_pool.tag=0; sheet.push(store_pool); //Tag 0 means that direct values are stored here
             uint32_t sheetid = (uint32_t)make_unit(sheet);
             ctx.node().value().set((void*)&sheetid);
         },4,int_id);
+        uint32_t add_form_id = add_function("add_form",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int idx = *(int*)ctx.node().children()[0].value().get();
+            ColColCol& sheet = (*units[idx]).types;
+            
+            //Snapshot shape from first non-store pool
+            int ncols = 0, nrows = 0;
+            for(int o = 0; o < sheet.length(); o++) {
+                if(sheet[o].tag == 0) continue;
+                ncols = sheet[o].length();
+                nrows = ncols > 0 ? sheet[o][0].length() : 0;
+                break;
+            }
+        
+            auto make_pool = [&](uint8_t tag) {
+                ColCol pool; pool.tag = tag;
+                if(tag == 0) { sheet.push(pool); return; } //Store pool, empty is fine
+                for(int c = 0; c < ncols; c++) {
+                    Col col(sizeof(Ptr)); col.tag = ptr_id;
+                    for(int r = 0; r < nrows; r++) col.push_default();
+                    pool.push(col);
+                }
+                sheet.push(pool);
+            };
+        
+            make_pool(1); //Data
+            make_pool(1); //Metadata
+            make_pool(1); //Notes
+            make_pool(1); //Scripts
+            make_pool(0); //Store
+
+            ColCol& store = sheet[9];
+            uint32_t a = create_column(store,4,int_id);
+            bool use_corrupt = true;
+            int numA = 5;
+            int numB = 8;
+            int numC = 12;
+            if(use_corrupt) {
+                store[a].put("opt",(void*)&numA,string_id);
+                store[a].put("nopt",(void*)&numB,string_id);
+                store[a].put("bopt",(void*)&numC,string_id);
+            } else {
+                store[a].push((void*)&numA);
+                store[a].push((void*)&numB);
+                store[a].push((void*)&numC);
+            }
+            Ptr to_store(9,0,0,idx);
+            sheet[5][0].qset(0,(void*)&to_store,sizeof(Ptr));
+            print("Added form elements");
+            units[idx]->dump_unit(true);
+        });
         uint32_t load_sheet_id = add_function("load_sheet",[this](Context& ctx){
             standard_sub_process(ctx);
             string s(*(Ptr*)ctx.node().children()[0].value().get());
@@ -727,26 +751,45 @@ namespace Acorn {
             }
             if(sheetid==0) {
                 auto in = openReadStream("mixos-acorn/web/thistle/users/fir/sheets/"+s.to_std());
-                ColColCol sheet = read_TypeTypeCol(in);
-                sheetid = (uint32_t)make_unit(sheet);
+                print("Loading ",s.to_std());
+                ColColCol loadsheet = read_TypeTypeCol(in);
+                //print("Loaded: ",loadsheet.length()," sheets");
 
+                // print("Saving");
+                // auto reout = openWriteStream("savetest.wub");
+                // write_TypeTypeCol(reout, loadsheet);
+                // reout.close();
+                // std::vector<uint8_t> b = readFileBytes("savetest.wub");
+                // print("Loaded ",b.size()," bytes");
+                // writeHex("mixos-acorn/web/thistle/users/fir/sheets/testload",b);
+                // print("Saved");
+
+                print("Loaded, making a unit");
+                sheetid = (uint32_t)make_unit(loadsheet);
+                ColColCol& sheet = units[sheetid]->types;
+                print("Unit made, normalizing");
                 for(int p = 0;p<sheet.length();p++) {
+                    //print(p,"/",sheet.length()," [",sheet[p].tag,"]");
                     if(sheet[p].tag==1) { //Stores Ptrs, so it needs to be normalized
                         ColCol& pool = sheet[p];
                         for(int c=0;c<pool.length();c++) {
                             Col& col = pool[c];
                             for(int r=0;r<col.length();r++) {
+                                //print(c,"/",pool.length(),":",r,"/",col.length());
                                Ptr ptr = *(Ptr*)col[r];
+                               //print("Normalizing: ",Ptr_to_string(ptr));
                                if(is_live(ptr)) {
                                     ptr.unit = sheetid;
                                     col.set(r,(void*)&ptr);
                                }
+                               //print("Normalized: ",Ptr_to_string(*(Ptr*)col[r]));
                             }
                         }   
                     }
                 }
-
+                print("Unit normalized");
             }
+
             print("Rendering ",sheetid);
             units[sheetid]->dump_unit(true);
             print("Set and finished");
@@ -758,35 +801,36 @@ namespace Acorn {
             string s(*(Ptr*)ctx.node().children()[1].value().get());
             auto out = openWriteStream("mixos-acorn/web/thistle/users/fir/sheets/"+s.to_std());
             units[sheetid]->types.label = s.to_std();
+            //print("Saving: ",units[sheetid]->types.length()," sheets");
             write_TypeTypeCol(out,units[sheetid]->types);
+            out.close();
+
+            //writeHex("mixos-acorn/web/thistle/users/fir/sheets/test", readFileBytes("mixos-acorn/web/thistle/users/fir/sheets/fsa.twg"));
         });
         uint32_t add_column_id = add_function("add_column_to_sheet",[this](Context& ctx){
             standard_sub_process(ctx);
             int idx = *(int*)ctx.node().children()[0].value().get();
             int offset = *(int*)ctx.node().children()[1].value().get();
-            for(int o=0;o<4;o++) { //We're iterating over each of the diffrent pools in the sheet by offset
+            for(int o=offset;o<(*units[idx]).types.length();o++) { //We're iterating over each of the diffrent pools in the sheet by offset
+                if((*units[idx])[o].tag==0) continue; //If it's a store pool
                 Col ncol(sizeof(Ptr)); ncol.tag = ptr_id;
-                if(!(*units[idx])[o+offset].empty()) { //We need to ensure there's always the same ammount of rows in each column
-                    for(int i=0;i<((*units[idx])[o+offset][0].length());i++) {
+                if(!(*units[idx])[o].empty()) { //We need to ensure there's always the same ammount of rows in each column
+                    for(int i=0;i<((*units[idx])[o][0].length());i++) {
                         ncol.push_default();
                     }
                 }
-                (*units[idx])[o+offset].push(ncol);
+                (*units[idx])[o].push(ncol);
             }
         });
         uint32_t add_row_id = add_function("add_row_to_sheet",[this](Context& ctx){
             standard_sub_process(ctx);
             int idx = *(int*)ctx.node().children()[0].value().get();
             int offset = *(int*)ctx.node().children()[1].value().get();
-            ColCol& data     = (*units[idx])[offset];
-            ColCol& metadata = (*units[idx])[offset+1];
-            ColCol& notes    = (*units[idx])[offset+2];
-            ColCol& scripts  = (*units[idx])[offset+3];
-            for(int i = 0; i < data.length(); i++) {
-                data[i].push_default();
-                metadata[i].push_default();
-                notes[i].push_default();
-                scripts[i].push_default();
+            for(int o=offset;o<(*units[idx]).types.length();o++) { //We're iterating over each of the diffrent pools in the sheet by offset
+                if((*units[idx])[o].tag==0) continue; //If it's a store pool
+                for(int i=0;i<(*units[idx])[o].length();i++) {
+                    (*units[idx])[o][i].push_default();
+                }
             }
         });
         uint32_t setcell_id = add_function("setcell",[this](Context& ctx){

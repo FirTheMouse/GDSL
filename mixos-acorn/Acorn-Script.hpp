@@ -52,6 +52,13 @@ namespace Acorn {
         uint32_t string_find_id = reg_id("STRING_FIND");
         uint32_t string_find_from_id = reg_id("STRING_FIND_FROM");
 
+        uint32_t break_id = add_function("break",[this](Context& ctx){
+            ctx.state(2);
+        });
+        uint32_t continue_id = add_function("continue",[this](Context& ctx){
+            ctx.state(3);
+        });
+
 
         uint32_t ptr_get_id = overload_type(ptr_id,".\"get\"","PTR_GET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
             standard_sub_process(ctx);
@@ -766,7 +773,7 @@ namespace Acorn {
                 }
             };
             x_handlers[node_block_id] = [this](Context& ctx){
-                ctx.flag(standard_travel_pass(ctx.node().scopes()[0]));
+                ctx.state(standard_travel_pass(ctx.node().scopes()[0]));
             };
 
             x_handlers[make_tokenized_keyword("test")] = [this](Context& ctx){
@@ -811,10 +818,10 @@ namespace Acorn {
                 process_node(ctx, ctx.node().children()[0]);
                 DEBUG_ONLY(if(ERROR_FLAG) {return;});
                 if(*(bool*)ctx.node().children()[0].value().get()) {
-                    ctx.flag(standard_travel_pass(ctx.node().scopes()[0],ctx.sub()));
+                    ctx.state(standard_travel_pass(ctx.node().scopes()[0],ctx.sub()));
                 }
                 else if(ctx.node().scopes().length()>1) {
-                    ctx.flag(standard_travel_pass(ctx.node().scopes()[1],ctx.sub()));
+                    ctx.state(standard_travel_pass(ctx.node().scopes()[1],ctx.sub()));
                 }
             };
             t_handlers[else_id] = [this](Context& ctx) {
@@ -833,10 +840,19 @@ namespace Acorn {
                     DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute while while another error was flagged")); return;})
                     process_node(ctx, ctx.node().children()[0]);
                     if(!(*(bool*)ctx.node().children()[0].value().get()))break;
-                    if(standard_travel_pass(ctx.node().scopes()[0],ctx.sub())) {
-                        ctx.flag(true);
-                        break;
-                    } 
+                    uint32_t result = standard_travel_pass(ctx.node().scopes()[0], ctx.sub());
+                    if(result > 0) {
+                        uint32_t kind = result % 4;
+                        if(kind == 2 || kind == 3) {//Break or continue
+                            result -= 4;//Consume one magnitude
+                            if(result >= 4) ctx.state(result);//If it still has magnitude, propagate up
+                            if(kind == 2) break; //Otherwise break away
+                            //Continue will fall through here, after consuming the magnitude
+                        } else { //If it's a return, pass it up
+                            ctx.state(result);
+                            break;
+                        }
+                    }
                 }
             };         
             x_handlers[for_id] = [this](Context& ctx) {
@@ -845,11 +861,20 @@ namespace Acorn {
                     process_node(ctx, ctx.node().children()[1]);
                     DEBUG_ONLY(if(ERROR_FLAG) {return;})
                     if(!(*(bool*)ctx.node().children()[1].value().get()))break;
-                    if(standard_travel_pass(ctx.node().scopes()[0],ctx.sub())) {
-                        ctx.flag(true);
-                        break;
-                    } 
+                    uint32_t result = standard_travel_pass(ctx.node().scopes()[0], ctx.sub());
                     process_node(ctx, ctx.node().children()[2]);
+                    if(result > 0) {
+                        uint32_t kind = result % 4;
+                        if(kind == 2 || kind == 3) {//Break or continue
+                            result -= 4;//Consume one magnitude
+                            if(result >= 4) ctx.state(result);//If it still has magnitude, propagate up
+                            if(kind == 2) break; //Otherwise break away
+                            continue;
+                        } else { //If it's a return, pass it up
+                            ctx.state(result);
+                            break;
+                        }
+                    }
                 }
             };  
 

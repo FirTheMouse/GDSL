@@ -1,9 +1,16 @@
-Node n;
-n.value = make_value(to_type("int"),4);
-n.value.loc = 8;
-print(n.value.loc);
-if(6<n.value.loc) {
-    print("Yes");
-} else {
-    print("No");
+wub {
+    Ptr int nums;
+    int x;
+    int print_list() {
+            print(x);
+            print(nums.get(i));
+    } 
 }
+
+wub n; n.x = 8;
+n.nums.push(2); n.nums.push(4); n.nums.push(6);
+wub m; m.x = 12;
+m.nums.push(3); m.nums.push(6); m.nums.push(9);
+
+n.print_list;
+m.print_list;

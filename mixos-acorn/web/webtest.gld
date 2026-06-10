@@ -1,3 +1,5 @@
+
+
 ##
     newstage posting;
     newstage fraging;
@@ -171,6 +173,21 @@
         }
         in resolving {
             gather_props;
+        }
+    }
+
+    register table;
+    "table" {
+        in resolving {
+            gather_props;
+        }
+        in htmlemiting {
+            execut(ctx.node.children.get(0));
+            ctx.source.append("<table");
+            emit_inline_html;
+            ctx.source.append(">");
+            emit_contents;
+            ctx.source.append("</table>");
         }
     }
 

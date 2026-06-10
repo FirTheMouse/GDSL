@@ -13,8 +13,8 @@ namespace Acorn {
     struct Value;
 
     struct ColCol : Col {
-        ColCol() : Col(sizeof(Col)) {tag = 1;}
-        ColCol(Col c) : Col(c) {tag = 1;}
+        ColCol() : Col(sizeof(Col)) {}
+        ColCol(Col c) : Col(c) {}
         ColCol(const ColCol& o) : Col(sizeof(Col)) {
             element_size = o.element_size;
             tag = o.tag;
@@ -38,9 +38,9 @@ namespace Acorn {
             Col::set(idx,(void*)&val);
             val.storage = nullptr;
             val.label.storage = nullptr;
-            for(uint32_t i = 0; i < val.cells.length(); i++) {
-                val.cells.get(i).storage = nullptr;
-            }
+            // for(uint32_t i = 0; i < val.cells.length(); i++) {
+            //     val.cells.get(i).storage = nullptr;
+            // }
             val.cells.storage = nullptr;
         }
         Col& operator[](uint32_t idx) {return *(Col*)Col::sget(idx);}
@@ -48,16 +48,16 @@ namespace Acorn {
             Col::push((void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            for(uint32_t i = 0; i < t.cells.length(); i++) {
-                t.cells.get(i).storage = nullptr;
-            }
+            // for(uint32_t i = 0; i < t.cells.length(); i++) {
+            //     t.cells.get(i).storage = nullptr;
+            // }
             t.cells.storage = nullptr;
         }
     };
     
     struct ColColCol : Col {
-        ColColCol() : Col(sizeof(ColCol)) {tag = 2;}
-        ColColCol(Col c) : Col(c) {tag = 2;}
+        ColColCol() : Col(sizeof(ColCol)) {}
+        ColColCol(Col c) : Col(c) {}
         ColColCol(const ColColCol& o) : Col(sizeof(ColCol)) {
             element_size = o.element_size;
             tag = o.tag;
@@ -80,9 +80,9 @@ namespace Acorn {
             Col::set(idx,(void*)&val);
             val.storage = nullptr;
             val.label.storage = nullptr;
-            for(uint32_t i = 0; i < val.cells.length(); i++) {
-                val.cells.get(i).storage = nullptr;
-            }
+            // for(uint32_t i = 0; i < val.cells.length(); i++) {
+            //     val.cells.get(i).storage = nullptr;
+            // }
             val.cells.storage = nullptr;
         }
         ColCol& operator[](uint32_t idx) {return *(ColCol*)Col::sget(idx);}
@@ -90,9 +90,9 @@ namespace Acorn {
             Col::push((void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            for(uint32_t i = 0; i < t.cells.length(); i++) {
-                t.cells.get(i).storage = nullptr;
-            }
+            // for(uint32_t i = 0; i < t.cells.length(); i++) {
+            //     t.cells.get(i).storage = nullptr;
+            // }
             t.cells.storage = nullptr;
         }
     };
@@ -872,7 +872,8 @@ namespace Acorn {
     };  
 
     static void write_TypeCol(std::ostream& out, ColCol& type) {
-        write_col(out, type);
+        write_raw<uint32_t>(out, type.length());
+        write_col_header(out, type);
         for(int c = 0; c < type.length(); c++) {
             Col& col = type[c];
             write_col(out, col);
@@ -880,11 +881,8 @@ namespace Acorn {
     }
     
     static ColCol read_TypeCol(std::istream& in) {
-        ColCol type = read_col(in);
-        uint32_t len = type.length();
-        type.storage = nullptr;
-        type.size = 0;
-        type.capacity = 0;
+        uint32_t len = read_raw<uint32_t>(in);
+        ColCol type = read_col_header(in);
         for(uint32_t i = 0; i < len; i++) {
             Col col = read_col(in);
             type.push(col);
@@ -893,18 +891,16 @@ namespace Acorn {
     }
 
     static void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
-        write_col(out, col);
+        write_raw<uint32_t>(out, col.length());
+        write_col_header(out, col);
         for(int i = 0; i < col.length(); i++) {
             write_TypeCol(out,col[i]);
         }
     }
 
     static ColColCol read_TypeTypeCol(std::istream& in) {
-        ColColCol col = read_col(in);
-        uint32_t len = col.length();
-        col.storage = nullptr;
-        col.size = 0;
-        col.capacity = 0;
+        uint32_t len = read_raw<uint32_t>(in);
+        ColColCol col = read_col_header(in);
         for(uint32_t p = 0; p < len; p++) {
             ColCol cc = read_TypeCol(in);
             col.push(cc);
@@ -1366,7 +1362,7 @@ namespace Acorn {
                 std::string content = string(ptr).to_std();
                 return Ptr_as_string(ptr)+"> \""+escape_string(content)+"\"";
             } else if(tag==ptr_id) {
-                return Ptr_as_string(*(Ptr*)data);
+                return Ptr_to_string(*(Ptr*)data);
             } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id) {
                 return Ptr_as_string(*(Ptr*)data);
             } else if(tag==ptr4_id) {
@@ -1481,6 +1477,7 @@ namespace Acorn {
         }
 
         std::string print_columnar_table(list<list<std::string>> lines) {
+            //print("Printing columar with ",lines.length()," lines ");
             list<uint32_t> widths;
             uint32_t longest_row = 0;
             for(int l=0;l<lines.length();l++) {
@@ -1506,7 +1503,9 @@ namespace Acorn {
 
                 for(int l=0;l<lines.length();l++) {
                     std::string line = "";
+                    //print("On line ",l," row ",r);
                     if(lines[l].length()>r) {line = lines[l][r];}
+                    //print("Line: ",line);
                     std::string rownum = std::to_string(r-1); //Minus 1 because indexes start at 0                    
                     if(r==0) { //If a header
                         std::string column = std::to_string(l);
@@ -1545,6 +1544,7 @@ namespace Acorn {
                 Col& col = t[c];
                 list<std::string> subline;
                 subline << col.label.to_std()+(col.live?"":" [FREE]");
+                //print("Pushed label ",subline[0]);
                 if(col.heterogenous) {
                     if(layouts.hasKey(col.tag)) {
                         _layout& l = layouts.get(col.tag);
@@ -1565,13 +1565,19 @@ namespace Acorn {
                             if(!cell_label.empty()) line+=cell_label;
                             else line+="REIMPLMENT CELL KEYS LATER";
                         } else {
-                            line+=tag_to_str(col.tag,col[r]);
+                            //print("Line ",lines.length()," Subline ",subline.length());
+                            //print("Row ",r," Column ",c," Tag ",labels[col.tag],"(",col.tag,")");
+                            std::string result = tag_to_str(col.tag,col[r]);
+                            //print("Result: ",result);
+                            line+=result;
                         }
                         subline << line;
                     }
                 }
+                //print("Pushed ",subline.length()," sublines");
                 lines << subline;
             }
+            //print("Returned ",lines.length()," lines");
             return lines;
         }
 
@@ -1636,9 +1642,11 @@ namespace Acorn {
             for(int t=0;t<types.length();t++) {
                 std::string to_print = "";
                 to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+":\n";
+                //print("PRINTING: ",t);
                 to_print += type_to_string(types[t]);
                 to_print += "\n\n\n";
-
+                // print("COMMITING: ",t);
+                // print("TEXT: ",to_print);
                 editTextFile("mixos-acorn/tests/printout.txt",[to_print](std::string& source){
                     source+=to_print;
                 });
@@ -1961,7 +1969,7 @@ namespace Acorn {
             start_stage(*stage_ptr);
         }
 
-        bool standard_travel_pass(Node root, Context sub = deadptr);
+        uint32_t standard_travel_pass(Node root, Context sub = deadptr);
 
         inline void standard_process(Context& ctx, uint32_t type) {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.prefix) w.prefix(ctx);})
@@ -2271,7 +2279,7 @@ namespace Acorn {
     }
 
     //Returns true if flagged for a return/break
-    bool Unit::standard_travel_pass(Node root, Context sub) {
+    uint32_t Unit::standard_travel_pass(Node root, Context sub) {
         DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
         node_col children = root.children();
         newline("Travel pass over "+std::to_string(children.length())+" nodes");
@@ -2284,16 +2292,16 @@ namespace Acorn {
             standard_process(ctx);
             ctx.left(ctx.result().get(i));
             DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
-            if(ctx.flag()) { //This is the return/break process
+            if(ctx.state()>0) { //This is the return/break process
                 endline();
                 deep_recycle_context(ctx);
-                return true;
+                return ctx.state();
             }
             i++;
         }
         endline();
         deep_recycle_context(ctx);
-        return false;
+        return 0;
     }
 
     ColColCol& init_first_unit() {

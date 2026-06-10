@@ -168,5 +168,34 @@ inline std::ofstream openWriteStream(const std::string& path) {
       return s;
   }
 
+  std::vector<uint8_t> readFileBytes(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if(!file) { print(red("readFileBytes: failed to open "+path)); return {}; }
+    size_t size = file.tellg();
+    file.seekg(0);
+    std::vector<uint8_t> bytes(size);
+    file.read((char*)bytes.data(), size);
+    return bytes;
+}
+
+void writeFileBytes(const std::string& path, const std::vector<uint8_t>& bytes) {
+    std::ofstream file(path, std::ios::binary);
+    if(!file) { print(red("writeFileBytes: failed to open "+path)); return; }
+    file.write((const char*)bytes.data(), bytes.size());
+}
+
+void writeHex(const std::string& path, const std::vector<uint8_t>& bytes) {
+    std::ofstream file(path);
+    for(size_t i = 0; i < bytes.size(); i++) {
+        if(i % 16 == 0) file << "\n" << std::hex << std::setw(8) << std::setfill('0') << i << ":  ";
+        file << std::hex << std::setw(2) << std::setfill('0') << (int)bytes[i] << " ";
+        if(i % 16 == 15) {
+            file << " | ";
+            for(size_t j = i-15; j <= i; j++)
+                file << (char)(std::isprint(bytes[j]) ? bytes[j] : '.');
+        }
+    }
+    file << "\n";
+}
 
 

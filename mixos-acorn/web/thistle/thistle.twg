@@ -505,6 +505,9 @@ login {
             } else if(instr=="add_row") {
                 add_row_to_sheet(to_edit.value.getInt,stoi(content));
                 save_sheet(to_edit.value.getInt,to_edit.opt_str);
+            } else if(instr=="add_form") {
+                add_form(to_edit.value.getInt);
+                save_sheet(to_edit.value.getInt,to_edit.opt_str);
             } else if(instr=="setcell") {
                 setcell(content);
                 save_sheet(to_edit.value.getInt,to_edit.opt_str);
@@ -567,6 +570,7 @@ build {
                                 control_btns("+0","fragthree('main_sheet','rendermode','0')");
                                 control_btns("+1","fragthree('main_sheet','rendermode','1')");
                                 control_btns("+3","fragthree('main_sheet','rendermode','3')");
+                                control_btns("+F","fragthree('main_sheet','add_form','0')");
                                 control_btns("F","fragthree('main_sheet','rendermode','5')");
                         }
 

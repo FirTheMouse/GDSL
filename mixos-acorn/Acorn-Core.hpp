@@ -1934,11 +1934,13 @@ namespace Acorn {
             return ctx.source().to_std();
         }
 
-        std::string value_as_string(uint32_t tag, Ptr dataptr) {
-            Value v = make_value(tag,0,0,0,0,deadptr,dataptr);
+        std::string value_as_string(Ptr dataptr) {
+            if(!is_live(dataptr)) return "";
+            Value v = make_value(resolve_to_col(dataptr).tag,0,0,0,0,deadptr,dataptr);
             std::string to_return = value_as_string(v);
             recycle_value(v,false);
             return to_return;
+
         }
     
 

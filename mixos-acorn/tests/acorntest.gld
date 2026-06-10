@@ -1,16 +1,12 @@
-wub {
-    Ptr int nums;
-    int x;
-    int print_list() {
-            print(x);
-            print(nums.get(i));
-    } 
+int i = 6;
+if(i<3) {
+    print("Nope");
+} else if(i<5) {
+    print("Nope");
+} else if(i<8) {
+    print("Yes");
+} else if(i<9) {
+    print("Nope");
+} else {
+    print("Else");
 }
-
-wub n; n.x = 8;
-n.nums.push(2); n.nums.push(4); n.nums.push(6);
-wub m; m.x = 12;
-m.nums.push(3); m.nums.push(6); m.nums.push(9);
-
-n.print_list;
-m.print_list;

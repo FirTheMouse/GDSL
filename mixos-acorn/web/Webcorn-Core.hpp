@@ -334,114 +334,13 @@ namespace Acorn {
             }
         };
 
-        std::string ColCol_to_Static(Context& ctx, Ptr ptr) {
-            g_ptr<style_manager> styles = make<style_manager>(this);
-            ColCol& t = resolve_to_pool(ptr);
-            list<list<std::string>> lines = TypeCol_to_lines(t);
-
-            std::string out = "";
-            out += "<table id='"+ctx.sub().node().name().to_std()+"' ";
-            out += emit_inline_html(ctx, ctx.sub().node());
-            if(!ctx.sub().node().scopes().empty()) {
-                node_col props = ctx.sub().node().scopes()[0].children();
-                for(int i=0;i<props.length();i++) {
-                    styles->add_prop(props[i].name().to_std(),props[i].scopes()[0]);
-                }    
-            }
-            out += ">\n";
-            out+= "<tr "; 
-            out+=styles->resolve_prop(ctx, "row_style"); 
-            out+=">\n";
-            for(auto& col : lines) {
-                out += "<th ";
-                out+=styles->resolve_prop(ctx, "header_style"); 
-                out+=">";
-                out += col.empty() ? "" : col[0];
-                out += "</th>";
-            }
-            out += "</tr>";
-            
-            uint32_t max_rows = 0;
-            for(auto& col : lines) if(col.length() > max_rows) max_rows = col.length();
-            
-            for(int r = 1; r < max_rows; r++) {
-                out += "<tr ";
-                out+=styles->resolve_prop(ctx, "row_style"); 
-                out+=">";
-                for(auto& col : lines) {
-                    out += "<td ";
-                    out+=styles->resolve_prop(ctx, "column_style"); 
-                    out+=">";
-                    out += r < col.length() ? col[r] : "";
-                    out += "</td>";
-                }
-                out += "</tr>";
-            }
-            
-            out += "</table>";
-            return out;
-        }
-
-        std::string ColCol_to_Form(Context& ctx, Ptr ptr) {
-            g_ptr<style_manager> styles = make<style_manager>(this);
-            ColCol& t = resolve_to_pool(ptr);
-            list<list<std::string>> lines = TypeCol_to_lines(t);
-
-            std::string out = "";
-            out += "<table id='"+ctx.sub().node().name().to_std()+"' ";
-            out += emit_inline_html(ctx, ctx.sub().node());
-            if(!ctx.sub().node().scopes().empty()) {
-                node_col props = ctx.sub().node().scopes()[0].children();
-                for(int i=0;i<props.length();i++) {
-                    styles->add_prop(props[i].name().to_std(),props[i].scopes()[0]);
-                }    
-            }
-            out += ">\n";
-            out+= "<tr "; 
-            //out+=styles->resolve_prop(ctx, "row_style"); 
-            out+=">\n";
-            for(auto& col : lines) {
-                out += "<th ";
-                //out+=styles->resolve_prop(ctx, "header_style"); 
-                out+=">";
-                out += col.empty() ? "" : col[0];
-                out += "</th>";
-            }
-            out += "</tr>";
-            
-            uint32_t max_rows = 0;
-            for(auto& col : lines) if(col.length() > max_rows) max_rows = col.length();
-            
-            for(int r = 1; r < max_rows; r++) {
-                ptr.sidx = r-1;
-                out += "<tr ";
-                out+=styles->resolve_prop(ctx, "row_style"); 
-                out+=">";
-                for(int c = 0;c<lines.length();c++) {
-                    list<std::string>& col = lines[c];
-                    ptr.idx = c;
-                    out += "<td ";
-                    //out+=styles->resolve_prop(ctx, "column_style"); 
-                    out+=">\n<input "; 
-                    //out+=styles->resolve_prop(ctx, "input_style"); 
-                    out+=" value=\""+(r < col.length() ? col[r] : "")+"\""
-                    + " onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','("+Ptr_to_string(ptr)+").set('+this.value+')')\""
-                    +"/>\n</td>\n";
-                }
-                out += "</tr>";
-            }
-            
-            out += "</table>";
-            return out;
-        }
-
         std::string ColColCol_to_DebugSheet(Context& ctx, Ptr ptr, uint32_t offset = 0) {
-            ColCol& rendersheet = resolve_to_pool(ptr);
-
+            if(resolve_to_unit(ptr).length()<=ptr.pool||ptr.pool<0) return  "<div id='"+ctx.sub().node().name().to_std()+"'><p \"style=color:red\"> OUT OF BOUNDS: "+std::to_string(ptr.pool)+"</p></div>";
             g_ptr<style_manager> styles = make<style_manager>(this);
-            
             std::string out = "";
-            out += "<table id='"+ctx.sub().node().name().to_std()+"' ";
+            out+="<div id='"+ctx.sub().node().name().to_std()+"'>";
+            out+="<p>"+std::to_string(ptr.pool)+"</p>";
+            out += "<table ";
             out += emit_inline_html(ctx, ctx.sub().node());
             if(!ctx.sub().node().scopes().empty()) {
                 node_col props = ctx.sub().node().scopes()[0].children();
@@ -450,6 +349,7 @@ namespace Acorn {
                 }    
             }
             out += ">\n";
+            ColCol& rendersheet = resolve_to_pool(ptr);
             out+= "<tr "; 
             out+=styles->resolve_prop(ctx, "row_style"); 
             out+=">\n";
@@ -458,6 +358,18 @@ namespace Acorn {
                 out+=styles->resolve_prop(ctx, "header_style"); 
                 out+=">";
                 out += rendersheet[c].label.to_std();
+
+                if(rendersheet.tag == 0) { //If it's a store pool or direct values
+                    ptr.idx = c;
+                    out += "<div class='popup' style='"
+                           "display:none;position:absolute;top:100%;left:0;"
+                           "background:white;border:1px solid #ccc;border-radius:4px;"
+                           "padding:4px;z-index:100;white-space:nowrap'>"
+                           "<button onclick=\"fragthree('"+ctx.sub().node().name().to_std()+"','add_row_col','"+std::to_string(c)+"')\">+</button>"
+                           "<button onclick=\"fragthree('"+ctx.sub().node().name().to_std()+"','remove_row_col','"+std::to_string(c)+"')\">-</button>"
+                           "</div>";
+                }
+
                 out += "</th>";
             }
             out += "</tr>";
@@ -474,9 +386,9 @@ namespace Acorn {
                     Col& col = rendersheet[c];
                     std::string tostr = "";
                     if(r<col.length()) {
-                        if(rendersheet.tag==0) { //This sheet stores Ptrs
+                        if(rendersheet.tag==0) { //This sheet stores direct values
                             tostr = tag_to_str(col.tag,col[r]);
-                        } else if(rendersheet.tag==1) { //This sheet stores direct values
+                        } else if(rendersheet.tag==1) { //This sheet stores Ptrs
                             Ptr p = *(Ptr*)col[r]; 
                             if(is_live(p)) {
                                 p.unit = ptr.unit;
@@ -490,18 +402,45 @@ namespace Acorn {
                     out+=styles->resolve_prop(ctx, "column_style"); 
                     out+=">\n<input "; 
                     out+=styles->resolve_prop(ctx, "input_style"); 
-                    out+=" value=\""+tostr+"\""
-                    + " onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value)\""
-                    +"/>\n</td>\n";
+                    out+=" value=\""+tostr+"\"";
+                    out += "onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value)\"";
+                    out += "/>";
+                    if(rendersheet.tag == 0) {
+                        out += "<div class='context_menu' ";
+                        out += styles->resolve_prop(ctx, "context_menu_style");
+                        out += ">";
+                        out += "<div ";
+                        out += styles->resolve_prop(ctx, "context_menu_header_style");
+                        out += ">Cell " + Ptr_to_string(ptr) + "</div>";
+                        out += "<div ";
+                        out += styles->resolve_prop(ctx, "context_menu_body_style");
+                        out += ">";
+                        out += "<label ";
+                        out += styles->resolve_prop(ctx, "context_menu_label_style");
+                        out += ">Label</label>";
+                        out += "<input ";
+                        out += styles->resolve_prop(ctx, "context_menu_input_style");
+                        std::string str = "";
+                        if(col.cells.length()>r) {
+                            //Same problem in ColColCol_to_form
+                            //This is a bit dangerous and janky, in the future we'll use tags to ensure we're casting the right type of key
+                            str = ((QString&)col.cells[r]).to_std(); //To retrive the key as a string
+                        }
+                        out += "value=\""+str+"\" onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','labelcell','"+Ptr_to_string(ptr)+"='+this.value)\"/>";
+                        out += "</div></div>";
+                    }
+                    out+="\n</td>\n";
                 }
                 out += "</tr>";
             }
-            
             out += "</table>";
+            out+="</div>";
             return out;
         }
+
         std::string ColColCol_to_Form(Context& ctx, Ptr ptr, uint32_t offset = 0) {
             uint32_t target_pool = ptr.pool;
+            if((resolve_to_unit(ptr).length()-offset)<10) return "<div id='"+ctx.sub().node().name().to_std()+"'></div>";
             ptr.pool = offset;   ColCol& sheetsheet    = resolve_to_pool(ptr);
             ptr.pool = offset+5; ColCol& datasheet     = resolve_to_pool(ptr);
             ptr.pool = offset+6; ColCol& metadatasheet = resolve_to_pool(ptr);
@@ -523,7 +462,7 @@ namespace Acorn {
 
             uint32_t max_rows = 0;
             for(int c = 0;c<sheetsheet.length();c++) if(sheetsheet[c].length() > max_rows) max_rows = sheetsheet[c].length();
-            print("Max rows: ",max_rows);
+ 
             for(int r = 0; r < max_rows; r++) {
                 ptr.sidx = r;
                 for(int c = 0; c < sheetsheet.length(); c++) {
@@ -536,42 +475,48 @@ namespace Acorn {
                     Ptr metadata = *(Ptr*)metacol[r];
                     uint32_t widget_type = metadata.pool;
 
-                    // std::string current = "";
+                    Ptr sheetptr = *(Ptr*)sheetcol[r];
+                    std::string current = value_as_string(sheetptr);
+
                     if(datacol.length() > 0) {
                         Ptr p = *(Ptr*)datacol[r];
                         if(is_live(p)) {
                             Col& vcol = resolve_to_col(p);
-                            std::string val = value_as_string(vcol.tag, p);
-
-                            
-                            //This is a bit dangerous and janky, in the future we'll use tags to ensure we're casting the right type of key
-                            QString str = (QString&)vcol.cells[r]; //To retrive the key as a string
+                            QString sublabel = vcol.label;
+                            if(sublabel.empty()) sublabel = std::to_string(c+r);
 
                             out += "<div ";
                             out += styles->resolve_prop(ctx, "field_style");
                             out += ">\n<label ";
                             out += styles->resolve_prop(ctx, "label_style");
-                            out += ">" + str.to_std() + "</label>\n";
+                            out += ">" + sublabel.to_std() + "</label>\n";
 
                             if(widget_type==0) {
                                 out += "<select ";
                                 out += styles->resolve_prop(ctx, "select_style");
                                 ptr.pool = offset; //Targeting the sheet cell itself
                                 out += " onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value);";
-                                ptr.pool = target_pool; //Targeting the form selector (so we store the value selected)
-                                out += "fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value)";
                                 out += "\">\n";
-                                std::string selected = (r==0) ? " selected" : ""; //For now, in the future add a check against the value at 0 for this column
-                                out += "<option value='"+val+"'"+selected+">"+val+"</option>\n";
+                                for(int v = 0; v < vcol.length(); v++) {
+
+                                    std::string str = std::to_string(v);
+                                    if(vcol.cells.length()>v) {
+                                        //This is a bit dangerous and janky, in the future we'll use tags to ensure we're casting the right type of key
+                                        str = ((QString&)vcol.cells[v]).to_std(); //To retrive the key as a string
+                                    }
+                                    p.sidx = v;
+                                    std::string val = value_as_string(p);
+                                    p.sidx = 0; //Could also store the selected in the sidx of p
+                                    std::string selected = (val==current) ? " selected" : ""; //For now, in the future add a check against the value at 0 for this column
+                                    out += "<option value='"+val+"'"+selected+">"+str+"</option>\n";
+                                }
                                 out += "</select>\n";
                             } else if(widget_type==1) {
                                 out += "<input ";
                                 out += styles->resolve_prop(ctx, "form_input_style");
-                                out += " value=\""+val+"\"";
+                                out += " value=\""+current+"\"";
                                 ptr.pool = offset; //Targeting the sheet cell itself
                                 out += " onchange=\"fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value);";
-                                ptr.pool = target_pool; //Targeting the form selector (so we store the value selected)
-                                out += "fragthree('"+ctx.sub().node().name().to_std()+"','setcell','"+Ptr_to_string(ptr)+"='+this.value)";
                                 out += "/>\n";
                             } else {
 
@@ -586,12 +531,13 @@ namespace Acorn {
 
         std::string ColColCol_to_Sheet(Context& ctx, Ptr ptr, uint32_t offset = 0) {
             uint32_t target_pool = ptr.pool;
+            if((resolve_to_unit(ptr).length()-offset)<5) return "<table id='"+ctx.sub().node().name().to_std()+"'></table>";
             ptr.pool = offset;   ColCol& datasheet = resolve_to_pool(ptr);
             ptr.pool = offset+1; ColCol& metadatasheet = resolve_to_pool(ptr);
             ptr.pool = offset+2; ColCol& notesheet = resolve_to_pool(ptr);
             ptr.pool = offset+3; ColCol& scriptsheet = resolve_to_pool(ptr);
             ptr.pool = offset+4; ColCol& storesheet = resolve_to_pool(ptr);
-            ptr.pool = target_pool;
+            ptr.pool = offset;
             
             g_ptr<style_manager> styles = make<style_manager>(this);
 
@@ -631,8 +577,7 @@ namespace Acorn {
                     if(r<col.length()) {
                         Ptr p = *(Ptr*)col[r]; //Since the datasheet stores Ptrs
                         if(is_live(p)) {
-                            Col& vcol = resolve_to_col(p);
-                            tostr = value_as_string(vcol.tag,p);
+                            tostr = value_as_string(p);
                         }
                     }
                     ptr.idx = c;
@@ -652,18 +597,18 @@ namespace Acorn {
         }
 
         //render_sheet(sheetid, poolid, "render as")
-        //Render as options: static, sheet, form
+        //Render as options: static, sheet, form, debug
         uint32_t render_sheet_id = add_function("render_sheet",[this](Context& ctx){
             standard_sub_process(ctx);
             if(ctx.node().children().length()!=3) {print(red("Wrong number of arguments for render_sheet, expected 3")); return;}
             int sheetid = *(int*)ctx.node().children()[0].value().get();
             int poolid = *(int*)ctx.node().children()[1].value().get();
             string renderas = (string&)*(Ptr*)ctx.node().children()[2].value().get();
-            print("RENDERING POOL: ",poolid," AS ",renderas);
+            print("RENDERING POOL: ",poolid," AS ",renderas," FROM ",sheetid);
             if(sheetid!=0) {
                 Ptr ptr(poolid,0,0,sheetid);
                 if(renderas.to_std()=="static") {
-                    ctx.sub().source().push(ColCol_to_Static(ctx,ptr));
+                    //ctx.sub().source().push(ColCol_to_Static(ctx,ptr));
                 } else if(renderas.to_std()=="sheet") {
                     ctx.sub().source().push(ColColCol_to_Sheet(ctx,ptr));
                 } else if(renderas.to_std()=="form") {
@@ -833,15 +778,31 @@ namespace Acorn {
                 }
             }
         });
+        uint32_t add_row_to_col_id = add_function("add_row_to_col",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int idx = *(int*)ctx.node().children()[0].value().get();
+            int pool = *(int*)ctx.node().children()[1].value().get();
+            int col = *(int*)ctx.node().children()[2].value().get();
+            (*units[idx])[pool][col].push_default();
+        });
+        uint32_t removw_row_from_col_id = add_function("remove_row_from_col",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int idx = *(int*)ctx.node().children()[0].value().get();
+            int pool = *(int*)ctx.node().children()[1].value().get();
+            int column = *(int*)ctx.node().children()[2].value().get();
+            Col& col = (*units[idx])[pool][column];
+            if(col.cells.length()==col.length()) col.cells.removeAt(col.cells.length()-1,sizeof(CCol));
+            col.removeAt(col.length()-1);
+        });
         uint32_t setcell_id = add_function("setcell",[this](Context& ctx){
             standard_sub_process(ctx);
             string addr = (string&)*(Ptr*)ctx.node().children()[0].value().get();
             list<std::string> terms = split_str(addr.to_std(),'=');
             Ptr cellptr = string_to_Ptr(terms[0]);
-
             uint32_t pooltag = resolve_to_pool(cellptr).tag;
             if(pooltag==0) { //The tag on the pool dictates how it's values are stored
-                //Nothing here for now since we aren't allowing setcells on metadata and such just yet
+                Node literal = compile_literal(terms[1]);
+                resolve_to_col(cellptr).set(cellptr.sidx,literal.value().get());
             } else if(pooltag==1) {
                 Ptr p = *(Ptr*)resolve_ptr(cellptr);
                 Node literal = compile_literal(terms[1]);
@@ -883,6 +844,37 @@ namespace Acorn {
                     col.push(data);
                 } else {
                     col.set(p.sidx,data);
+                }
+            }
+        });
+        uint32_t labelcell_id = add_function("labelcell",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string addr = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            list<std::string> terms = split_str(addr.to_std(),'=');
+            Ptr cellptr = string_to_Ptr(terms[0]);
+            uint32_t pooltag = resolve_to_pool(cellptr).tag;
+            Col& cellcol = resolve_to_col(cellptr);
+            if(pooltag==0) { //The tag on the pool dictates how it's values are stored
+                Node literal = compile_literal(terms[1]);
+                if(literal.value().type()==string_id) { 
+                    while(cellcol.cells.length()<=cellptr.sidx) {
+                        CCol c; //Temporary filler
+                        char defc = ' ';
+                        c.element_size = 1; 
+                        c.tag = string_id;
+                        c.hash = hashBytes((void*)&defc, 1);
+                        c.index = cellcol.cells.length();
+                        c.push((void*)&defc);
+                        cellcol.cells.push(c);
+                    }
+                    CCol& cell = cellcol.cells[cellptr.sidx];
+                    string& s = (string&)*(Ptr*)literal.value().get();
+                    cell.clear();
+                    cell.element_size = s.length();
+                    cell.hash = hashBytes(resolve_ptr(s), s.length());
+                    cell.push(resolve_ptr(s));
+                } else {
+                    //We only suppourt string keys for now
                 }
             }
         });

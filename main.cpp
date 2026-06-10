@@ -123,10 +123,10 @@ int main(int argc, char* argv[]) {
     // g_ptr<Acorn::Unit> test = Acorn::make_unit<Acorn::Unit>();
     // test->test_acorn();
 
-    //g_ptr<Acorn::Acorn_Script> acorn = Acorn::make_unit<Acorn::Acorn_Script>();
+    // g_ptr<Acorn::Acorn_Script> acorn = Acorn::make_unit<Acorn::Acorn_Script>();
     // acorn->setup_trace_res_flipbook();
-    //acorn->setup_stamp_res_flipbook();
-    //acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
+    // // acorn->setup_stamp_res_flipbook();
+    // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
     g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
     //webcorn->setup_trace_res_flipbook();

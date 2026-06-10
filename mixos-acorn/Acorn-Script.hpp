@@ -814,6 +814,30 @@ namespace Acorn {
                 types[handler_type_id][target_type].set(stage_id,(void*)&target_scope);
             };
 
+
+            //This implicit scoping doesn't work yet, add it as a proper feature later
+            //To work, the s handlers for rbrace need to properly descend scopes so they can work with implictly scoped nodes containing lbraces
+            //Like else if
+            s_handlers[if_id] = [this](Context& ctx){
+                if(ctx.index()+1>=ctx.result().length()) return;
+
+                Node right = ctx.result()[ctx.index()+1];
+
+                if(right.type()==lbrace_id) {
+                    ctx.node().children() << ctx.result().take(ctx.index()+1);
+                } else if(is_live(right)) {
+                    ctx.index()++;
+                    process_node(ctx,right);
+                    ctx.index()--;
+                    Node newscope = make_node(scope_id,ctx.node().name().to_std(),deadptr,deadptr);
+                    ctx.node().scopes() << newscope;
+                    newscope.owner(ctx.node());
+                    place_node_in_scope(right,newscope);
+                    newscope.children() << ctx.result().take(ctx.index()+1);
+                }
+            };
+            s_handlers[else_id] = s_handlers[if_id];
+
             x_handlers[if_id] = [this](Context& ctx) {
                 process_node(ctx, ctx.node().children()[0]);
                 DEBUG_ONLY(if(ERROR_FLAG) {return;});
@@ -1121,7 +1145,7 @@ namespace Acorn {
             };
             x_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
                 print("==X STAGE==");
-                print(node_to_string(ctx.root()));
+                print(node_to_string(ctx.node().in_scope()));
             };
 
             r_handlers[make_tokenized_keyword("MISTAKE")] = [this](Context& ctx){

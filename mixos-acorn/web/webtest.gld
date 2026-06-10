@@ -138,14 +138,36 @@
             ctx.node.value = make_value(to_type("int"),4);
         }
         in htmlemiting {
+            render_sheet(ctx.node.value.getInt,0,"sheet");
+        }
+    }
+
+    register form;
+    "form" {
+        in naming {
+            ctx.node.name = ctx.result.take(ctx.index+1).name;
+        }
+        in resolving {
+            gather_props;
+            ctx.node.value = make_value(to_type("int"),4);
+        }
+        in htmlemiting {
+            render_sheet(ctx.node.value.getInt,0,"form");
+        }
+    }
+
+    register debugsheet;
+    "debugsheet" {
+        in naming {
+            ctx.node.name = ctx.result.take(ctx.index+1).name;
+        }
+        in resolving {
+            gather_props;
+            ctx.node.value = make_value(to_type("int"),4);
+        }
+        in htmlemiting {
             int vloc = ctx.node.value.loc;
-            if(vloc<0) {
-                render_sheet(ctx.node.value.getInt,0,"sheet");
-            } else if(vloc<5) {
-                render_sheet(ctx.node.value.getInt,vloc,"sheet");
-            } else {
-                render_sheet(ctx.node.value.getInt,vloc,"form");
-            }
+            render_sheet(ctx.node.value.getInt,vloc,"debug");
         }
     }
 

@@ -1,27 +1,34 @@
 #pragma once
 #include "../mixos-acorn/Acorn-Core.hpp"
 #include "../ext/g_lib/core/thread.hpp"
-#include <csignal>
 
-#include <termios.h>
-#include <unistd.h>
+#ifdef _WIN32
+    struct TerminalLantern {};
+#else
+    #include <termios.h>
+    #include <unistd.h>
+    #include <csignal>
+    struct TerminalLantern {
+        termios old_termios;
+        
+        TerminalLantern() {
+            tcgetattr(STDIN_FILENO, &old_termios);
+            termios raw = old_termios;
+            raw.c_lflag &= ~(ECHO | ICANON); //Disable echo and line buffering
+            raw.c_cc[VMIN] = 1;  //Read one char at a time
+            raw.c_cc[VTIME] = 0; //No timeout
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+        }
+        
+        ~TerminalLantern() {
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_termios); //Restore on destruction
+        }
+    };
+#endif
 
-struct TerminalLantern {
-    termios old_termios;
-    
-    TerminalLantern() {
-        tcgetattr(STDIN_FILENO, &old_termios);
-        termios raw = old_termios;
-        raw.c_lflag &= ~(ECHO | ICANON); //Disable echo and line buffering
-        raw.c_cc[VMIN] = 1;  //Read one char at a time
-        raw.c_cc[VTIME] = 0; //No timeout
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-    }
-    
-    ~TerminalLantern() {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_termios); //Restore on destruction
-    }
-};
+
+
+
 
 char read_key() {
     char c;
@@ -66,22 +73,26 @@ int read_arrow() {
 
 namespace Acorn {
 
-    void signal_handler(int signal) {
-        print("\nRECIVED SIGNAL: ",signal);
-        if(ERROR_FLAG) {
-            std::abort();
+    #ifdef _WIN32
+        
+    #else
+        void signal_handler(int signal) {
+            print("\nRECIVED SIGNAL: ",signal);
+            if(ERROR_FLAG) {
+                std::abort();
+            }
+            ERROR_FLAG = true;
+            ERROR_MSG = "Console interrupt";
         }
-        ERROR_FLAG = true;
-        ERROR_MSG = "Console interrupt";
-    }
 
-    void setup_signals() {
-        struct sigaction sa;
-        sa.sa_handler = signal_handler;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        sigaction(SIGINT, &sa, nullptr);
-    }
+        void setup_signals() {
+            struct sigaction sa;
+            sa.sa_handler = signal_handler;
+            sigemptyset(&sa.sa_mask);
+            sa.sa_flags = 0;
+            sigaction(SIGINT, &sa, nullptr);
+        }
+    #endif
 
     struct Blackfeather_Unit : public virtual Unit {
         Blackfeather_Unit(uint16_t _uid) : Unit(_uid) {init();}

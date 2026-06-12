@@ -1,0 +1,19 @@
+##
+    register root_path;
+    "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+        
+    }
+##
+
+root_path {
+    div testing {
+        
+        "background-color" : "blue";
+        div thing2 {
+            text "words";
+        }
+    }
+}

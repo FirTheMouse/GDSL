@@ -11,6 +11,20 @@ namespace Acorn {
         Acorn_Script(uint16_t _uid) : Unit(_uid) {init();}
         Acorn_Script() {init();}
 
+        //For my sanity
+        string resolve_string_ticket(Node n) {
+            if(is_live(n.value())) {
+                if(is_live(*(Ptr*)n.value().get())) {
+                    return (string&)*(Ptr*)n.value().get();
+                } else {
+                    Ptr p = get_ticket(name_store_id,1,char_id); 
+                    n.value().set((void*)&p);
+                    return (string&)p;
+                }
+            }
+            return deadptr;
+        }
+
         uint32_t test_id = reg_id("TEST");
         Stage& n_handlers = reg_stage("naming"); 
         
@@ -137,6 +151,11 @@ namespace Acorn {
         uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (*(int*)ctx.node().children()[0].value().get()==*(int*)ctx.node().children()[1].value().get());
+            ctx.node().value().set((void*)&result);
+        });
+        uint32_t check_noequality_int = overload_type(int_id,"!=int","CHECK_NOEQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (*(int*)ctx.node().children()[0].value().get()!=*(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
 
@@ -289,6 +308,11 @@ namespace Acorn {
             ctx.node().value().set((void*)&stoid);
         },4,int_id);
 
+        uint32_t make_unit_id = add_function("make_unit",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t unitid = (uint32_t)make_unit<Unit>()->uid;
+            ctx.node().value().set((void*)&unitid);
+        },4,int_id);
 
         void e_stage_assignment_handler(Context& ctx) {
             Node left = ctx.node().children()[0];
@@ -1076,7 +1100,7 @@ namespace Acorn {
                 }
             };
             x_handlers[prefix_node_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()&&!is_live(ctx.value().data_ptr())) {
                     Node n = make_node();
                     ctx.node().value().init_data();
                     ctx.value().set((void*)&n);
@@ -1106,7 +1130,7 @@ namespace Acorn {
                     float f = std::stof(name); ctx.node().value().set((void*)&f);
                 } else if(vtype==ptr_id) {
                     Ptr p = string_to_Ptr(name); ctx.node().value().set((void*)&p);
-                } else if(vtype==string_id) {
+                } else if(vtype==string_id) { //This is a race condition
                     Ptr p = get_ticket(name_store_id,1,char_id); string s(p); s = name; ctx.node().value().set((void*)&p);
                 } else if(vtype==bool_id) {
                     bool b = (name=="true"||name=="1");
@@ -1148,8 +1172,9 @@ namespace Acorn {
                 print(node_to_string(ctx.node().in_scope()));
             };
 
-            r_handlers[make_tokenized_keyword("MISTAKE")] = [this](Context& ctx){
-                print(ctx.node().value().reg());
+            x_handlers[make_tokenized_keyword("MISTAKE")] = [this](Context& ctx){
+                print("==X STAGE==");
+                print(node_to_string(ctx.node().in_scope()));
             };
 
             e_handlers[make_tokenized_keyword("LBF_E")] = [this](Context& ctx){print("Launching blackfeather in e stage"); launch_blackfeather(unit_root);};
@@ -1213,12 +1238,20 @@ namespace Acorn {
         Node compile_literal(const std::string& literal) {
             Node root = tokenize(literal);
             Node n = root.children()[0];
-            if(n.type()==identifier_id) {n.type(string_id);}
+            if(root.children().length()>1) {
+                n.type(string_id);
+                for(int i=0;i<root.children().length();i++) {
+                    n.name().push(" "+root.children()[i].name().to_std());
+                }
+            } else {
+                if(n.type()==identifier_id) {
+                    n.type(string_id);
+                }
+            }
             Context ctx = make_context(); ctx.node(n);
             t_handlers.run(n.type())(ctx);
             m_handlers.run(n.type())(ctx);
             x_handlers.run(n.type())(ctx);
-            // print(node_to_string(n));
             return n;
         }
 
@@ -1292,7 +1325,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);
 
-            launch_blackfeather(root);
+            //launch_blackfeather(root);
         }
 
 

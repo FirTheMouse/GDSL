@@ -1388,10 +1388,19 @@ namespace Acorn {
                     DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
                     DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
                     
-                    if(types[lp.pool][lp.idx].heterogenous) {
-                        types[lp.pool][lp.idx].qset(lp.sidx,types[rp.pool][rp.idx][rp.sidx],right.value().size());
+                    // print("LP: ",Ptr_to_string(lp));
+                    // print("RP: ",Ptr_to_string(rp));
+                    // if(types[lp.pool][lp.idx].heterogenous) {
+                    //     types[lp.pool][lp.idx].qset(lp.sidx,types[rp.pool][rp.idx][rp.sidx],right.value().size());
+                    // } else {
+                    //     types[lp.pool][lp.idx].set(lp.sidx,types[rp.pool][rp.idx][rp.sidx]);
+                    // }
+
+                    //Col& lcol = resolve_to_col(lp);
+                    if(resolve_to_col(lp).heterogenous) {
+                        resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
                     } else {
-                        types[lp.pool][lp.idx].set(lp.sidx,types[rp.pool][rp.idx][rp.sidx]);
+                        resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
                     }
                 }
             };

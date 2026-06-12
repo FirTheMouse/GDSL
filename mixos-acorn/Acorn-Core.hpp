@@ -908,6 +908,8 @@ namespace Acorn {
         return col;
     }
 
+    static std::mutex units_mutex;
+
     class Unit : public q_object {
         public:
         Stage* active_stage;
@@ -985,6 +987,8 @@ namespace Acorn {
                     layouts.put(i,l);
                 }
             }
+
+            std::lock_guard<std::mutex> lock(units_mutex);
             units << this;
             return (uint16_t)units.length()-1;
         }
@@ -1051,9 +1055,9 @@ namespace Acorn {
             }
 
             #if NAMED_PTRS
-                std::string plabel = types[p.pool].label.empty()?std::to_string(p.pool):types[p.pool].label.to_std();
-                std::string pidx = types[p.pool][p.idx].label.empty()?std::to_string(p.idx):types[p.pool][p.idx].label.to_std();
-                std::string pstring = ""+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
+                std::string plabel = resolve_to_pool(p).label.empty()?std::to_string(p.pool):resolve_to_pool(p).label.to_std();
+                std::string pidx = resolve_to_col(p).label.empty()?std::to_string(p.idx):resolve_to_col(p).label.to_std();
+                std::string pstring = std::to_string(p.unit)+"|"+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
                 uint64_t key = Ptr_to_key(p);
             
                 if(ptr_colors.hasKey(key)) {ptr_colors.get(key)(pstring);}
@@ -2260,15 +2264,15 @@ namespace Acorn {
         return u->uid;
     }
 
-    inline void* resolve_ptr(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
-    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {return (*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
-    inline Ptr& resolve_to_ptr(const Ptr& ptr) {return *(Ptr*)(*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
-    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {return *(Ptr*)(*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
-    inline Col& resolve_to_col(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool][ptr.idx];}
-    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {return (*units[ptr.unit])[ptr.pool][idx];}
-    inline ColCol& resolve_to_pool(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool];}
-    inline ColColCol& resolve_to_unit(const Ptr& ptr) {return (*units[ptr.unit]).types;}
-    inline Col& to_col(const Ptr& ptr) {return (*units[ptr.unit])[ptr.pool][ptr.idx];}
+    inline void* resolve_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx][ptr.sidx];}
+    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
+    inline Ptr& resolve_to_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
+    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
+    inline Col& resolve_to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
+    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx];}
+    inline ColCol& resolve_to_pool(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool];}
+    inline ColColCol& resolve_to_unit(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
+    inline Col& to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
 
     inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag) {
         Ptr ticket(type_id,create_column((*units[unit_id])[type_id],size,tag),0,unit_id);

@@ -128,6 +128,7 @@ int main(int argc, char* argv[]) {
     // // acorn->setup_stamp_res_flipbook();
     // acorn->run(acorn->process(readFile("mixos-acorn/tests/acorntest.gld")));
 
+    //Acorn::units.reserve(10000);
     g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
     //webcorn->setup_trace_res_flipbook();
     webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));

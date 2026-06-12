@@ -216,7 +216,7 @@
 ##
 
 print("Compiling");
-Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
+Node twig = compile(read_file("mixos-acorn/web/thistle/thistle_light.twg"));
 print("Compiled");
 Node page = twig.children.get(0);
 

@@ -48,9 +48,12 @@ namespace Acorn {
             Col::push((void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            // for(uint32_t i = 0; i < t.cells.length(); i++) {
-            //     t.cells.get(i).storage = nullptr;
-            // }
+            t.cells.storage = nullptr;
+        }
+        void put(const std::string& key, Col t) {
+            Col::put(key,(void*)&t); //This should probably have tag string id for display later, may require reordering how we register the ids
+            t.storage = nullptr;
+            t.label.storage = nullptr;
             t.cells.storage = nullptr;
         }
     };
@@ -983,7 +986,7 @@ namespace Acorn {
                     l.total_size = l.offsets.length() > 0 
                         ? l.offsets.last() + l.sizes.last() 
                         : 0;
-                    l.impl.unit = (uint16_t)units.length()-1;
+                    l.impl.unit = uid;
                     layouts.put(i,l);
                 }
             }

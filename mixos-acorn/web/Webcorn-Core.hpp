@@ -46,15 +46,15 @@ namespace Acorn {
             g_ptr<Thread> thread = nullptr;
             uint16_t unit = 0;
 
-            uint32_t getfd() {return units[unit]->types.index;}
-            std::string getlabel() {return units[unit]->types.label.to_std();}
-            uint32_t gethash() {return units[unit]->types.hash;}
-            void setfd(uint32_t fd) {units[unit]->types.index = fd;}
-            void setlabel(const std::string& label) {units[unit]->types.label = label; }
-            void sethash(const std::string& hashstr) {units[unit]->types.hash = hashBytes(hashstr.data(), hashstr.length());}
-            void sethash(uint32_t hash) {units[unit]->types.hash = hash;}
+            uint32_t getfd() {std::lock_guard<std::mutex> lock(units_mutex); return units[unit]->types.index;}
+            std::string getlabel() {std::lock_guard<std::mutex> lock(units_mutex); return units[unit]->types.label.to_std();}
+            uint32_t gethash() {std::lock_guard<std::mutex> lock(units_mutex); return units[unit]->types.hash;}
+            void setfd(uint32_t fd) {std::lock_guard<std::mutex> lock(units_mutex); units[unit]->types.index = fd;}
+            void setlabel(const std::string& label) {std::lock_guard<std::mutex> lock(units_mutex); units[unit]->types.label = label; }
+            void sethash(const std::string& hashstr) {std::lock_guard<std::mutex> lock(units_mutex); units[unit]->types.hash = hashBytes(hashstr.data(), hashstr.length());}
+            void sethash(uint32_t hash) {std::lock_guard<std::mutex> lock(units_mutex); units[unit]->types.hash = hash;}
 
-            bool needshelp() {return !units[unit]->types.live;}
+            bool needshelp() {std::lock_guard<std::mutex> lock(units_mutex); return !units[unit]->types.live;}
         };
     
         list<g_ptr<Server>> servers;
@@ -121,15 +121,14 @@ namespace Acorn {
             print(yellow("Validating a login")," ",username," ",password);
         
             if(!role.empty()) {
-                std::string token = generate_token();
-
-                types.label = "SESSION:"+token;
+                types.label = "SESSION:"+username;
                 types.live = false;
                 print(red("Cried for help"));
                 while(!types.live) {
                     std::this_thread::sleep_for(std::chrono::nanoseconds(100));
                 }
                 print(green("Cries answered"));
+                std::string token = types.label.to_std();
 
                 ctx.sub().source() = "HTTP/1.1 200 OK\r\n"
                     "Set-Cookie: session=" + token + "; HttpOnly\r\n"
@@ -148,6 +147,8 @@ namespace Acorn {
 
         };
 
+        uint32_t session_col = 0;
+        uint32_t session_id = reg_id("session");
         void manage_sessions(const std::string& unitcode) {
             while(true) {
                 g_ptr<Webcorn_Core> unit = nullptr;
@@ -166,27 +167,47 @@ namespace Acorn {
                     std::string cmd = req[0];
                     std::string arg = req[1];
                     if(cmd=="SESSION") {
-                        std::lock_guard<std::mutex> lock(servers_mutex);
-                        uint32_t arghash = hashBytes(arg.data(),arg.length());
-                        bool found_a_server = false;
-                        for(int i=0;i<servers.length();i++) {
-                            if(servers[i]->gethash()==arghash) {
-                                found_a_server = true;
-                                break;
+                        if(session_col==0) {
+                            print(red("webcorn:manage_sessions no valid session column in the main unit! Ensure a session manager was started"));
+                        } else {
+                            ColCol& sessions = types[session_col];
+                            std::string token = "";
+                            if(sessions.hasKey(arg)) {
+                                uint32_t idx = sessions.getidx(arg.data(),arg.length());
+                                token = sessions[idx].label.to_std();
+                                print("Retrived token ",token," for ",arg);
+                            } else {
+                                token = generate_token();
+                                g_ptr<Server> new_server = make<Server>();
+                                new_server->thread = make<Thread>();
+                                g_ptr<Webcorn_Core> webcorn = make_unit<Webcorn_Core>();
+                                new_server->unit = webcorn->uid;
+                                new_server->sethash(token);
+                                {
+                                    std::lock_guard<std::mutex> lock(servers_mutex);
+                                    servers << new_server;
+                                }
+                                uint16_t newid = webcorn->uid;
+                                print("Dispatched a new server for user ",new_server->gethash()," token ",token," unit ",newid);
+                                new_server->thread->run_blocking([webcorn, unitcode]() mutable {
+                                    webcorn->run(webcorn->process(unitcode));
+                                });
+
+                                Col newsession;
+                                newsession.label = token;
+                                newsession.index = newid;
+                                newsession.heterogenous = true;
+                                _layout& l = layouts.get(session_id);
+                                newsession.tag = session_id; newsession.element_size = l.total_size;
+                                newsession.push_default();
+                                string usernamestr(get_ticket(name_store_id,1,char_id));
+                                usernamestr = arg;
+                                newsession.qset(l.offsets[l.label_to_index["username"]],(void*)&usernamestr,sizeof(Ptr));
+                                uint32_t ts = (uint32_t)std::time(nullptr);
+                                newsession.qset(l.offsets[l.label_to_index["timestamp"]],(void*)&ts,4);
+                                sessions.put(arg,newsession); //Do not use the sessions col refrence after this point
                             }
-                        }
-                        if(!found_a_server) {
-                            g_ptr<Server> new_server = make<Server>();
-                            new_server->thread = make<Thread>();
-                            g_ptr<Webcorn_Core> webcorn = make_unit<Webcorn_Core>();
-                            new_server->unit = webcorn->uid;
-                            new_server->sethash(arghash);
-                            servers << new_server;
-                            uint16_t uid = webcorn->uid;
-                            print("Dispatched a new server for user ",arghash," unit ",uid);
-                            new_server->thread->run_blocking([webcorn, unitcode]() mutable {
-                                webcorn->run(webcorn->process(unitcode));
-                            });
+                            unit->types.label = token;
                         }
                     }       
                     unit->types.live = true;
@@ -195,6 +216,18 @@ namespace Acorn {
         }
         uint32_t start_session_manager_id = add_function("start_session_manager",[this](Context& ctx){
             std::string unitcode = string(*(Ptr*)ctx.node().children()[0].value().get()).to_std();
+
+            ColCol sessions_col;
+            sessions_col.label = "sessions";
+            session_col = types.length();
+            types.push(sessions_col);
+
+            _layout stemp(add_template(session_id));
+            stemp.add_prop(string_id,sizeof(Ptr),"username",char_id,1);
+            stemp.add_prop(int_id,4,"timestamp");
+            stemp.add_prop(int_id,4,"ip");
+            layouts.put(session_id,stemp);
+
             g_ptr<Server> new_server = make<Server>();
             new_server->thread = make<Thread>();
             new_server->unit = uid;
@@ -204,24 +237,6 @@ namespace Acorn {
                 manage_sessions(unitcode);
             });
         });
-
-        // Node session = make_node(session);
-        // session->name = username;
-
-        // if(ctx.sub->out) {
-        //     session->quals << ctx.sub->out;
-        // }
-
-        // session->quals << make<Node>(role_id,role);
-        // session->quals << make<Node>(timestamp_id,std::to_string(time(nullptr)));
-
-        // // print("NEW SESSION:\n",node_to_string(session));
-        // // for(auto q : session->quals) {
-        // //     print(node_to_string(q));
-        // // }
-        // // print("===");
-
-        // sessions.put(token, session);
 
         uint32_t dispatch_unit_id = add_function("dispatch_unit",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -237,7 +252,6 @@ namespace Acorn {
             }
 
             g_ptr<Server> server = nullptr;
-
             {
                 std::lock_guard<std::mutex> lock(servers_mutex);
                 if(sessionhash) {
@@ -248,7 +262,8 @@ namespace Acorn {
                             break;
                         }
                     }
-                } else {
+                } 
+                if(!server) {
                     for(int i=0;i<servers.length();i++) {
                         if(servers[i]->gethash()==0 && servers[i]->getfd()==0) {
                             server = servers[i];
@@ -262,11 +277,7 @@ namespace Acorn {
                     new_server->thread = make<Thread>();
                     g_ptr<Webcorn_Core> webcorn = make_unit<Webcorn_Core>();
                     new_server->unit = webcorn->uid;
-                    if(sessionhash) {
-                        new_server->sethash(sessionhash);
-                    } else {
-                        new_server->sethash(0);
-                    }
+                    new_server->sethash(0);
                     servers << new_server;
                     server = new_server;
                     uint16_t uid = webcorn->uid;
@@ -276,9 +287,8 @@ namespace Acorn {
                     });
                 } 
             }
-
-            server->setfd(server_fd);
             server->setlabel(message);
+            server->setfd(server_fd);
             print("Server fd is now ",server->getfd());
         });
 

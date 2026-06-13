@@ -100,13 +100,39 @@ namespace Acorn {
         }
     };
 
-    std::string Ptr_to_string(Ptr p) {
-        return std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx)+"";
+    inline ColColCol& cache_as_unit(const Ptr& p) { 
+        DEBUG_ONLY(if(p.cachelevel != 3) throw_error("cache_as_unit called on Ptr with cachelevel ", p.cachelevel);)
+        return *(ColColCol*)p.cache; 
     }
+    inline ColCol& cache_as_pool(const Ptr& p) { 
+        DEBUG_ONLY(if(p.cachelevel != 2) throw_error("cache_as_pool called on Ptr with cachelevel ", p.cachelevel);)
+        return *(ColCol*)p.cache; 
+    }
+    inline Col& cache_as_col(const Ptr& p) { 
+        DEBUG_ONLY(if(p.cachelevel != 1) throw_error("cache_as_col called on Ptr with cachelevel ", p.cachelevel);)
+        return *(Col*)p.cache; 
+    }
+
+    std::string Ptr_to_string(Ptr p, int print_level = 3) {
+        if(p.cachelevel > 0 && print_level > p.cachelevel)  return "CANNOT PRINT LEVEL "+std::to_string(print_level)+" ON PTR WITH CACHELEVEL "+std::to_string(p.cachelevel);
+
+        switch(print_level) {
+            case 7: return std::to_string(p.region)+"|"+std::to_string(p.zone)+"|"+std::to_string(p.device)+"|"+std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
+            case 6: return std::to_string(p.zone)+"|"+std::to_string(p.device)+"|"+std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
+            case 5: return std::to_string(p.device)+"|"+std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
+            case 4: return std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
+            case 3: return std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
+            case 2: return std::to_string(p.idx)+"|"+std::to_string(p.sidx);
+            case 1: return std::to_string(p.sidx);
+            case 0: return "quantum wub";
+            default: return "INVALID PRINT LEVEL FOR PTR_TO_STRING "+std::to_string(print_level);
+        }
+    }
+    //REVISE THIS LATER (it's 11pm so I'm not dealing with it right now)
     Ptr string_to_Ptr(const std::string& s) {
         auto l = split_str(s,'|');
         if(l.length()==4) {
-            Ptr p(std::stoi(l[1]),std::stoi(l[2]),std::stoi(l[3]),std::stoi(l[0]));
+            Ptr p(std::stoi(l[0]),std::stoi(l[1]),std::stoi(l[2]),std::stoi(l[3]));
             return p;
         } else {
             print(red("Unable to convert "+s+" to a Ptr")); 
@@ -115,24 +141,46 @@ namespace Acorn {
     }
 
     list<g_ptr<Unit>> units;
+    static std::mutex units_mutex;
 
     ColColCol& init_first_unit();
 
     ColColCol& global = init_first_unit();
 
-    inline void* resolve_ptr(const Ptr& ptr);
-    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx);
-    inline Ptr& resolve_to_ptr(const Ptr& ptr);
-    inline Col& resolve_to_col(const Ptr& ptr);
-    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx);
-    inline ColCol& resolve_to_pool(const Ptr& ptr);
+    static ColColCol col3_ref;
     inline ColColCol& resolve_to_unit(const Ptr& ptr);
-    inline Col& to_col(const Ptr& ptr);
+    static ColCol col2_ref;
+    inline ColCol& resolve_to_pool(const Ptr& ptr) {
+        switch(ptr.cachelevel) {
+            case 0: case 3: {return resolve_to_unit(ptr)[ptr.pool];}
+            case 2: return *(ColCol*)ptr.cache;
+            default: 
+                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to pool because it's cachelevel ",ptr.cachelevel," is too low");
+            return col2_ref;
+        }
+    }
+    static Col col1_ref;
+    inline Col& resolve_to_col(const Ptr& ptr) {
+        switch(ptr.cachelevel) {
+            case 0: case 3: case 2: {return resolve_to_pool(ptr)[ptr.idx];}
+            case 1: return *(Col*)ptr.cache;
+            default: 
+                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to col because it's cachelevel ",ptr.cachelevel," is too low");
+            return col1_ref;
+        }
+    }
+    inline void* resolve_ptr(const Ptr& ptr) {
+        return resolve_to_col(ptr)[ptr.sidx];
+    }
+    inline void* resolve_ptr(Ptr ptr, const uint32_t& idx) {ptr.idx = idx; return resolve_ptr(ptr);}
+    inline Col& resolve_to_col(Ptr ptr, const uint32_t& idx) {ptr.idx = idx; return resolve_to_col(ptr);}
+
+
     inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag);
 
     struct string : Ptr {
         string() {}
-        string(Ptr p) {pool=p.pool;idx=p.idx;sidx=p.sidx;unit = p.unit;}
+        string(Ptr p) : Ptr(p) {}
         inline Col& col() {return resolve_to_col(*this); }
         inline char at(uint32_t idx) {return *(char*)col()[idx];}
         inline uint32_t length() {return col().length();}
@@ -255,11 +303,6 @@ namespace Acorn {
         return at;
     }
 
-    Ptr add_type_for_handle() {
-        Ptr to_return{add_type(),0,0};
-        return to_return;
-    }
-
     uint32_t init_handler_type() {
         ColCol t;
         uint32_t at = global.length();
@@ -325,7 +368,7 @@ namespace Acorn {
     size_t refs_col = 0;
 
     Ptr global_add_layout_to_col(uint32_t type) {
-        Ptr p(layout_type_id,note_value(global[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
+        Ptr p((uint32_t)0,layout_type_id,note_value(global[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
         note_value(global[layout_type_id],"Tags",4,int_id);
         note_value(global[layout_type_id],"Sizes",4,int_id);
         note_value(global[layout_type_id],"Labels",sizeof(Ptr),string_id);
@@ -409,7 +452,7 @@ namespace Acorn {
     uint32_t sub_value_store_id = make_store_type();
 
     string get_global_string_ticket() {
-        Ptr ticket(name_store_id,create_column(global[name_store_id],1,char_id),0);
+        Ptr ticket((uint32_t)0,name_store_id,create_column(global[name_store_id],1,char_id),0);
         return ticket;
     }
 
@@ -516,7 +559,7 @@ namespace Acorn {
 
     struct Value : public Ptr {
         Value() {}
-        Value(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx; unit = p.unit;}
+        Value(Ptr p) : Ptr(p) {}
 
         inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but value was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
@@ -648,7 +691,7 @@ namespace Acorn {
 
     struct Node : public Ptr {
         Node() {}
-        Node(Ptr p) { pool = p.pool; sidx = p.sidx; idx = p.idx; unit = p.unit;}
+        Node(Ptr p) : Ptr(p) {}
     
         inline QNode& toQ() {return (QNode&)resolve_to_col(*this);}
 
@@ -761,7 +804,7 @@ namespace Acorn {
 
     struct Context : public Ptr {
         Context() {}
-        Context(Ptr p){ pool = p.pool; sidx = p.sidx; idx = p.idx; unit = p.unit;}
+        Context(Ptr p) : Ptr(p) {}
     
         inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but context was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
@@ -911,7 +954,20 @@ namespace Acorn {
         return col;
     }
 
-    static std::mutex units_mutex;
+    static void write_ColColList(std::ostream& out, list<ColCol*> cols) {
+        write_raw<uint32_t>(out, cols.length());
+        for(int i=0;i<cols.length();i++) {
+            write_TypeCol(out,*cols[i]);
+        }
+    }
+    static list<ColCol> read_ColColList(std::ifstream& in) {
+        list<ColCol> to_return;
+        uint32_t len = read_raw<uint32_t>(in);
+        for(int i=0;i<len;i++) {
+            to_return << read_TypeCol(in);
+        }
+        return to_return;
+    }
 
     class Unit : public q_object {
         public:
@@ -1020,13 +1076,18 @@ namespace Acorn {
         virtual void run(Node root) {}
 
         inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
-            Ptr ticket(type_id,create_column(types[type_id],size,tag,true),0,uid);
+            Ptr ticket(&types,type_id,create_column(types[type_id],size,tag,true),0);
             return ticket;
         }
 
         inline Ptr get_ticket(Ptr storeptr, uint32_t size, uint32_t tag) {
-            Ptr ticket(storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0,storeptr.unit);
-            return ticket;
+            if(storeptr.cachelevel==0) {
+                Ptr ticket(storeptr.unit,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
+                return ticket;
+            } else {
+                Ptr ticket(storeptr.cache,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
+                return ticket;
+            }
         }
 
         list<Ptr> marked_ptrs;
@@ -1047,16 +1108,27 @@ namespace Acorn {
         std::string Ptr_as_string(Ptr p) {
             if(ERROR_FLAG) {
                 return red("ERROR_ACTIVE:"+Ptr_to_string(p));
-            } else if(p.unit>=units.length()) {
-                return red("UNIT_OUT_OF_BOUNDS:"+Ptr_to_string(p));
-            } else if(p.pool>=(*units[p.unit]).types.length()) {
-                return red("POOL_OUT_OF_BOUNDS:"+Ptr_to_string(p));
-            } else if(p.idx>=(*units[p.unit]).types[p.pool].length()) {
-                return red("IDX_OUT_OF_BOUNDS("+std::to_string(types[p.pool].length())+"):"+Ptr_to_string(p));
-            } else if(marked_ptrs.has(p)) {
+            } else {
+                if(p.cachelevel==0) {
+                    if(p.unit>=units.length()) {
+                        return red("UNIT_OUT_OF_BOUNDS:"+Ptr_to_string(p));
+                    }
+                } else {
+                    if(!p.cache) return red("PTR_CACHE_MISSING");
+                }
+                if(p.pool>=resolve_to_unit(p).length()) {
+                    return red("POOL_OUT_OF_BOUNDS("+std::to_string(resolve_to_unit(p).length())+"):"+Ptr_to_string(p));
+                } else if(p.idx>=resolve_to_pool(p).length()) {
+                    return red("IDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_pool(p).length())+"):"+Ptr_to_string(p));
+                } else if(p.sidx>=resolve_to_col(p).length()) {
+                    return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).length())+"):"+Ptr_to_string(p));
+                } 
+            }
+            if(marked_ptrs.has(p)) {
                 return red(Ptr_to_string(p));
             }
 
+            //ADD CACHE LEVELS HERE LATER!!!
             #if NAMED_PTRS
                 std::string plabel = resolve_to_pool(p).label.empty()?std::to_string(p.pool):resolve_to_pool(p).label.to_std();
                 std::string pidx = resolve_to_col(p).label.empty()?std::to_string(p.idx):resolve_to_col(p).label.to_std();
@@ -1066,7 +1138,7 @@ namespace Acorn {
                 if(ptr_colors.hasKey(key)) {ptr_colors.get(key)(pstring);}
                 return pstring;
             #else
-                return std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx)+"";
+                return Ptr_to_string(p);
             #endif
         }
 
@@ -1094,7 +1166,7 @@ namespace Acorn {
         }
 
         Ptr add_layout_to_col(uint32_t type) {
-            Ptr p(layout_type_id,note_value(types[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0,uid);
+            Ptr p(uid,layout_type_id,note_value(types[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
             note_value(types[layout_type_id],"Tags",4,int_id);
             note_value(types[layout_type_id],"Sizes",4,int_id);
             note_value(types[layout_type_id],"Labels",sizeof(Ptr),string_id);
@@ -1153,7 +1225,8 @@ namespace Acorn {
             n.pool = node_type_id;
             n.idx = push_column(types[node_type_id], node_total_size, node_id);
             n.sidx = 0;
-            n.unit = uid;
+            n.cache = &types;
+            n.cachelevel = 3;
             Col& col = types[node_type_id][n.idx];
             col.heterogenous = true;
     
@@ -1205,7 +1278,7 @@ namespace Acorn {
         }
     
         void recycle_column(Ptr p) {
-            Acorn::recycle_column((*units[p.unit])[p.pool], p.idx);
+            Acorn::recycle_column(resolve_to_pool(p), p.idx);
         }
         
         void recycle_value(Value v, bool recycle_data = true) {
@@ -1881,10 +1954,10 @@ namespace Acorn {
                 }
             }
         
-            types[n.pool][n.idx].qset(node_value_table_offset,
-                types[o.pool][o.idx].qget(node_value_table_offset), sizeof(Ptr));
-            types[n.pool][n.idx].qset(node_node_table_offset,
-                types[o.pool][o.idx].qget(node_node_table_offset), sizeof(Ptr));
+            resolve_to_col(n).qset(node_value_table_offset,
+                resolve_to_col(o).qget(node_value_table_offset), sizeof(Ptr));
+            resolve_to_col(n).qset(node_node_table_offset,
+                resolve_to_col(o).qget(node_node_table_offset), sizeof(Ptr));
         
             n.parent(o.parent_ptr());
             n.owner(o.owner_ptr());
@@ -1921,10 +1994,7 @@ namespace Acorn {
             g_ptr<Stage> new_stage = make<Stage>();
             new_stage->label = label;
             stages.put(label,new_stage);
-
-            Ptr p(0,0,false); //Just a dead pointer
-            types[handler_type_id][stages_id].put(label,(void*)&p);
-
+            types[handler_type_id][stages_id].put(label,(void*)&deadptr);
             return *new_stage.getPtr();
         }
 
@@ -2267,19 +2337,29 @@ namespace Acorn {
         return u->uid;
     }
 
-    inline void* resolve_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx][ptr.sidx];}
-    inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
-    inline Ptr& resolve_to_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
-    inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
-    inline Col& resolve_to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
-    inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx];}
-    inline ColCol& resolve_to_pool(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool];}
-    inline ColColCol& resolve_to_unit(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
-    inline Col& to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
+   
+    inline ColColCol& resolve_to_unit(const Ptr& ptr) {
+        switch(ptr.cachelevel) {
+            case 0: {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
+            case 3: return *(ColColCol*)ptr.cache;
+            default: 
+                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to unit because it's cachelevel ",ptr.cachelevel," is too low");
+            return col3_ref;
+        }
+    }
+    // inline void* resolve_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx][ptr.sidx];}
+    // inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
+    // inline Ptr& resolve_to_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
+    // inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
+    // inline Col& resolve_to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
+    // inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx];}
+    // inline ColCol& resolve_to_pool(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool];}
+    // inline ColColCol& resolve_to_unit(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
+    // inline Col& to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
 
     inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag) {
-        Ptr ticket(type_id,create_column((*units[unit_id])[type_id],size,tag),0,unit_id);
-        return ticket;
+        std::lock_guard<std::mutex> lock(units_mutex);
+        return (*units[unit_id]).get_ticket(type_id,size,tag);
     }
 
     std::ostream& operator<<(std::ostream& os, Acorn::string& s) {

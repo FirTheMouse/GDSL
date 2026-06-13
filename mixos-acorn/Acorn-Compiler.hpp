@@ -1152,21 +1152,21 @@ namespace Acorn {
                 Value sval = subvals.get(i);
                 if(is_live(sval.data_ptr())) { //This ceremony is becuse if we just did col.push(col.get(0) it would invalidate the column as we push thus breaking the get, so we have to save as temps
                     Ptr dataptr = sval.data_ptr();
-                    uint32_t elem_size = types[dataptr.pool][dataptr.idx].element_size;
-                    uint8_t temp[elem_size];
-                    if(types[dataptr.pool][dataptr.idx].empty()) {
-                        types[dataptr.pool][dataptr.idx].push_default();
+                    uint32_t elem_size = resolve_to_col(dataptr).element_size;
+                    list<uint8_t> temp(elem_size);
+                    if(resolve_to_col(dataptr).empty()) {
+                        resolve_to_col(dataptr).push_default();
                     }
-                    memcpy(temp, types[dataptr.pool][dataptr.idx].get((uint32_t)0), elem_size);
-                    if(types[dataptr.pool][dataptr.idx].length() <= loc) {
+                    memcpy(temp.data(), resolve_to_col(dataptr).get((uint32_t)0), elem_size);
+                    if(resolve_to_col(dataptr).length() <= loc) {
                         //These shouldn't be getting out of sync in the first place, in the future investigate this deeper
                         int depth_check = 0;
-                        while(types[dataptr.pool][dataptr.idx].length() <= loc && depth_check++ < 100) types[dataptr.pool][dataptr.idx].push(temp);
+                        while(resolve_to_col(dataptr).length() <= loc && depth_check++ < 100) resolve_to_col(dataptr).push(temp.data());
                         if(depth_check>=90) {
                             print(red("Infinite loop in loc catchup on "+Ptr_as_string(dataptr)+": this shouldn't even be happening in the first place!"));
                         }
                     } else {
-                        types[dataptr.pool][dataptr.idx].set(loc, temp);
+                        resolve_to_col(dataptr).set(loc, temp.data());
                     }
                     dataptr.sidx = loc;
                     resolve_to_col(sval).qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
@@ -1388,14 +1388,6 @@ namespace Acorn {
                     DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
                     DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
                     
-                    // print("LP: ",Ptr_to_string(lp));
-                    // print("RP: ",Ptr_to_string(rp));
-                    // if(types[lp.pool][lp.idx].heterogenous) {
-                    //     types[lp.pool][lp.idx].qset(lp.sidx,types[rp.pool][rp.idx][rp.sidx],right.value().size());
-                    // } else {
-                    //     types[lp.pool][lp.idx].set(lp.sidx,types[rp.pool][rp.idx][rp.sidx]);
-                    // }
-
                     //Col& lcol = resolve_to_col(lp);
                     if(resolve_to_col(lp).heterogenous) {
                         resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
@@ -1483,10 +1475,10 @@ namespace Acorn {
                     }
                     ptr.sidx = value.address();
                     if(!right.children().empty()) { //This is a bit jank, I would prefer to find a way to get = working instead
-                        if(types[ptr.pool][ptr.idx].heterogenous) {
-                            types[ptr.pool][ptr.idx].qset(ptr.sidx,(void*)&right.children()[0].value().data_ptr(),right.children()[0].value().size());
+                        if(resolve_to_col(ptr).heterogenous) {
+                            resolve_to_col(ptr).qset(ptr.sidx,(void*)&right.children()[0].value().data_ptr(),right.children()[0].value().size());
                         } else {
-                            types[ptr.pool][ptr.idx].set(ptr.sidx,(void*)&right.children()[0].value().data_ptr());
+                            resolve_to_col(ptr).set(ptr.sidx,(void*)&right.children()[0].value().data_ptr());
                         }
                     } else {
                         //if(is_assignment.getOrDefault(ctx.root().type(),false)&&is_live(ctx.left())) {

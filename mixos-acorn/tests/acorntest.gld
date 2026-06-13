@@ -1,12 +1,10 @@
-int i = 6;
-if(i<3) {
-    print("Nope");
-} else if(i<5) {
-    print("Nope");
-} else if(i<8) {
-    print("Yes");
-} else if(i<9) {
-    print("Nope");
-} else {
-    print("Else");
-}
+Node n;
+Node m;
+Ptr int nums;
+nums.push(3);
+nums.push(6);
+nums.get(0) = 7;
+nums.put(n,11);
+nums.put(m,14);
+nums.put("test",16);
+print(nums.get(0),"/",nums.get(1),"/",nums.get(m),"/",nums.get(n),"/",nums.get(2),"/",nums.get("test"));

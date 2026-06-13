@@ -33,17 +33,142 @@ namespace Acorn {
         return hash;
     }
 
-    struct Ptr {
-        Ptr() {}
-        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx, uint16_t _unit) : pool(_pool), idx(_idx), sidx(_sidx), unit(_unit) {}
-        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
-        uint32_t pool = 0; //Pool it's at
-        uint32_t idx = 0; //Column
-        uint32_t sidx = 0; //Row
+    // struct Ptr {
+    //     Ptr() {}
+    //     Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx, uint16_t _unit) : pool(_pool), idx(_idx), sidx(_sidx), unit(_unit) {}
+    //     Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) : pool(_pool), idx(_idx), sidx(_sidx) {}
+    //     uint32_t pool = 0; //Pool it's at
+    //     uint32_t idx = 0; //Column
+    //     uint32_t sidx = 0; //Row
         
-        uint16_t unit = 0;
+    //     uint16_t unit = 0;
 
-        inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
+    //     inline bool operator==(const Ptr& other) const {return pool == other.pool && idx == other.idx && sidx == other.sidx;}
+    //     inline bool operator!=(const Ptr& other) const {return !(*this == other);}
+    // };
+
+
+    // struct Ptr {
+    //     Ptr(uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+    //         memset(this, 0, sizeof(Ptr));
+    //         unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
+    //     }
+    //     Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+    //         memset(this, 0, sizeof(Ptr));
+    //         pool = _pool; idx = _idx; sidx = _sidx;
+    //     }
+    //     Ptr(void* _cache, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+    //         memset(this, 0, sizeof(Ptr));
+    //         pool = _pool; idx = _idx; sidx = _sidx;
+    //         cache = _cache; cachelevel = 3;
+    //     }
+    //     Ptr(void* _cache, uint32_t _idx, uint32_t _sidx) {
+    //         memset(this, 0, sizeof(Ptr));
+    //         idx = _idx; sidx = _sidx;
+    //         cache = _cache; cachelevel = 2;
+    //     }
+    //     Ptr(void* _cache, uint32_t _sidx) {
+    //         memset(this, 0, sizeof(Ptr));
+    //         sidx = _sidx;
+    //         cache = _cache; cachelevel = 1;
+    //     }
+    //     Ptr() { memset(this, 0, sizeof(Ptr)); }
+
+    //     uint8_t region;
+    //     uint16_t zone;
+
+    //     uint8_t cachelevel;
+    //     union {
+    //         struct { 
+    //             uint32_t unit; 
+    //             uint32_t device; 
+    //         };
+    //         void* cache;
+    //     };
+
+    //     uint32_t pool;
+    //     uint32_t idx;
+    //     uint32_t sidx;
+
+    //     inline bool operator==(const Ptr& other) const {
+    //         return pool == other.pool && idx == other.idx && sidx == other.sidx && 
+    //             zone == other.zone && region == other.region &&
+    //             cachelevel == other.cachelevel && 
+    //             (cachelevel == 0 ? (unit == other.unit && device == other.device) : (cache == other.cache));
+    //     }
+    //     inline bool operator!=(const Ptr& other) const {return !(*this == other);}
+    // };
+
+
+
+    //Cachelevels
+    //0=no cache (full resolution)
+    //1=sidx valid, cache is a col
+    //2=idx valid, cache is a ColCol
+    //3=pool valid, cache is a ColColCol
+
+    struct Ptr {
+        Ptr(uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
+        }
+        Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            pool = _pool; idx = _idx; sidx = _sidx;
+        }
+        Ptr(void* _cache, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            pool = _pool; idx = _idx; sidx = _sidx;
+            cache = _cache; cachelevel = 3;
+        }
+        Ptr(void* _cache, uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            idx = _idx; sidx = _sidx;
+            cache = _cache; cachelevel = 2;
+        }
+        Ptr(void* _cache, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            sidx = _sidx;
+            cache = _cache; cachelevel = 1;
+        }
+        Ptr() { memset(this, 0, sizeof(Ptr)); }
+
+        uint16_t unknown16;
+        uint8_t specialization; 
+        uint8_t cachelevel;
+        union {
+            struct {
+                union {
+                    struct { 
+                        uint32_t region;
+                        uint32_t zone;
+                    };
+                    void* cache;
+                };
+
+                uint32_t unit; 
+                uint32_t device; 
+                uint32_t pool;
+                uint32_t idx;
+                uint32_t sidx;
+            };
+            struct {
+                void* A_cache;
+                uint16_t A_pool;
+                uint32_t A_idx;
+                uint32_t A_sidx;
+                uint16_t B_pool;
+                uint32_t B_idx;
+                uint32_t B_sidx;
+            };
+        };
+
+        inline bool operator==(const Ptr& other) const {
+            return pool == other.pool && idx == other.idx && sidx == other.sidx && 
+                unit == other.unit && device == other.device &&
+                cachelevel == other.cachelevel && 
+                (cachelevel == 0 ? (zone == other.zone && region == other.region) : (cache == other.cache));
+        }
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
     };
 
@@ -54,8 +179,8 @@ namespace Acorn {
         Ptr ptr;
     };
 
-    static const Ptr deadptr = {0,0,0,0};
-    static Ptr dead_ref = {0,0,0,0};
+    static const Ptr deadptr;
+    static Ptr dead_ref;
 
     struct QCol {
         QCol() {}

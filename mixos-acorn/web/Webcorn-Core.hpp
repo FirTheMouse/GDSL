@@ -613,6 +613,14 @@ namespace Acorn {
             }
         };
 
+        uint32_t datasheet_id = reg_id("datahsheet");
+        uint32_t metadatasheet_id = reg_id("metadatasheet");
+        uint32_t notesheet_id = reg_id("notesheet");
+        uint32_t scriptsheet_id = reg_id("scriptsheet");
+        uint32_t storesheet_id = reg_id("storesheet");
+        uint32_t formsheet_id = reg_id("formsheet");
+        
+
         std::string render_debugcolumn(Context& ctx, Ptr ptr, g_ptr<style_manager> styles) {
             std::string out = "";
             out += "<table ";
@@ -1108,7 +1116,7 @@ namespace Acorn {
                 store[a].push((void*)&numB);
                 store[a].push((void*)&numC);
             }
-            Ptr to_store(9,0,0,idx);
+            Ptr to_store(idx,9,0,0);
             sheet[5][0].qset(0,(void*)&to_store,sizeof(Ptr));
             print("Added form elements");
             units[idx]->dump_unit(true);
@@ -1551,7 +1559,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 Ptr strptr = *(Ptr*)ctx.node().children()[1].value().get();
-                Col& col = types[strptr.pool][strptr.idx];
+                Col& col = resolve_to_col(strptr);
                 WRITE_SOCKET(fd, (const char*)col.storage, col.size);
             };
             

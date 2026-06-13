@@ -506,7 +506,7 @@ namespace Acorn {
                 }
                 target.col().clear();
                 for(int i=from;i<from+to;i++) {
-                    target.push(*(char*)types[ptr.pool][ptr.idx][i]);
+                    target.push(*(char*)resolve_to_col(ptr)[i]);
                 }
             };
             x_handlers[string_slice_id] = [this](Context& ctx){
@@ -532,7 +532,7 @@ namespace Acorn {
                 }
                 target.col().clear();
                 for(int i=from;i<to;i++) {
-                    target.push(*(char*)types[ptr.pool][ptr.idx][i]);
+                    target.push(*(char*)resolve_to_col(ptr)[i]);
                 }
             };
             x_handlers[string_find_id] = [this](Context& ctx){
@@ -540,7 +540,7 @@ namespace Acorn {
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
                 Ptr ptr = *(Ptr*)left.value().get();
-                Col& tcol = types[ptr.pool][ptr.idx];
+                Col& tcol = resolve_to_col(ptr);
                 string refstr(*(Ptr*)right.children()[0].value().get());
                 int start_at = 0;
                 if(right.children().length()>1) {

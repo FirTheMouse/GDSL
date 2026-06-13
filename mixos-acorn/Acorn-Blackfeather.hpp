@@ -682,7 +682,7 @@ namespace Acorn {
                         if(cmds.length()==1) {is_invalid = true; continue;}
                         if(is_str_num(cmds[1])) {
                             uint32_t node_id = std::stoi(cmds[1]);
-                            Ptr nptr(node_type_id,node_id,0);
+                            Ptr nptr(&types,node_type_id,node_id,0);
                             on_node = (Node&)nptr;
                             print("on_node: ",node_info(on_node));
                         } else {

@@ -25,6 +25,14 @@ namespace Acorn {
                 push(copy);
             }
         }
+        ColCol& operator=(ColCol&& o) {
+            if(this == &o) return *this;
+            if(storage && element_size != 0) {
+                for(uint32_t i = 0; i < length(); i++) get(i).~Col();
+            }
+            Col::operator=(std::move(o));
+            return *this;
+        }
         ~ColCol() {
             if(!storage || element_size == 0) return;
             for(uint32_t i = 0; i < length(); i++) {
@@ -71,6 +79,14 @@ namespace Acorn {
                 push(copy);
             }
         }
+        ColColCol& operator=(ColColCol&& o) {
+            if(this == &o) return *this;
+            if(storage && element_size != 0) {
+                for(uint32_t i = 0; i < length(); i++) get(i).~ColCol();
+            }
+            ColColCol::operator=(std::move(o));
+            return *this;
+        }
         ~ColColCol() {
             if(!storage || element_size == 0) return;
             for(uint32_t i = 0; i < length(); i++) {
@@ -93,9 +109,12 @@ namespace Acorn {
             Col::push((void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            // for(uint32_t i = 0; i < t.cells.length(); i++) {
-            //     t.cells.get(i).storage = nullptr;
-            // }
+            t.cells.storage = nullptr;
+        }
+        void insert(uint32_t index, ColCol t) {
+            CCol::insert(index,(void*)&t);
+            t.storage = nullptr;
+            t.label.storage = nullptr;
             t.cells.storage = nullptr;
         }
     };
@@ -128,16 +147,34 @@ namespace Acorn {
             default: return "INVALID PRINT LEVEL FOR PTR_TO_STRING "+std::to_string(print_level);
         }
     }
-    //REVISE THIS LATER (it's 11pm so I'm not dealing with it right now)
     Ptr string_to_Ptr(const std::string& s) {
         auto l = split_str(s,'|');
-        if(l.length()==4) {
+        if(l.length()==2) {
+            Ptr p(std::stoi(l[0]),std::stoi(l[1]));
+            p.cachelevel = 2;
+            return p;
+        } else if(l.length()==3) {
+            Ptr p(std::stoi(l[0]),std::stoi(l[1]),std::stoi(l[2]));
+            p.cachelevel = 3;
+            return p;
+        } else if(l.length()==4) {
             Ptr p(std::stoi(l[0]),std::stoi(l[1]),std::stoi(l[2]),std::stoi(l[3]));
+            p.cachelevel = 4;
+            return p;
+        } else if(l.length()==5) {
+            Ptr p(std::stoi(l[0]),std::stoi(l[1]),std::stoi(l[2]),std::stoi(l[3]),std::stoi(l[4]));
+            p.cachelevel = 5;
             return p;
         } else {
             print(red("Unable to convert "+s+" to a Ptr")); 
             return deadptr;
         }
+    }
+    uint8_t string_to_cachelevel(const std::string& s) {
+        uint8_t to_return = 0;
+        for(auto& c : s) if(c=='|') to_return++;
+        if(to_return!=0) to_return+=1;
+        return to_return;
     }
 
     list<g_ptr<Unit>> units;
@@ -1080,6 +1117,11 @@ namespace Acorn {
             return ticket;
         }
 
+        inline Ptr get_ticket(ColCol* pool, uint32_t size, uint32_t tag) {
+            Ptr ticket(pool,create_column(*pool,size,tag,true),0);
+            return ticket;
+        }
+
         inline Ptr get_ticket(Ptr storeptr, uint32_t size, uint32_t tag) {
             if(storeptr.cachelevel==0) {
                 Ptr ticket(storeptr.unit,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
@@ -1639,18 +1681,18 @@ namespace Acorn {
                     }
                 } else {
                     for(int r=0;r<col.length();r++) {
-                        std::string line = ""; //v turn this into a 'show key as string' tag eventually and replace this cruft
-                        if(col.label=="stages") { //From the handler type
-                            std::string cell_label = ""; //col.get_cell_label(r);
-                            if(!cell_label.empty()) line+=cell_label;
-                            else line+="REIMPLMENT CELL KEYS LATER";
-                        } else {
-                            //print("Line ",lines.length()," Subline ",subline.length());
-                            //print("Row ",r," Column ",c," Tag ",labels[col.tag],"(",col.tag,")");
-                            std::string result = tag_to_str(col.tag,col[r]);
-                            //print("Result: ",result);
-                            line+=result;
+                        std::string line = "";
+                        //print("Line ",lines.length()," Subline ",subline.length());
+                        //print("Row ",r," Column ",c," Tag ",labels[col.tag],"(",col.tag,")");
+                        if(col.cells.length()>r) {
+                            if(col.cells[r].tag==string_id) {
+                                line += "["+((QString&)col.cells[r]).to_std()+"] ";
+                            } else {
+                                line += "["+labels[col.cells[r].tag]+"?] ";
+                            }
                         }
+                        line += tag_to_str(col.tag,col[r]);
+                        //print("Result: ",line);
                         subline << line;
                     }
                 }
@@ -1686,7 +1728,14 @@ namespace Acorn {
                 } else {
                     for(int r=0;r<col.length();r++) {
                         std::string line = "";
-                        line+=tag_to_str(col.tag,col[r]);
+                        if(col.cells.length()>r) {
+                            if(col.cells[r].tag==string_id) {
+                                line += "["+((QString&)col.cells[r]).to_std()+"] ";
+                            } else {
+                                line += "["+labels[col.cells[r].tag]+"?] ";
+                            }
+                        }
+                        line += tag_to_str(col.tag,col[r]);
                         subline << line;
                     }
                 }
@@ -1714,6 +1763,17 @@ namespace Acorn {
                     print(i,": ",tag_to_str(col.tag,col[i]));
                 }
             }
+        }
+
+        void dump_pool(ColCol& pool, uint32_t index, bool clear_dump) {
+            if(clear_dump) writeFile("mixos-acorn/tests/printout.txt","");
+            std::string to_print = "";
+            to_print += "TYPE "+std::to_string(index)+" "+pool.label.to_std()+(pool.tag!=0?" ["+labels[pool.tag]+"]":"")+":\n";
+            to_print += type_to_string(pool);
+            to_print += "\n\n\n";
+            editTextFile("mixos-acorn/tests/printout.txt",[to_print](std::string& source){
+                source+=to_print;
+            });
         }
 
         void dump_unit(bool clear_dump) {

@@ -136,7 +136,7 @@
             ctx.node.value = make_value(to_type("int"),4);
         }
         in htmlemiting {
-            render_sheet(ctx.node.value.getInt,0,"sheet");
+            render_sheet(ctx.node.value.getInt,"sheet");
         }
     }
 
@@ -150,7 +150,7 @@
             ctx.node.value = make_value(to_type("int"),4);
         }
         in htmlemiting {
-            render_sheet(ctx.node.value.getInt,0,"form");
+            render_sheet(ctx.node.value.getInt,"form");
         }
     }
 
@@ -164,8 +164,7 @@
             ctx.node.value = make_value(to_type("int"),4);
         }
         in htmlemiting {
-            int vloc = ctx.node.value.loc;
-            render_sheet(ctx.node.value.getInt,vloc,"debug");
+            render_sheet(ctx.node.value.getInt,"debug");
         }
     }
 

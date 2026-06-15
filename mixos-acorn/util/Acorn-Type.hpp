@@ -108,6 +108,10 @@ namespace Acorn {
     //3=pool valid, cache is a ColColCol
 
     struct Ptr {
+        Ptr(uint32_t _device, uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            device = _device; unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
+        }
         Ptr(uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
@@ -115,6 +119,14 @@ namespace Acorn {
         Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             pool = _pool; idx = _idx; sidx = _sidx;
+        }
+        Ptr(uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            idx = _idx; sidx = _sidx;
+        }
+        Ptr(uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            sidx = _sidx;
         }
         Ptr(void* _cache, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
@@ -145,9 +157,8 @@ namespace Acorn {
                     };
                     void* cache;
                 };
-
-                uint32_t unit; 
                 uint32_t device; 
+                uint32_t unit; 
                 uint32_t pool;
                 uint32_t idx;
                 uint32_t sidx;
@@ -349,6 +360,23 @@ namespace Acorn {
             index = o.index;
             live = o.live;
         }
+        CCol(CCol&& o) : QCol(std::move(o)) {
+            element_size = o.element_size;
+            tag = o.tag;
+            hash = o.hash;
+            index = o.index;
+            live = o.live;
+        }
+        CCol& operator=(CCol&& o) {
+            if(this == &o) return *this;
+            QCol::operator=(std::move(o));
+            element_size = o.element_size;
+            tag = o.tag;
+            hash = o.hash;
+            index = o.index;
+            live = o.live;
+            return *this;
+        }
         uint32_t element_size = 1;
         uint32_t tag = 0;
         uint32_t hash = 0;
@@ -402,7 +430,6 @@ namespace Acorn {
             o.capacity = 0;
             return *this;
         }
-        
         QCellCol& operator=(const QCellCol& o) {
             if(this == &o) return *this;
             for(uint32_t i = 0; i < length(); i++) get(i).~CCol();
@@ -432,6 +459,14 @@ namespace Acorn {
         Col(uint32_t _size) :  CCol(_size) {}
         Col(const Col& o) : CCol(o), heterogenous(o.heterogenous), label(o.label), cells(o.cells) {}
         Col(CCol q) : CCol(q) {}
+        Col& operator=(Col&& o) {
+            if(this == &o) return *this;
+            CCol::operator=(std::move(o)); 
+            heterogenous = o.heterogenous;
+            label = std::move(o.label);
+            cells = std::move(o.cells);
+            return *this;
+        }
         bool heterogenous = false;
         QString label;
         QCellCol cells;

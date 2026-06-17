@@ -108,7 +108,7 @@ public:
     /// @param table Default value is 0, this can be used to split processes into distinct blocks when run
     void add_process(const std::string& process_name,std::function<void(int)> process,int table = 0) {
         while(f_table.length() <= table) add_table();
-        processes.put(process_name,std::make_pair(table,f_table.get(table).length()));
+        processes.put(process_name,std::make_pair(table,(int)f_table.get(table).length()));
         s_table.get(table) << process_name;
         f_table.get(table) << process;
     }

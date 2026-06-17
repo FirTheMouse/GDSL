@@ -31,10 +31,14 @@
 
 
 size_t current_memory_usage() {
-    struct mach_task_basic_info info;
-    mach_msg_type_number_t size = MACH_TASK_BASIC_INFO_COUNT;
-    task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &size);
-    return info.resident_size; // current RSS in bytes
+    #ifdef _WIN32
+        return 0;
+    #else
+        struct mach_task_basic_info info;
+        mach_msg_type_number_t size = MACH_TASK_BASIC_INFO_COUNT;
+        task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &size);
+        return info.resident_size; // current RSS in bytes
+    #endif
 }
 
 namespace Acorn {
@@ -72,17 +76,21 @@ namespace Acorn {
 
 
         std::string generate_token() {
-            unsigned char buf[32];
-            int fd = open("/dev/urandom", O_RDONLY);
-            read(fd, buf, 32);
-            ::close(fd);
-            std::string token = "";
-            const char* hex = "0123456789abcdef";
-            for(int i = 0; i < 32; i++) {
-                token += hex[buf[i] >> 4];
-                token += hex[buf[i] & 0xf];
-            }
-            return token;
+            #ifdef _WIN32
+                return "";
+            #else
+                unsigned char buf[32];
+                int fd = open("/dev/urandom", O_RDONLY);
+                read(fd, buf, 32);
+                ::close(fd);
+                std::string token = "";
+                const char* hex = "0123456789abcdef";
+                for(int i = 0; i < 32; i++) {
+                    token += hex[buf[i] >> 4];
+                    token += hex[buf[i] & 0xf];
+                }
+                return token;
+            #endif
         }
         uint32_t generate_token_id = add_function("generate_token",[this](Context& ctx){
             string output = resolve_string_ticket(ctx.node());
@@ -856,7 +864,14 @@ namespace Acorn {
                     int splice_point = out.length();
                     if(r<col.length()) {
                         if(rendersheet.tag==storesheet_id) {
-                            tostr = tag_to_str(col.tag,col[r]);
+                            if(col.tag==ptr_id||col.tag==string_id) {
+                                Ptr p = *(Ptr*)resolve_ptr(ptr);
+                                if(is_live(p)) {
+                                    tostr = value_as_string(ptr);
+                                }
+                            } else {
+                                tostr = value_as_string(ptr);
+                            }
                             out += "<div class='context_menu' ";
                             out += styles->resolve_prop(ctx, "context_menu_style");
                             out += ">";
@@ -885,12 +900,14 @@ namespace Acorn {
                                 Col& vcol = resolve_to_col(p);
                                 if(ERROR_FLAG) { //Until we make it so metadata displays right
                                     ERROR_FLAG = false;
-                                    tostr = tag_to_str(col.tag,col[r]);
+                                    print("CAUGHT ERROR FLAG: ",ERROR_MSG);
+                                    tostr = value_as_string(p);
                                 } else {
                                     tostr = tag_to_str(vcol.tag,vcol[p.sidx]);
                                     if(ERROR_FLAG) { //Until we make it so metadata displays right
                                         ERROR_FLAG = false;
-                                        tostr = tag_to_str(col.tag,col[r]);
+                                        print("CAUGHT ERROR FLAG: ",ERROR_MSG);
+                                        tostr = value_as_string(p);
                                     }
                                     if(rendersheet.tag == datasheet_id || rendersheet.tag == formsheet_id) { //The context menu for the main sheet, this is where we'll edit from
                                         out += "<div class='context_menu' ";
@@ -1087,6 +1104,7 @@ namespace Acorn {
                     if(r<col.length()) {
                         Ptr p = *(Ptr*)col[r]; //Since the datasheet stores Ptrs
                         if(is_live(p)) {
+                            //print("To string ",Ptr_to_string(p));
                             tostr = value_as_string(p);
                         }
                     }
@@ -1182,7 +1200,7 @@ namespace Acorn {
                     Col& col = sheets[p]->get(c);
                     if(col.heterogenous) {
                         //Add a scan over the layout and normalization for Ptr members in the future if needed
-                    } else if(col.tag==ptr_id) {
+                    } else if(col.tag==ptr_id||col.tag==string_id) {
                         for(int r=0;r<col.length();r++) {
                            Ptr ptr = *(Ptr*)col[r];
                            if(is_live(ptr)) {
@@ -1253,7 +1271,7 @@ namespace Acorn {
                         Col& col = loadsheet[p][c];
                         if(col.heterogenous) {
                             //Add a scan over the layout and normalization for Ptr members in the future if needed
-                        } else if(col.tag==ptr_id) {
+                        } else if(col.tag==ptr_id||col.tag==string_id) {
                             for(int r=0;r<col.length();r++) {
                                Ptr ptr = *(Ptr*)col[r];
                                if(is_live(ptr)) {
@@ -1326,50 +1344,98 @@ namespace Acorn {
             if(string_to_cachelevel(terms[0])!=3) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, it has the wrong cache level")); return;}
             Ptr cellptr = string_to_Ptr(terms[0]); cellptr.cache = &types;
             uint32_t pooltag = resolve_to_pool(cellptr).tag;
-            if(pooltag==storesheet_id) { //The tag on the pool dictates how it's values are stored
-                Node literal = compile_literal(terms[1]);
-                resolve_to_col(cellptr).set(cellptr.sidx,literal.value().get());
-            } else {
+            // if(pooltag==storesheet_id) { //Add a check to stop setting the wrong kind of thing for a storesheet column in the future
+            //     Node literal = compile_literal(terms[1]);
+            //     Value lv = literal.value();
+            //     uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
+            //     if(lv.type()==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
+            //     else if(lv.sub_type()!=0) {subtype = lv.sub_type(); subsize = lv.sub_size(); alias = lv.type();}
+
+            //     if(subtype!=0&&subsize!=0) {
+                    
+            //     } else {
+            //         resolve_to_col(cellptr).set(cellptr.sidx,lv.get());
+            //     }
+            // } else {
                 list<ColCol*> sheets = gather_sheet_pools(cellptr.pool);
                 if(sheets.last()->tag!=storesheet_id) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, the sheets it gathered did not end with a storesheet")); return;}
                 uint32_t storepoolidx = find_sheet_pools_start(cellptr.pool)+(sheets.length()-1);
-                Ptr p = *(Ptr*)resolve_ptr(cellptr);
+                Ptr p = cellptr;
+                if(cellptr.pool!=storepoolidx) {
+                    p = *(Ptr*)resolve_ptr(cellptr);
+                }
                 Node literal = compile_literal(terms[1]);
                 Value lv = literal.value();
-                if(!is_live(p)) {
+                if(!is_live(p)) { //If we aren't replacing a live Ptr, create a new spot for its data in the store pool
                     p = get_ticket(storepoolidx,lv.size(),lv.type());
                     resolve_to_col(cellptr).set(cellptr.sidx,(void*)&p);
                 }
                 void* data = lv.get();
-                Col& col = resolve_to_col(p); //Where the value is stored in the store pool
-                if(lv.type()==string_id) {
-                    if(col.tag!=string_id||col.empty()) {
-                        col.clear(); 
-                        col.element_size = lv.size(); col.tag=lv.type();
-                        Ptr charp = get_ticket(storepoolidx,1,char_id); //Col is unsafe to use after this
-                        string str = (string&)charp;
-                        string lstr = (string&)*(Ptr*)lv.get();
-                        str = lstr.to_std();
-                        resolve_to_col(p).push((void*)&charp);
-                        return;
-                    } else {
-                        data = col[p.sidx];
-                        string str = (string&)*(Ptr*)col[p.sidx];
-                        string lstr = (string&)*(Ptr*)lv.get();
-                        str = lstr.to_std();
-                    }
-                } 
+                Col& tcol = resolve_to_col(p); //Where the value is stored in the store pool
 
-                if(col.element_size!=lv.size()||col.tag!=lv.type()) {
-                    col.clear();
-                    col.element_size = lv.size(); col.tag=lv.type();
-                    col.push(data);
-                } else if(col.empty()) {
-                    col.push(data);
-                } else {
-                    col.set(p.sidx,data);
+                uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
+
+                if(lv.type()==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
+                else if(lv.sub_type()!=0) {subtype = lv.sub_type(); subsize = lv.sub_size(); alias = lv.type();}
+
+                Ptr subp = deadptr; //This can be optimized in the future with finer discernment, such as detecting if we're replacing a Ptr more accurately than with just alias
+                //Pending a redesign of how double-hop values work on the language side
+                if(tcol.tag==ptr_id||tcol.tag==string_id) {
+                    if(!tcol.empty()) {
+                        subp = *(Ptr*)tcol.get(p.sidx); //The Ptr currently stored to the other collection
+                        if(subtype==0||subsize==0&&is_live(subp)) { //Free the subptr if we're realiasing to a scalar
+                            print("Recycling subp");
+                            recycle_column(subp);
+                        } else {
+                            if(is_live(subp)) {
+                                print("Resetting subp");
+                                Col& subcol = resolve_to_col(subp);
+                                subcol.clear(); subcol.element_size = subsize; subcol.tag = subtype;
+                            } else {
+                                print("Regnerating subp");
+                                subp = get_ticket(storepoolidx,subsize,subtype);
+                                resolve_to_col(p).set(p.sidx,(void*)&subp);
+                            }
+                        }
+                    } else if(subtype!=0&&subsize!=0) {
+                        print("Replacing subp");
+                        subp = get_ticket(storepoolidx,subsize,subtype);
+                        resolve_to_col(p).push((void*)&subp);
+                    }
                 }
-            }
+                Col& col = resolve_to_col(p);
+                if(subtype!=0&&subsize!=0) { //If we're a pointer to a collection
+                    if(col.tag!=alias) {
+                        print("Realiasing");
+                        col.element_size = sizeof(Ptr); col.tag=alias;
+                        col.clear();
+                        subp = get_ticket(storepoolidx,subsize,subtype);
+                        resolve_to_col(p).push((void*)&subp);
+                    } else {
+                        print("Replacing");
+                    }
+                    Ptr dataptr  = *(Ptr*)data;
+                    Col& datacol = resolve_to_col(dataptr); //Copy over the data to it's new position
+                    Col& subcol = resolve_to_col(subp);
+                    subcol.clear();
+                    for(int i=0;i<datacol.length();i++) {
+                        subcol.push(datacol[i]);
+                    }
+                } else { //If we're the direct value in the store pool
+                    if(col.element_size!=lv.size()||col.tag!=lv.type()) {
+                        print("Clearing and pushing");
+                        col.clear();
+                        col.element_size = lv.size(); col.tag=lv.type();
+                        col.push(data);
+                    } else if(col.empty()) {
+                        print("Pushing");
+                        col.push(data);
+                    } else {
+                        print("Setting");
+                        col.set(p.sidx,data);
+                    }
+                }
+            //}
         });
 
 

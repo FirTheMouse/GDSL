@@ -418,7 +418,9 @@ login {
                     Node root = compile(content);
                     execut root;
                 }
-
+                if(instr=="reset_sheet") {
+                    save_sheet(create_sheet,to_edit.opt_str);
+                } 
                 if(instr=="loadsheet") {
                     sheetid = load_sheet(content);
                     to_edit.opt_str = content;
@@ -527,6 +529,7 @@ build {
                                     } 
                                 }
 
+                                control_btns("R","fragthree('main_sheet','reset_sheet','')");
                                 control_btns("+C","fragthree('main_sheet','add_column','0')");
                                 control_btns("+R","fragthree('main_sheet','add_row','0')");
                                 control_btns("+F","fragthree('main_sheet','add_form','0')");

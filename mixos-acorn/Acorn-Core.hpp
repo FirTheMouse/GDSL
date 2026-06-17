@@ -2067,8 +2067,9 @@ namespace Acorn {
             } else {
                 return labels[v.type()]+"?";
             }
+            std::string str = ctx.source().to_std();
             deep_recycle_context(ctx);
-            return ctx.source().to_std();
+            return str;
         }
 
         std::string value_as_string(Ptr dataptr) {

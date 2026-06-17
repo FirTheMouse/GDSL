@@ -107,10 +107,20 @@ int main(int argc, char* argv[]) {
     //GDSL::test_module("modules/tests/ctest.gld");
 
     print("TEST START");
+    //using namespace Acorn;
+    // print("sizeof(Ptr)=",sizeof(Ptr),
+    //   " off(region)=",offsetof(Ptr,region),
+    //   " off(cache)=",offsetof(Ptr,cache),
+    //   " off(unknown16)=",offsetof(Ptr,unknown16),
+    //   " off(cachelevel)=",offsetof(Ptr,cachelevel),
+    //   " off(device)=",offsetof(Ptr,device),
+    //   " off(pool)=",offsetof(Ptr,pool),
+    //   " off(idx)=",offsetof(Ptr,idx),
+    //   " off(sidx)=",offsetof(Ptr,sidx));
+    //   print("sizeof(QCol)=",sizeof(Acorn::QCol)," sizeof(CCol)=",sizeof(Acorn::CCol)," sizeof(Col)=",sizeof(Acorn::Col));
     // g_ptr<Node> root = nullptr;
 
-
-    //writeFile("acorn.hpp",vendor_file("mixos-acorn/web/Webcorn-Core.hpp"));
+    //writeFile("export/acorn.hpp",vendor_file("mixos-acorn/web/Webcorn-Core.hpp"));
     //writeFile("mixos-acorn/tests/printout.txt",Acorn::make_wrapper_for_layout(Acorn::layouts[Acorn::node_id],"Node"));
 
 

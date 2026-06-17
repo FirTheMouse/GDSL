@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <cstring>
+#include <iomanip>
 
 #include "../util/list.hpp"
 #include "../util/map.hpp"

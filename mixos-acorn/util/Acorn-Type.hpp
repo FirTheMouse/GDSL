@@ -144,35 +144,22 @@ namespace Acorn {
             cache = _cache; cachelevel = 1;
         }
         Ptr() { memset(this, 0, sizeof(Ptr)); }
-
+        
+        union {
+            struct { 
+                uint32_t region;
+                uint32_t zone;
+            };
+            void* cache;
+        };
         uint16_t unknown16;
         uint8_t specialization; 
         uint8_t cachelevel;
-        union {
-            struct {
-                union {
-                    struct { 
-                        uint32_t region;
-                        uint32_t zone;
-                    };
-                    void* cache;
-                };
-                uint32_t device; 
-                uint32_t unit; 
-                uint32_t pool;
-                uint32_t idx;
-                uint32_t sidx;
-            };
-            struct {
-                void* A_cache;
-                uint16_t A_pool;
-                uint32_t A_idx;
-                uint32_t A_sidx;
-                uint16_t B_pool;
-                uint32_t B_idx;
-                uint32_t B_sidx;
-            };
-        };
+        uint32_t device; 
+        uint32_t unit; 
+        uint32_t pool;
+        uint32_t idx;
+        uint32_t sidx;
 
         inline bool operator==(const Ptr& other) const {
             return pool == other.pool && idx == other.idx && sidx == other.sidx && 
@@ -182,6 +169,7 @@ namespace Acorn {
         }
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
     };
+    static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
     struct Ptr4 {
         Ptr4() {}
@@ -383,7 +371,7 @@ namespace Acorn {
         uint32_t index = 0;
         bool live = true;
 
-        inline uint32_t length() const {return size / element_size;}
+        inline uint32_t length() const {if(element_size==0||size==0) {return 0;} else {return size / element_size;}}
         void push(const void* element) {
             QCol::push(element,element_size);
         }

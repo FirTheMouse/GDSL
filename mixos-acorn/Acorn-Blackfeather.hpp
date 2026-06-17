@@ -31,9 +31,13 @@
 
 
 char read_key() {
-    char c;
-    read(STDIN_FILENO, &c, 1);
-    return c;
+    #ifdef _WIN32
+        return ' ';
+    #else
+        char c;
+        read(STDIN_FILENO, &c, 1);
+        return c;
+    #endif
 }
 
 
@@ -53,28 +57,32 @@ constexpr const char* strip_path(const char* path) {
 //s = 3
 //f = 4
 int read_arrow() {
-    char c = read_key();
-    if(c == '\x1b') {
-        char seq[2];
-        read(STDIN_FILENO, &seq[0], 1);
-        read(STDIN_FILENO, &seq[1], 1);
-        if(seq[0]=='[') {
-            if(seq[1]=='C') return 1; //>
-            if(seq[1]=='D') return -1; //<
-            if(seq[1]=='A') return 2; //^
-            if(seq[1]=='B') return -2; //v
+    #ifdef _WIN32
+        return 0;
+    #else
+        char c = read_key();
+        if(c == '\x1b') {
+            char seq[2];
+            read(STDIN_FILENO, &seq[0], 1);
+            read(STDIN_FILENO, &seq[1], 1);
+            if(seq[0]=='[') {
+                if(seq[1]=='C') return 1; //>
+                if(seq[1]=='D') return -1; //<
+                if(seq[1]=='A') return 2; //^
+                if(seq[1]=='B') return -2; //v
+            }
         }
-    }
-    if(c=='q') return -100; // quit
-    if(c=='s') return 3;
-    if(c=='f') return 4;
-    return 0;
+        if(c=='q') return -100; // quit
+        if(c=='s') return 3;
+        if(c=='f') return 4;
+        return 0;
+    #endif
 }
 
 namespace Acorn {
 
     #ifdef _WIN32
-        
+        void setup_signals() {}
     #else
         void signal_handler(int signal) {
             print("\nRECIVED SIGNAL: ",signal);

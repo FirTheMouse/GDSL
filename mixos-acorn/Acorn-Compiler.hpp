@@ -3,8 +3,22 @@
 
 namespace Acorn {
     struct Compiler_Unit : public virtual Blackfeather_Unit {
-        Compiler_Unit(uint16_t _uid) : Unit(_uid) { init(); }
+
+
+        Compiler_Unit(uint16_t _uid) : Unit(_uid)  { init(); }
         Compiler_Unit() {init();}
+
+        uint32_t setup_unit_data() {
+            uint32_t idx = types.length();
+            ColCol unitdata;
+            types.push(unitdata);
+            return idx;
+        }
+
+        uint32_t unitdata_col = setup_unit_data();
+        uint32_t global_value_table_idx = note_value(types[unitdata_col], "global_values", sizeof(Ptr), value_id);
+        uint32_t global_node_table_idx = note_value(types[unitdata_col], "global_nodes", sizeof(Ptr), node_id);
+        
         
         Stage& a_handlers = reg_stage("assembling");
         Stage& s_handlers = reg_stage("scoping");
@@ -63,7 +77,7 @@ namespace Acorn {
             return val;
         }
 
-        uint32_t add_qualifer(const std::string& f) {
+        uint32_t register_qual_ids(const std::string& f) {
             uint32_t id = reg_id(f);
             uint32_t prefix_id = reg_id(f);
             uint32_t suffix_id = reg_id(f);
@@ -94,8 +108,9 @@ namespace Acorn {
             return  val;
         }
 
-        uint32_t make_type(const std::string& f, uint32_t size = 0) {
-            Value val = make_type_value(f,size);
+        uint32_t add_qual(const std::string& f, uint32_t size = 0) {
+            Value val = make_qual_value(f,size);
+            keywords.put(f,val);
             return val.type();
         }
 
@@ -358,6 +373,11 @@ namespace Acorn {
                 node.value(node.in_scope().value_table().get(node.name().to_std()));
                 return true;
             }
+            value_col vcol(uid, unitdata_col, global_value_table_idx);
+            if(vcol.hasKey(node.name().to_std())) {
+                node.value(vcol.get(node.name().to_std()));
+                return true;
+            }
             return false;
         }
 
@@ -366,6 +386,11 @@ namespace Acorn {
             if(node.in_scope().node_table().hasKey(node.name().to_std())) {
                 if(node.scopes().length()>0) node.scopes().clear();
                 node.scopes().push(node.in_scope().node_table().get(node.name().to_std()));
+                return true;
+            }
+            node_col ncol(uid, unitdata_col, global_node_table_idx);
+            if(ncol.hasKey(node.name().to_std())) {
+                node.scopes().push(ncol.get(node.name().to_std()));
                 return true;
             }
             return false;
@@ -801,8 +826,6 @@ namespace Acorn {
             }; 
         }
 
-
-
         void resolve_identifier(Context& ctx) {
             Node node = ctx.node();
             
@@ -1038,6 +1061,7 @@ namespace Acorn {
 
         void resolve_overload(Context& ctx) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to resolve overloads while another error was flagged")); return;})
+            if(!is_node_opperator(ctx.root())) return;
             //LOG_W(ctx," resolving overloads");
             standard_sub_process(ctx); //Consider not doing this
             if(ctx.index()==0&&is_live(ctx.node().value())) { //If we're the left term
@@ -1152,6 +1176,7 @@ namespace Acorn {
                 Value sval = subvals.get(i);
                 if(is_live(sval.data_ptr())) { //This ceremony is becuse if we just did col.push(col.get(0) it would invalidate the column as we push thus breaking the get, so we have to save as temps
                     Ptr dataptr = sval.data_ptr();
+                    if(dataptr.pool!=data_store_id) continue;
                     uint32_t elem_size = resolve_to_col(dataptr).element_size;
                     list<uint8_t> temp(elem_size);
                     if(resolve_to_col(dataptr).empty()) {
@@ -1161,7 +1186,9 @@ namespace Acorn {
                     if(resolve_to_col(dataptr).length() <= loc) {
                         //These shouldn't be getting out of sync in the first place, in the future investigate this deeper
                         int depth_check = 0;
-                        while(resolve_to_col(dataptr).length() <= loc && depth_check++ < 100) resolve_to_col(dataptr).push(temp.data());
+                        while(resolve_to_col(dataptr).length() <= loc && depth_check++ < 100) {
+                            resolve_to_col(dataptr).push(temp.data());
+                        }
                         if(depth_check>=90) {
                             print(red("Infinite loop in loc catchup on "+Ptr_as_string(dataptr)+": this shouldn't even be happening in the first place!"));
                         }
@@ -1186,6 +1213,7 @@ namespace Acorn {
                 Value sval = subvals.get(i);
                 if(is_live(sval.data_ptr())) {
                     Ptr newptr = sval.data_ptr();
+                    if(newptr.pool!=data_store_id) continue;
                     newptr.sidx = loc;
                     resolve_to_col(sval).qset(value_data_offset,(void*)&newptr,sizeof(Ptr));
                 }
@@ -1230,6 +1258,10 @@ namespace Acorn {
                 map<uint32_t,Value> value_alias_table;
                 map<uint32_t,Node> node_alias_table;
         
+                Stage* oldstage = active_stage;
+                start_stage(x_handlers); //Because we're trying to derive the value, this may not be the right long term solution though
+                //This was a bit of an accident born from how things were working in Webcorn's standard_gather_from_scope
+                //And an anomaly with FUNC_DECLs revelead when trying to make templating work
                 for(int i = 0; i < call.children().length(); i++) {
                     process_node(ctx, call.children()[i]);
                     if(i < decl.children().length()) {
@@ -1237,6 +1269,7 @@ namespace Acorn {
                         node_alias_table.put(decl.children()[i].idx, call.children()[i]);
                     }
                 }
+                active_stage = oldstage;
         
                 for(int i = 0; i < decl.scopes()[0].children().length(); i++) {
                     Node copy = make_node();
@@ -1307,7 +1340,9 @@ namespace Acorn {
                     scope.value().loc(0); //Set location for stack depth
                 }
             };
-            x_handlers[func_decl_id] = [this](Context& ctx){};
+            x_handlers[func_decl_id] = [this](Context& ctx){
+                fire_quals(ctx,ctx.node().value());
+            };
             r_handlers[func_call_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 sync_args(ctx);

@@ -91,9 +91,6 @@
     }
 
     "FUNC_DECL" {
-        in resolving {
-            gather_props;
-        }
         in htmlemiting {
             if(ctx.node.value.type==to_type("inlined")) {return;}
             if(ctx.node.value.type==to_type("invisible")) {return;}
@@ -215,7 +212,7 @@
 ##
 
 print("Compiling");
-Node twig = compile(read_file("mixos-acorn/web/thistle/thistle_light.twg"));
+Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
 print("Compiled");
 Node page = twig.children.get(0);
 

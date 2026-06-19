@@ -394,6 +394,7 @@ login {
 
 ##
     int sheetid = 0;
+    string userpath = "";
 
     register build;
     "build" {
@@ -422,6 +423,12 @@ login {
                     save_sheet(create_sheet,to_edit.opt_str);
                 } 
                 if(instr=="loadsheet") {
+                    if(userpath.length==0) {
+                        print("Getting userpath for user, userpath is already ",userpath);
+                        userpath = get_userpath;
+                        print("Got userpath: ",userpath);
+                    }
+
                     sheetid = load_sheet(content);
                     to_edit.opt_str = content;
                     to_edit.value.set(sheetid);

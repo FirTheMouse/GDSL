@@ -143,7 +143,7 @@ namespace Acorn {
             case 3: return std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
             case 2: return std::to_string(p.idx)+"|"+std::to_string(p.sidx);
             case 1: return std::to_string(p.sidx);
-            case 0: return "quantum wub";
+            case 0: return std::to_string(p.region)+"|"+std::to_string(p.zone)+"|"+std::to_string(p.device)+"|"+std::to_string(p.unit)+"|"+std::to_string(p.pool)+"|"+std::to_string(p.idx)+"|"+std::to_string(p.sidx);
             default: return "INVALID PRINT LEVEL FOR PTR_TO_STRING "+std::to_string(print_level);
         }
     }
@@ -401,6 +401,11 @@ namespace Acorn {
     size_t func_decl_id = global_reg_id("FUNC_DECL");
     size_t type_decl_id = global_reg_id("TYPE_DECL");
 
+    uint32_t sub_pass = global_reg_id("SUB_PASS");
+    uint32_t direct_pass = global_reg_id("DIRECT_PASS");
+    uint32_t travel_pass = global_reg_id("TRAVEL_PASS");
+    uint32_t resolving_pass = global_reg_id("RESOLVING_PASS");
+
     size_t tombstone_col = 0; 
     size_t refs_col = 0;
 
@@ -466,6 +471,7 @@ namespace Acorn {
     uint32_t context_flag_offset = 0;
     uint32_t context_sub_offset = 0;
     uint32_t context_source_offset = 0;
+    uint32_t context_pass_offset = 0;
 
     uint32_t node_total_size = 0;
     uint32_t value_total_size = 0;
@@ -561,6 +567,7 @@ namespace Acorn {
         context_flag_offset = ctemp.add_prop(bool_id,1,"flag");
         context_sub_offset = ctemp.add_prop(context_id,sizeof(Ptr),"sub");
         context_source_offset = ctemp.add_prop(string_id,sizeof(Ptr),"source",char_id,1);
+        context_pass_offset = ctemp.add_prop(int_id,4,"pass");
         context_total_size = ctemp.total_size;
         return at;
     }
@@ -568,6 +575,8 @@ namespace Acorn {
 
     template<typename T>
     struct col_Ptr : Ptr {
+        col_Ptr(uint32_t _unit, uint32_t _pool, uint32_t _idx)  : Ptr(_unit,_pool,_idx,0) {}
+
         inline bool safety_check(std::string log_msg) {if(ERROR_FLAG) {log(red("Attempted to call "),log_msg,red(" while another error was flagged")); return true;} if(!is_live(*this)) {throw_error("Attempted ",log_msg," but col_ptr was dead"); log(red("ERROR: "),ERROR_MSG); return true;} return false;}
     
         inline Col& col()                    {DEBUG_ONLY(if(safety_check("col_ptr:col")){static Col d; return d;}) return resolve_to_col(*this);}
@@ -889,6 +898,9 @@ namespace Acorn {
     
         inline uint32_t state()              {DEBUG_ONLY(if(safety_check("context:state:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(context_state_offset);}
         inline void     state(uint32_t s)    {DEBUG_ONLY(if(safety_check("context:state:set")){return;}) resolve_to_col(*this).qset(context_state_offset,(void*)&s,4);}
+
+        inline uint32_t pass()              {DEBUG_ONLY(if(safety_check("context:pass:get")){return 0;}) return *(uint32_t*)resolve_to_col(*this).qget(context_pass_offset);}
+        inline void     pass(uint32_t s)    {DEBUG_ONLY(if(safety_check("context:pass:set")){return;}) resolve_to_col(*this).qset(context_pass_offset,(void*)&s,4);}
     
         inline bool     flag()               {DEBUG_ONLY(if(safety_check("context:flag:get")){return false;}) return *(bool*)resolve_to_col(*this).qget(context_flag_offset);}
         inline void     flag(bool b)         {DEBUG_ONLY(if(safety_check("context:flag:set")){return;}) resolve_to_col(*this).qset(context_flag_offset,(void*)&b,1);}
@@ -1010,6 +1022,9 @@ namespace Acorn {
         public:
         Stage* active_stage;
         list<Watcher> watchers;
+
+        Context stashed_ctx = deadptr;
+        uint32_t stashed_idx = 0;
 
         uint16_t derive_uid(bool init_layouts) {
             DEBUG_ONLY(
@@ -1162,8 +1177,16 @@ namespace Acorn {
                     return red("POOL_OUT_OF_BOUNDS("+std::to_string(resolve_to_unit(p).length())+"):"+Ptr_to_string(p));
                 } else if(p.idx>=resolve_to_pool(p).length()) {
                     return red("IDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_pool(p).length())+"):"+Ptr_to_string(p));
-                } else if(p.sidx>=resolve_to_col(p).length()) {
-                    return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).length())+"):"+Ptr_to_string(p));
+                } else {
+                    if(resolve_to_col(p).heterogenous) {
+                        if(p.sidx>=resolve_to_col(p).size) {
+                            return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).size)+"):"+Ptr_to_string(p));
+                        }
+                    } else {
+                        if(p.sidx>=resolve_to_col(p).length()) {
+                            return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).length())+"):"+Ptr_to_string(p));
+                        }
+                    }
                 } 
             }
             if(marked_ptrs.has(p)) {
@@ -1423,7 +1446,7 @@ namespace Acorn {
         
             return v;
         }
-        Context make_context(Ptr result = deadptr, Ptr source = deadptr) {
+        Context make_context(Ptr result = deadptr, Ptr source = deadptr, uint32_t pass = 0) {
             Context c;
             c.pool = context_type_id;
             c.idx = push_column(types[context_type_id], context_total_size, context_id);
@@ -1452,6 +1475,7 @@ namespace Acorn {
             uint32_t zero = 0; bool f = false;
             col.qset(context_index_offset,  (void*)&zero, 4);
             col.qset(context_state_offset,  (void*)&zero, 4);
+            col.qset(context_pass_offset,   (void*)&pass, 4);
             col.qset(context_flag_offset,   (void*)&f,    1);
         
             return c;
@@ -1478,7 +1502,7 @@ namespace Acorn {
                 return std::string(1,*(char*)data);
             } else if(tag==string_id) {
                 Ptr ptr = *(Ptr*)data;
-                if(ptr.pool>=types.length()) {
+                if(ptr.pool>=types.length()||ptr.idx>=types[ptr.pool].length()) {
                     return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
                 }
                 std::string content = string(ptr).to_std();
@@ -1856,7 +1880,7 @@ namespace Acorn {
             return to_return;
         }
 
-        #define ACORN_MUTE_TABLES 1
+        #define ACORN_MUTE_TABLES 0
 
         std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
@@ -1870,14 +1894,14 @@ namespace Acorn {
                 to_return += "\n" + indent + "   Value table:";
                 QCellCol cells = node.value_table().col().cells;
                 for(int i=0;i<cells.length();i++) {
-                    to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+value_info(node.value_table().get(cells.get(i).index));
+                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+value_info(node.value_table().get(cells.get(i).index));
                 }
             }
             if(node.node_table().length()>0) {
                 to_return += "\n" + indent + "   Node table:";
                 QCellCol cells = node.node_table().col().cells;
                 for(int i=0;i<cells.length();i++) {
-                    to_return += "\n" + indent + "     Key: "+std::to_string(cells.get(i).hash)+" | "+node_info(node.node_table().get(cells.get(i).index));
+                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+node_info(node.node_table().get(cells.get(i).index));
                 }
             }
             #endif
@@ -2110,6 +2134,7 @@ namespace Acorn {
         }
 
         uint32_t standard_travel_pass(Node root, Context sub = deadptr);
+        uint32_t resume_travel_pass(Context ctx);
 
         inline void standard_process(Context& ctx, uint32_t type) {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.prefix) w.prefix(ctx);})
@@ -2433,14 +2458,36 @@ namespace Acorn {
         DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
         node_col children = root.children();
         newline("Travel pass over "+std::to_string(children.length())+" nodes");
-        Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr);
+        Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr,travel_pass);
         int& i = ctx.index();
         ctx.root(root);
         ctx.sub(sub);
         while(i < ctx.result().length()) {
             ctx.node(ctx.result().get(i));
             standard_process(ctx);
-            ctx.left(ctx.result().get(i));
+            Node nleft = ctx.result().get(i);
+            ctx.left(nleft);
+            DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
+            if(ctx.state()>0) { //This is the return/break process
+                endline();
+                deep_recycle_context(ctx);
+                return ctx.state();
+            }
+            i++;
+        }
+        endline();
+        deep_recycle_context(ctx);
+        return 0;
+    }
+    
+    //To prove a point about continuations and Seaside
+    uint32_t Unit::resume_travel_pass(Context ctx) {
+        int& i = ctx.index();
+        while(i < ctx.result().length()) {
+            ctx.node(ctx.result().get(i));
+            standard_process(ctx);
+            Node nleft = ctx.result().get(i);
+            ctx.left(nleft);
             DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
             if(ctx.state()>0) { //This is the return/break process
                 endline();

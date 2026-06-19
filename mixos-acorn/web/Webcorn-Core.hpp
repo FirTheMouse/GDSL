@@ -59,6 +59,8 @@ namespace Acorn {
             g_ptr<Thread> thread = nullptr;
             uint16_t unit = 0;
             list<qeue_request> requests;
+            uint32_t session = 0;
+            bool authourized = false;
 
             uint32_t getfd() {std::lock_guard<std::mutex> lock(units_mutex); return units[unit]->types.index;}
             std::string getlabel() {std::lock_guard<std::mutex> lock(units_mutex); return units[unit]->types.label.to_std();}
@@ -120,9 +122,18 @@ namespace Acorn {
             output = extract_cookie(request,name);
         },sizeof(Ptr),string_id);
 
+        void cry(const std::string& message) {
+            types.label = message;
+            types.live = false;
+            print(red("Cried for help"));
+            while(!types.live) {
+                std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+            }
+            print(green("Cries answered"));
+        }
+
         uint32_t validate_login_id = add_function("validate_login",[this](Context& ctx){
             std::string body = ctx.sub().source().to_std();
-
 
             std::string username = "";
             std::string password = "";
@@ -139,13 +150,7 @@ namespace Acorn {
             print(yellow("Validating a login")," ",username," ",password);
         
             if(!role.empty()) {
-                types.label = "SESSION:"+username;
-                types.live = false;
-                print(red("Cried for help"));
-                while(!types.live) {
-                    std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-                }
-                print(green("Cries answered"));
+                cry("SESSION:"+username);
                 std::string token = types.label.to_std();
 
                 ctx.sub().source() = "HTTP/1.1 200 OK\r\n"
@@ -160,6 +165,12 @@ namespace Acorn {
                     "\r\n" + body;
             }
         });
+
+        uint32_t get_userpath = add_function("get_userpath",[this](Context& ctx){
+            string output = resolve_string_ticket(ctx.node());
+            cry("GETPATH:"+std::to_string(uid));
+            output = types.label.to_std();
+        },sizeof(Ptr),string_id);
 
         uint32_t session_col = 0;
         uint32_t session_id = reg_id("session");
@@ -210,6 +221,8 @@ namespace Acorn {
                                 g_ptr<Webcorn_Core> webcorn = make_unit<Webcorn_Core>();
                                 new_server->unit = webcorn->uid;
                                 new_server->sethash(token);
+                                new_server->session = sessions.length(); //Give it its session
+                                new_server->authourized = true;
                                 {
                                     std::lock_guard<std::mutex> lock(servers_mutex);
                                     servers << new_server;
@@ -237,7 +250,25 @@ namespace Acorn {
                             }
                             unit->types.label = token;
                         }
-                    }       
+                    } else if(cmd=="GETPATH") {
+                        if(session_col==0) {
+                            print(red("webcorn:manage_sessions:GETPATH no valid session column in the main unit! Ensure a session manager was started"));
+                        } else {
+                            uint32_t req_uid = std::stoi(arg);
+                            print("Unit ",req_uid," wants to know their associated username");
+                            print("We know we're targeting unit ",unit->uid," and server with unit ",target_server->unit," from the server search");
+                            if(target_server->authourized) {
+                                _layout& l = layouts.get(session_id);
+                                ColCol& sessions = types[session_col];
+                                string username = (string&)*(Ptr*)sessions[target_server->session].qget(l.offsets[l.label_to_index["username"]]);
+                                print("Constructing filepath for user ",username.to_std());
+                                unit->types.label = "mixos-acorn/web/thistle/users/"+username.to_std()+"";
+                            } else {
+                                unit->types.label = "";
+                                print(red("webcorn:manage_sessions:GETPATH server is not authourized, please log in"));
+                            }
+                        }
+                    }
                     unit->types.live = true;
                 }   
                 else if(has_queued) {
@@ -396,6 +427,7 @@ namespace Acorn {
         uint32_t inlined_id = reg_id("inlined"); uint32_t suffix_inlined_id = reg_id("suffix_inlined"); uint32_t prefix_inlined_id = reg_id("prefix_inlined");
         uint32_t invisible_id = reg_id("invisible"); uint32_t suffix_invisible_id = reg_id("suffix_invisible"); uint32_t prefix_invisible_id = reg_id("prefix_invisible");
         uint32_t component_id = reg_id("component"); uint32_t suffix_component_id = reg_id("suffix_component"); uint32_t prefix_component_id = reg_id("prefix_component");
+        uint32_t template_qual = add_qual("template");
 
         uint32_t find_node_id = make_tokenized_keyword("find_node");
 
@@ -539,6 +571,10 @@ namespace Acorn {
                             }
                         } else {
                             print("ACTUAL FUNC CALL");
+                            print("Node: ",node_info(ctx.node()));
+                            print("C: ",node_info(c));
+                            print("Ref: ",node_info(ref));
+                            print("Ref owner: ",node_info(ref.owner()));
                             //Is an actual func call, handle as such
                         }
                     } else if(c.type() == func_decl_id) {
@@ -1344,98 +1380,84 @@ namespace Acorn {
             if(string_to_cachelevel(terms[0])!=3) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, it has the wrong cache level")); return;}
             Ptr cellptr = string_to_Ptr(terms[0]); cellptr.cache = &types;
             uint32_t pooltag = resolve_to_pool(cellptr).tag;
-            // if(pooltag==storesheet_id) { //Add a check to stop setting the wrong kind of thing for a storesheet column in the future
-            //     Node literal = compile_literal(terms[1]);
-            //     Value lv = literal.value();
-            //     uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
-            //     if(lv.type()==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
-            //     else if(lv.sub_type()!=0) {subtype = lv.sub_type(); subsize = lv.sub_size(); alias = lv.type();}
+            list<ColCol*> sheets = gather_sheet_pools(cellptr.pool);
+            if(sheets.last()->tag!=storesheet_id) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, the sheets it gathered did not end with a storesheet")); return;}
+            uint32_t storepoolidx = find_sheet_pools_start(cellptr.pool)+(sheets.length()-1);
+            Ptr p = cellptr;
+            if(cellptr.pool!=storepoolidx) {
+                p = *(Ptr*)resolve_ptr(cellptr);
+            }
+            Node literal = compile_literal(terms[1]);
+            Value lv = literal.value();
+            if(!is_live(p)) { //If we aren't replacing a live Ptr, create a new spot for its data in the store pool
+                p = get_ticket(storepoolidx,lv.size(),lv.type());
+                resolve_to_col(cellptr).set(cellptr.sidx,(void*)&p);
+            }
+            void* data = lv.get();
+            Col& tcol = resolve_to_col(p); //Where the value is stored in the store pool
 
-            //     if(subtype!=0&&subsize!=0) {
-                    
-            //     } else {
-            //         resolve_to_col(cellptr).set(cellptr.sidx,lv.get());
-            //     }
-            // } else {
-                list<ColCol*> sheets = gather_sheet_pools(cellptr.pool);
-                if(sheets.last()->tag!=storesheet_id) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, the sheets it gathered did not end with a storesheet")); return;}
-                uint32_t storepoolidx = find_sheet_pools_start(cellptr.pool)+(sheets.length()-1);
-                Ptr p = cellptr;
-                if(cellptr.pool!=storepoolidx) {
-                    p = *(Ptr*)resolve_ptr(cellptr);
-                }
-                Node literal = compile_literal(terms[1]);
-                Value lv = literal.value();
-                if(!is_live(p)) { //If we aren't replacing a live Ptr, create a new spot for its data in the store pool
-                    p = get_ticket(storepoolidx,lv.size(),lv.type());
-                    resolve_to_col(cellptr).set(cellptr.sidx,(void*)&p);
-                }
-                void* data = lv.get();
-                Col& tcol = resolve_to_col(p); //Where the value is stored in the store pool
+            uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
 
-                uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
+            if(lv.type()==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
+            else if(lv.sub_type()!=0) {subtype = lv.sub_type(); subsize = lv.sub_size(); alias = lv.type();}
 
-                if(lv.type()==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
-                else if(lv.sub_type()!=0) {subtype = lv.sub_type(); subsize = lv.sub_size(); alias = lv.type();}
-
-                Ptr subp = deadptr; //This can be optimized in the future with finer discernment, such as detecting if we're replacing a Ptr more accurately than with just alias
-                //Pending a redesign of how double-hop values work on the language side
-                if(tcol.tag==ptr_id||tcol.tag==string_id) {
-                    if(!tcol.empty()) {
-                        subp = *(Ptr*)tcol.get(p.sidx); //The Ptr currently stored to the other collection
-                        if(subtype==0||subsize==0&&is_live(subp)) { //Free the subptr if we're realiasing to a scalar
-                            print("Recycling subp");
-                            recycle_column(subp);
+            Ptr subp = deadptr; //This can be optimized in the future with finer discernment, such as detecting if we're replacing a Ptr more accurately than with just alias
+            //Pending a redesign of how double-hop values work on the language side
+            if(tcol.tag==ptr_id||tcol.tag==string_id) {
+                if(!tcol.empty()) {
+                    subp = *(Ptr*)tcol.get(p.sidx); //The Ptr currently stored to the other collection
+                    if(subtype==0||subsize==0&&is_live(subp)) { //Free the subptr if we're realiasing to a scalar
+                        print("Recycling subp");
+                        recycle_column(subp);
+                    } else {
+                        if(is_live(subp)) {
+                            print("Resetting subp");
+                            Col& subcol = resolve_to_col(subp);
+                            subcol.clear(); subcol.element_size = subsize; subcol.tag = subtype;
                         } else {
-                            if(is_live(subp)) {
-                                print("Resetting subp");
-                                Col& subcol = resolve_to_col(subp);
-                                subcol.clear(); subcol.element_size = subsize; subcol.tag = subtype;
-                            } else {
-                                print("Regnerating subp");
-                                subp = get_ticket(storepoolidx,subsize,subtype);
-                                resolve_to_col(p).set(p.sidx,(void*)&subp);
-                            }
+                            print("Regnerating subp");
+                            subp = get_ticket(storepoolidx,subsize,subtype);
+                            resolve_to_col(p).set(p.sidx,(void*)&subp);
                         }
-                    } else if(subtype!=0&&subsize!=0) {
-                        print("Replacing subp");
-                        subp = get_ticket(storepoolidx,subsize,subtype);
-                        resolve_to_col(p).push((void*)&subp);
                     }
+                } else if(subtype!=0&&subsize!=0) {
+                    print("Replacing subp");
+                    subp = get_ticket(storepoolidx,subsize,subtype);
+                    resolve_to_col(p).push((void*)&subp);
                 }
-                Col& col = resolve_to_col(p);
-                if(subtype!=0&&subsize!=0) { //If we're a pointer to a collection
-                    if(col.tag!=alias) {
-                        print("Realiasing");
-                        col.element_size = sizeof(Ptr); col.tag=alias;
-                        col.clear();
-                        subp = get_ticket(storepoolidx,subsize,subtype);
-                        resolve_to_col(p).push((void*)&subp);
-                    } else {
-                        print("Replacing");
-                    }
-                    Ptr dataptr  = *(Ptr*)data;
-                    Col& datacol = resolve_to_col(dataptr); //Copy over the data to it's new position
-                    Col& subcol = resolve_to_col(subp);
-                    subcol.clear();
-                    for(int i=0;i<datacol.length();i++) {
-                        subcol.push(datacol[i]);
-                    }
-                } else { //If we're the direct value in the store pool
-                    if(col.element_size!=lv.size()||col.tag!=lv.type()) {
-                        print("Clearing and pushing");
-                        col.clear();
-                        col.element_size = lv.size(); col.tag=lv.type();
-                        col.push(data);
-                    } else if(col.empty()) {
-                        print("Pushing");
-                        col.push(data);
-                    } else {
-                        print("Setting");
-                        col.set(p.sidx,data);
-                    }
+            }
+            Col& col = resolve_to_col(p);
+            if(subtype!=0&&subsize!=0) { //If we're a pointer to a collection
+                if(col.tag!=alias) {
+                    print("Realiasing");
+                    col.element_size = sizeof(Ptr); col.tag=alias;
+                    col.clear();
+                    subp = get_ticket(storepoolidx,subsize,subtype);
+                    resolve_to_col(p).push((void*)&subp);
+                } else {
+                    print("Replacing");
                 }
-            //}
+                Ptr dataptr  = *(Ptr*)data;
+                Col& datacol = resolve_to_col(dataptr); //Copy over the data to it's new position
+                Col& subcol = resolve_to_col(subp);
+                subcol.clear();
+                for(int i=0;i<datacol.length();i++) {
+                    subcol.push(datacol[i]);
+                }
+            } else { //If we're the direct value in the store pool
+                if(col.element_size!=lv.size()||col.tag!=lv.type()) {
+                    print("Clearing and pushing");
+                    col.clear();
+                    col.element_size = lv.size(); col.tag=lv.type();
+                    col.push(data);
+                } else if(col.empty()) {
+                    print("Pushing");
+                    col.push(data);
+                } else {
+                    print("Setting");
+                    col.set(p.sidx,data);
+                }
+            }
         });
 
 
@@ -1511,40 +1533,25 @@ namespace Acorn {
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-                if(ctx.node().type()==func_call_id) {
-                    if(ctx.node().value().type()!=component_id) {
-                        //instantiate_template(ctx.node(),ctx.node().value().type_scope().owner(),ctx);
-                        sync_args(ctx);
-                    }
-                } else {
-                    Node scope = ctx.node().scopes()[0];
-                    if(!is_live(scope.value())) {
-                        scope.value(make_value()); 
-                        scope.value().loc(0); //Set location for stack depth
-                    }
-                }
-                if(ctx.node().value().type()==component_id) {
+                if(ctx.node().value().type()==component_id||ctx.node().value().type()==inlined_id||ctx.node().value().type()==invisible_id) {
                     standard_gather_from_scope(ctx);    
-                    if(!ctx.node().scopes().empty()) {
-                        if(ctx.node().type()==func_decl_id&&!ctx.node().children().empty()) {
-                            ctx.node().value().type(invisible_id); //For templates which we don't want to emit
-                        }
-                        for(int i=0;i<ctx.node().scopes().length();i++) {
-                            Node s = ctx.node().scopes()[i];
-                            if(ctx.node().value().type()==invisible_id) {
-                                s.type(invisible_id);
-                            // } else if(ctx.node()->value->type==foldable_id) {
-                            //     s->type = foldable_id;
-                            // } else if(ctx.node()->value->type==iframe_id) {
-                            //     s->type = iframe_id;
-                            } else {
-                                s.type(component_id);
-                            }
+                } else {
+                    if(ctx.node().type()==func_call_id) {
+                        sync_args(ctx);
+                    } else if(ctx.node().type()==func_decl_id) {
+                        Node scope = ctx.node().scopes()[0];
+                        if(!is_live(scope.value())) {
+                            scope.value(make_value()); 
+                            scope.value().loc(0); //Set location for stack depth
                         }
                     }
                 }
             };
             r_handlers[func_call_id] = r_handlers[func_decl_id];
+
+            // r_handlers[func_decl_id] = [this](Context& ctx){
+            //     standard_gather_from_scope(ctx);
+            // };
 
             x_handlers[make_tokenized_keyword("gather_props")] = [this](Context& ctx){
                 ctx.node(ctx.sub().node());

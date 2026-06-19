@@ -47,10 +47,10 @@ namespace Acorn {
         uint32_t write_file_id = make_tokenized_keyword("write_file");
         uint32_t compile_id = make_tokenized_keyword("compile");
 
-        uint32_t live_qual = add_qualifer("live");
-        uint32_t gatekeeper_qual = add_qualifer("gatekeeper");
-        uint32_t assigned_qual = add_qualifer("assigned");
-        uint32_t constant_qual = add_qualifer("constant");
+        uint32_t live_qual = register_qual_ids("live");
+        uint32_t gatekeeper_qual = register_qual_ids("gatekeeper");
+        uint32_t assigned_qual = register_qual_ids("assigned");
+        uint32_t constant_qual = register_qual_ids("constant");
 
         uint32_t to_string_id = make_tokenized_keyword("to_string");
         uint32_t to_type_id = make_tokenized_keyword("to_type");
@@ -428,6 +428,8 @@ namespace Acorn {
 
         uint32_t precompile_brace = add_token_combo("precompile_brace",'#','#');
         uint32_t comment_brace = add_token_combo("comment_brace",'/','/');
+
+        uint32_t gloabl_qual = add_qual("global");
 
         void init() override {
             register_type("list",ptr_id,sizeof(Ptr));
@@ -962,6 +964,13 @@ namespace Acorn {
                 end_logged_stage();
             };
 
+            // t_handlers[precompiling_id] = [this](Context& ctx){
+            //     Node croot = ctx.node().scopes()[0];
+            //     Col& vt = croot.value_table().col();
+            //     for(int i=0;i<vt.length();i++) {
+            //         ctx.root().value_table().put(((QString&)vt.cells[i]).to_std(),*(Value*)vt[i]);
+            //     }
+            // };
             x_handlers[precompiling_id] = [this](Context& ctx){ctx.node().scopes()[0].owner(ctx.node());}; //To restore visibility
 
             e_handlers.default_function = [this](Context& ctx){
@@ -1143,6 +1152,18 @@ namespace Acorn {
                     ctx.node().value().set((void*)&dead);
                 } else {
                     throw_error("No way to handle value type ",labels[vtype],"!");
+                }
+            };
+
+            x_handlers[to_prefix_id(gloabl_qual)] = [this](Context& ctx){
+                if(ctx.node().type()==var_decl_id) {
+                    value_col vcol(uid,unitdata_col,global_value_table_idx);
+                    vcol.put(ctx.node().name().to_std(),ctx.value());
+                } else if(ctx.node().type()==func_decl_id) {
+                    node_col ncol(uid,unitdata_col,global_node_table_idx);
+                    ncol.put(ctx.node().name().to_std(),ctx.node().scopes()[0]);
+                    value_col vcol(uid,unitdata_col,global_value_table_idx);
+                    vcol.put(ctx.node().name().to_std(),ctx.value());
                 }
             };
 

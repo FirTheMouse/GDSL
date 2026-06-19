@@ -183,14 +183,13 @@ div side_bar {
             }
         }
 
+        
         form_temp("Redberry expenses", "redberry");
         form_temp("New travel expenses", "travel");
         form_temp("WIP form", "wip");
     }
 
     script "
-        document.getElementById('redberry').click();
-
         function toggleSidebar() {
             const sidebar = document.getElementById('side_bar');
             const expanded = sidebar.style.width === '220px';

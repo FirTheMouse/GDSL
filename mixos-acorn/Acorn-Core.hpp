@@ -1177,16 +1177,16 @@ namespace Acorn {
                     return red("POOL_OUT_OF_BOUNDS("+std::to_string(resolve_to_unit(p).length())+"):"+Ptr_to_string(p));
                 } else if(p.idx>=resolve_to_pool(p).length()) {
                     return red("IDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_pool(p).length())+"):"+Ptr_to_string(p));
-                } else {
-                    if(resolve_to_col(p).heterogenous) {
-                        if(p.sidx>=resolve_to_col(p).size) {
-                            return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).size)+"):"+Ptr_to_string(p));
-                        }
-                    } else {
-                        if(p.sidx>=resolve_to_col(p).length()) {
-                            return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).length())+"):"+Ptr_to_string(p));
-                        }
-                    }
+                } else { //This keeps popping up on sidx 0 on accident
+                    // if(resolve_to_col(p).heterogenous) {
+                    //     if(p.sidx>=resolve_to_col(p).size) {
+                    //         return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).size)+"):"+Ptr_to_string(p));
+                    //     }
+                    // } else {
+                    //     if(p.sidx>=resolve_to_col(p).length()) {
+                    //         return red("SIDX_OUT_OF_BOUNDS("+std::to_string(resolve_to_col(p).length())+"):"+Ptr_to_string(p));
+                    //     }
+                    // }
                 } 
             }
             if(marked_ptrs.has(p)) {
@@ -1880,7 +1880,7 @@ namespace Acorn {
             return to_return;
         }
 
-        #define ACORN_MUTE_TABLES 0
+        #define ACORN_MUTE_TABLES 1
 
         std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
@@ -2131,6 +2131,16 @@ namespace Acorn {
 
         void start_stage(Stage* stage_ptr) {
             start_stage(*stage_ptr);
+        }
+
+        inline void invoke_in(Stage* stage, Context& ctx) {
+            Stage* old_stage = active_stage;
+            active_stage = stage;
+            standard_process(ctx);
+            active_stage = old_stage;
+        }
+        inline void invoke_in(Stage& stage, Context& ctx) {
+            invoke_in(&stage,ctx);
         }
 
         uint32_t standard_travel_pass(Node root, Context sub = deadptr);

@@ -482,6 +482,7 @@ namespace Acorn {
         }
 
         map<char,bool> registered_opperators;
+        list<uint32_t>  registered_opperator_ids;
         size_t add_binary_operator(char c, const std::string& f, int lbp, int rbp, int use_id = -1) {
             size_t id = use_id;
             if(id==-1) {
@@ -489,6 +490,7 @@ namespace Acorn {
             }
             set_binding_powers(id,lbp,rbp);
             registered_opperators[c] = true;
+            registered_opperator_ids << id;
             size_t decl_id = reg_id(f+"_decl");
             size_t unary_id = reg_id(f+"_unary");
 
@@ -1180,6 +1182,7 @@ namespace Acorn {
                     uint32_t elem_size = resolve_to_col(dataptr).element_size;
                     list<uint8_t> temp(elem_size);
                     if(resolve_to_col(dataptr).empty()) {
+                        if(resolve_to_col(dataptr).element_size == 0) continue; //Skip uninitialized cols
                         resolve_to_col(dataptr).push_default();
                     }
                     memcpy(temp.data(), resolve_to_col(dataptr).get((uint32_t)0), elem_size);
@@ -1334,6 +1337,7 @@ namespace Acorn {
             x_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
+                fire_quals(ctx,ctx.node().value());
                 Node scope = ctx.node().scopes()[0];
                 if(!is_live(scope.value())) {
                     scope.value(make_value()); 
@@ -1345,6 +1349,7 @@ namespace Acorn {
             };
             r_handlers[func_call_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
+                fire_quals(ctx,ctx.node().value());
                 sync_args(ctx);
                 //instantiate_template(ctx.node(),ctx.node().value().type_scope().owner(),ctx);
             };
@@ -1360,6 +1365,7 @@ namespace Acorn {
                     temps << snap;
                 }
                 DEBUG_ONLY(if(ERROR_FLAG) {log(red("ABORTING FUNCTION CALL BEFORE DESCENT")); return;})
+                //print("RUNNING: ",node_to_string(ctx.node()));
                 int stack_depth = descend_call_scope(ctx);
                 DEBUG_ONLY(if(stack_depth>500) {throw_error("Stack overflow on function call: ",node_info(ctx.node())); return;})
                 for(int i=0;i<ctx.node().children().length();i++) {

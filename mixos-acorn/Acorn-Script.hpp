@@ -430,6 +430,7 @@ namespace Acorn {
         uint32_t comment_brace = add_token_combo("comment_brace",'/','/');
 
         uint32_t gloabl_qual = add_qual("global");
+        uint32_t static_qual = add_qual("static");
 
         void init() override {
             register_type("list",ptr_id,sizeof(Ptr));

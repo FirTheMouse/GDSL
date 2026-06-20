@@ -1,65 +1,18 @@
-TYPE 15 redberry [datahsheet]:
-     0      |      1      |      2      | 
------------<|>-----------<|>-----------<|>
- 0 : 23|0|0 |  0 : 23|1|0 |  0 : 23|2|0 | 
-===========/ \===========/ \===========/ \
+struct Session : Ptr {
+     Session() {}
+     Session(Ptr p) : Ptr(p) {}
 
+     inline Ptr&         username_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+0); }
+     inline Col&         username_col(){return resolve_to_col(username_ptr());}
+     inline void         username(Ptr p){resolve_to_col(*this).qset(sidx+0, (void*)&p, 32); }
 
-TYPE 16  [metadatasheet]:
-    0      |     1      |     2      | 
-----------<|>----------<|>----------<|>
- 0 : 0|0|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-==========/ \==========/ \==========/ \
+     inline Ptr&         userpath_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+32); }
+     inline Col&         userpath_col(){return resolve_to_col(userpath_ptr());}
+     inline void         userpath(Ptr p){resolve_to_col(*this).qset(sidx+32, (void*)&p, 32); }
 
+     inline int          timestamp() {return *(int*)resolve_to_col(*this).qget(sidx+64); }
+     inline void         timestamp(int t){resolve_to_col(*this).qset(sidx+64, (void*)&t, 4); }
 
-TYPE 17  [notesheet]:
-    0      |     1      |     2      | 
-----------<|>----------<|>----------<|>
- 0 : 0|0|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-==========/ \==========/ \==========/ \
-
-
-TYPE 18  [scriptsheet]:
-    0      |     1      |     2      | 
-----------<|>----------<|>----------<|>
- 0 : 0|0|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-==========/ \==========/ \==========/ \
-
-
-TYPE 19  [formsheet]:
-     0      |     1      |     2      | 
------------<|>----------<|>----------<|>
- 0 : 23|3|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-===========/ \==========/ \==========/ \
-
-
-TYPE 20  [metadatasheet]:
-    0      |     1      |     2      | 
-----------<|>----------<|>----------<|>
- 0 : 0|0|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-==========/ \==========/ \==========/ \
-
-
-TYPE 21  [notesheet]:
-    0      |     1      |     2      | 
-----------<|>----------<|>----------<|>
- 0 : 0|0|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-==========/ \==========/ \==========/ \
-
-
-TYPE 22  [scriptsheet]:
-    0      |     1      |     2      | 
-----------<|>----------<|>----------<|>
- 0 : 0|0|0 |  0 : 0|0|0 |  0 : 0|0|0 | 
-==========/ \==========/ \==========/ \
-
-
-TYPE 23  [storesheet]:
-  0    |   1    |   2    |       3        | 
-------<|>------<|>------<|>--------------<|>
- 0 : 1 |  0 : 2 |  0 : 3 |  0 : [opt] 5   | 
-  X    |   X    |   X    |  1 : [nopt] 8  | 
-  X    |   X    |   X    |  2 : [bopt] 12 | 
-======/ \======/ \======/ \==============/ \
-
-
+     inline int          ip()        {return *(int*)resolve_to_col(*this).qget(sidx+68); }
+     inline void         ip(int t)   {resolve_to_col(*this).qset(sidx+68, (void*)&t, 4); }
+};

@@ -905,3 +905,54 @@ int nid = load_sheet("fsa.twg");
 save_sheet(nid,"fsa.twg");
 int nnid = load_sheet("fsa.twg");
 print("Loaded ",nnid," successfully");
+
+
+0.6.7 Overhaul testing:
+
+
+##
+    register root_path;
+    "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+root_path {
+    string nu_color(int selector) {
+        if(selector==0) {
+            return "blue";
+        } 
+        if(selector==1) {
+            return "yellow";
+        }
+        if(selector==2) {
+            return "white";
+        }
+        return "black";
+    }
+
+    inlined test_func {
+        "color" : "purple";
+    }
+
+    div box {
+        "background-color" : "blue";
+        text "You should see this thrice";
+    }
+
+    div root(string label, int selector) {
+        div {
+            "background-color" : "red";
+            text label {
+                "color" : nu_color(selector);
+            }
+        }
+    }
+
+    Ptr string files = list_files_in_directory("mixos-acorn/web/thistle/users/Fir/sheets");
+    for(int i=0;i<files.length;i++) {
+        root(files.get(i),i);
+    }
+}

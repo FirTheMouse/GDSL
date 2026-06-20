@@ -7,38 +7,22 @@
     }
 ##
 
+
+inlined red_background {
+    "background-color" : "red";
+}
+
 root_path {
-    string nu_color(int selector) {
-        if(selector==0) {
-            return "blue";
-        } 
-        if(selector==1) {
-            return "yellow";
+
+    div slotted(div tester) {
+        text "words" {
+            "color" : "blue";
         }
+        tester;
     }
 
-    inlined test_func {
-        "color" : "purple";
-    }
-
-    div box {
-        "background-color" : "blue";
-        text "You should see this thrice";
-    }
-
-    div root(string label, int selector) {
-        div {
-            "background-color" : "red";
-            text label {
-                "color" : nu_color(selector);
-            }
-        }
-    }
-
-    root("Words",1);
-    root("Wub",0);
-
-    for(int i=0;i<3;i++) {
-        box;
+    div {
+       slotted();
+       slotted();
     }
 }

@@ -25,6 +25,30 @@ namespace Acorn {
             return deadptr;
         }
 
+        Ptr resolve_ticket_by_ptr(Ptr p, Col& col, uint32_t index, uint32_t width, uint32_t size, uint32_t type) {
+            if(is_live(p)) {
+                return p;
+            } else {
+                p = get_ticket(data_store_id,size,type); 
+                col.qset(index, (void*)&p, width);
+                return p;
+            }
+        }
+
+
+        Ptr resolve_ticket(Node n,  uint32_t size, uint32_t type) {
+            if(is_live(n.value())) {
+                if(is_live(*(Ptr*)n.value().get())) {
+                    return *(Ptr*)n.value().get();
+                } else {
+                    Ptr p = get_ticket(data_store_id,size,type); 
+                    n.value().set((void*)&p);
+                    return p;
+                }
+            }
+            return deadptr;
+        }
+
         uint32_t test_id = reg_id("TEST");
         Stage& n_handlers = reg_stage("naming"); 
         
@@ -230,13 +254,9 @@ namespace Acorn {
 
         uint32_t string_equals_id = overload_type(string_id,"=string","STRING_EQUALS",deadptr,[this](Context& ctx){
             standard_sub_process(ctx);
-            string l(*(Ptr*)ctx.node().children()[0].value().get());
-            if(!is_live(l)) {Ptr ticket = get_ticket(name_store_id,1,char_id); l = ticket; ctx.node().children()[0].value().set((void*)&ticket);}
-            string r(*(Ptr*)ctx.node().children()[1].value().get());
-            l.col().clear();
-            for(int i=0;i<r.length();i++) {
-                l.push(r.at(i));
-            }
+            string l = resolve_string_ticket(ctx.node().children()[0]);
+            string r = resolve_string_ticket(ctx.node().children()[1]);
+            l = r;
         });
 
         uint32_t string_append_id = overload_type(string_id,"+string","STRING_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){

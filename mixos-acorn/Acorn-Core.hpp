@@ -472,6 +472,7 @@ namespace Acorn {
     uint32_t context_sub_offset = 0;
     uint32_t context_source_offset = 0;
     uint32_t context_pass_offset = 0;
+    uint32_t context_parent_offset = 0;
 
     uint32_t node_total_size = 0;
     uint32_t value_total_size = 0;
@@ -568,6 +569,7 @@ namespace Acorn {
         context_sub_offset = ctemp.add_prop(context_id,sizeof(Ptr),"sub");
         context_source_offset = ctemp.add_prop(string_id,sizeof(Ptr),"source",char_id,1);
         context_pass_offset = ctemp.add_prop(int_id,4,"pass");
+        context_parent_offset = ctemp.add_prop(context_id,sizeof(Ptr),"parent");
         context_total_size = ctemp.total_size;
         return at;
     }
@@ -664,10 +666,11 @@ namespace Acorn {
             if(!is_live(dataptr)) {
                 dataptr = init_data();
             }
-            // print("SET AT: ",Ptr_as_string(dataptr));
-            // print("FROM: ",tag_to_str(types[dataptr.pool][dataptr.idx].tag,types[dataptr.pool][dataptr.idx].get(dataptr.sidx)));
-            // print("TO: ",tag_to_str(types[dataptr.pool][dataptr.idx].tag,data));
-            resolve_to_col(dataptr).set(dataptr.sidx, data);
+            if(resolve_to_col(dataptr).heterogenous) {
+                resolve_to_col(dataptr).qset(dataptr.sidx, data, size());
+            } else {
+                resolve_to_col(dataptr).set(dataptr.sidx, data);
+            }
         }
     
         inline void* get() {
@@ -889,6 +892,10 @@ namespace Acorn {
         inline Ptr&     sub_ptr()            {DEBUG_ONLY(if(safety_check("context:sub:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_sub_offset);}
         inline Context  sub()                {return Context(sub_ptr());}
         inline void     sub(Ptr p)           {DEBUG_ONLY(if(safety_check("context:sub:set")){return;}) resolve_to_col(*this).qset(context_sub_offset,(void*)&p,sizeof(Ptr));}
+
+        inline Ptr&     parent_ptr()         {DEBUG_ONLY(if(safety_check("context:parent:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_parent_offset);}
+        inline Context  parent()             {return Context(parent_ptr());}
+        inline void     parent(Ptr p)        {DEBUG_ONLY(if(safety_check("context:parent:set")){return;}) resolve_to_col(*this).qset(context_parent_offset,(void*)&p,sizeof(Ptr));}
     
         inline Ptr&     source_ptr()         {DEBUG_ONLY(if(safety_check("context:source:ptr")){return dead_ref;}) return *(Ptr*)resolve_to_col(*this).qget(context_source_offset);}
         inline Col&     source_col()         {Ptr& p = source_ptr(); return resolve_to_col(p);}
@@ -1253,8 +1260,7 @@ namespace Acorn {
             std::string pad = "     ";
             s+="struct "+name+" : Ptr {\n";
             s += pad+name+"() {}\n";
-            s += pad+name+"(uint32_t p, uint32_t i, uint32_t s) { pool = p; idx = i; sidx = s; }\n";
-            s += pad+name+"(Ptr p) { pool = p.pool; idx = p.idx; sidx = p.sidx; }\n";
+            s += pad+name+"(Ptr p) : Ptr(p) {}\n";
             for(int i=0;i<l.offsets.length();i++) {
                 s+="\n";
                 std::string type = labels[l.tags[i]];
@@ -1262,7 +1268,8 @@ namespace Acorn {
                 uint32_t offset = l.offsets[i];
                 uint32_t size = l.sizes[i];
 
-                bool is_compound = layouts.hasKey(l.tags[i]);
+                bool is_compound = false; //Not sure what this was meant to do 
+                //layouts.hasKey(l.tags[i]);
                 bool is_ptr = l.tags[i]==ptr_id||l.tags[i]==string_id;
 
                 if(is_ptr) {
@@ -1446,7 +1453,7 @@ namespace Acorn {
         
             return v;
         }
-        Context make_context(Ptr result = deadptr, Ptr source = deadptr, uint32_t pass = 0) {
+        Context make_context(Ptr result = deadptr, Ptr source = deadptr, uint32_t pass = 0, Context parent = deadptr) {
             Context c;
             c.pool = context_type_id;
             c.idx = push_column(types[context_type_id], context_total_size, context_id);
@@ -1465,6 +1472,7 @@ namespace Acorn {
             col.qset(context_root_offset,   (void*)&dead_node,  sizeof(Ptr));
             col.qset(context_value_offset,  (void*)&dead_value, sizeof(Ptr));
             col.qset(context_sub_offset,    (void*)&dead_node,  sizeof(Ptr));
+            col.qset(context_parent_offset, (void*)&parent,  sizeof(Ptr));
         
             if(!is_live(result)) result = get_ticket(children_store_id, sizeof(Ptr), ptr_id);
             col.qset(context_result_offset, (void*)&result, sizeof(Ptr));

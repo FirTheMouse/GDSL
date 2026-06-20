@@ -178,8 +178,18 @@
     //save_sheet(create_sheet,"redberry");
 ##
 
+global Session session;
+//This is a temporary kludge until I iron out how SESSION cries should shift a unit rather than starting a new one so we don't need this check
+getsession;
+if(session.username.length==0) {
+    print("Starting a guest unit");
+} else {
+    print("Starting an authourized unit");
+}
+
+
 print("Compiling");
-Node twig = compile(read_file("mixos-acorn/web/test.twg"));
+Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
 print("Compiled");
 Node page = twig.children.get(0);
 
@@ -187,6 +197,10 @@ while(0<1) {
     int cfd = unit_index;
     if(cfd!=0) {
         print("Unit ",unit_uid," recived request ",cfd);
+        if(session.username.length!=0) {
+            getsession;
+            print("Unit retrived its session, username: ",session.username);
+        }
         string req = unit_label;
         //print("Req:\n",req);
 

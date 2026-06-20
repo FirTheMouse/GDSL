@@ -114,6 +114,27 @@ namespace Acorn {
             return val.type();
         }
 
+
+        void register_type_initilizers(uint32_t prefix_type) {
+            r_handlers[prefix_type] = [this](Context& ctx){
+                if(ctx.value().size()==0&&layouts.hasKey(ctx.value().type())) {
+                    ctx.value().size(layouts.get(ctx.value().type()).total_size);
+                }
+            };
+            x_handlers[prefix_type] = [this](Context& ctx){
+                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                    ctx.value().data_col().push_default();
+                    ctx.value().data_col().heterogenous = true;
+                }
+            }; 
+        }
+        uint32_t make_type(const std::string& f, uint32_t size = 0) {
+            Value val = make_type_value(f,size);
+            keywords.put(f,val);
+            register_type_initilizers(to_prefix_id(val.type()));
+            return val.type();
+        }
+
         void register_type(const std::string& label, uint32_t type, uint32_t size) {
             Value val = make_value(type,size); val.sub_type(type);
             add_type_stamping_handler(type);
@@ -778,7 +799,7 @@ namespace Acorn {
             };
         }
 
-        void resolve_node_literal(Context& ctx, void* val, uint32_t tag, uint32_t size) {
+    void resolve_node_literal(Context& ctx, void* val, uint32_t tag, uint32_t size) {
             standard_sub_process(ctx);
             ctx.node().type(literal_id);
             Value value = make_value(tag,size);

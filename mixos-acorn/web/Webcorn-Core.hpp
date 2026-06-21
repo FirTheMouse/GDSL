@@ -67,6 +67,12 @@ namespace Acorn {
         }
         uint32_t session_col = init_session_type();
 
+        uint32_t datasheet_id = reg_id("datahsheet");
+        uint32_t metadatasheet_id = reg_id("metadatasheet");
+        uint32_t notesheet_id = reg_id("notesheet");
+        uint32_t scriptsheet_id = reg_id("scriptsheet");
+        uint32_t storesheet_id = reg_id("storesheet");
+        uint32_t formsheet_id = reg_id("formsheet");
 
         struct Session : Ptr {
             Session() {}
@@ -80,7 +86,7 @@ namespace Acorn {
             inline Ptr&         userpath_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+32); }
             inline Col&         userpath_col(){return resolve_to_col(userpath_ptr());}
             inline void         userpath(Ptr p){resolve_to_col(*this).qset(sidx+32, (void*)&p, 32); }
-            inline string       userpath() {return (string&)username_ptr();}
+            inline string       userpath() {return (string&)userpath_ptr();}
        
             inline int          timestamp() {return *(int*)resolve_to_col(*this).qget(sidx+64); }
             inline void         timestamp(int t){resolve_to_col(*this).qset(sidx+64, (void*)&t, 4); }
@@ -189,6 +195,7 @@ namespace Acorn {
             if(username=="employee" && password=="pass123") role = "employee";
             if(username=="manager"  && password=="pass456") role = "manager";
             if(username=="Fir" && password!="NULL") role = "admin";
+            if(username=="Reed" && password!="NULL") role = "admin";
 
             print(yellow("Validating a login")," ",username," ",password);
         
@@ -196,10 +203,11 @@ namespace Acorn {
                 cry("SESSION:"+username);
                 std::string token = types.label.to_std();
 
-                ctx.sub().source() = "HTTP/1.1 200 OK\r\n"
+                ctx.sub().source() = "HTTP/1.1 302 Found\r\n"
                     "Set-Cookie: session=" + token + "; HttpOnly\r\n"
-                    "Content-Length: " + std::to_string(role.length()) + "\r\n"
-                    "\r\n" + role;
+                    "Location: /\r\n"
+                    "Content-Length: 0\r\n"
+                    "\r\n";
             } else {
                 std::string body = "invalid";
                 ctx.sub().source() = "HTTP/1.1 200 OK\r\n"
@@ -208,12 +216,6 @@ namespace Acorn {
                     "\r\n" + body;
             }
         });
-
-        uint32_t get_userpath = add_function("get_userpath",[this](Context& ctx){
-            string output = resolve_string_ticket(ctx.node());
-            cry("GETPATH:"+std::to_string(uid));
-            output = types.label.to_std();
-        },sizeof(Ptr),string_id);
 
         void copy_session(Session s, Session o) {
             if(is_live(o.username_ptr())) { 
@@ -289,12 +291,6 @@ namespace Acorn {
             return sheetpool;
         };
 
-        uint32_t getsession_id = add_function("getsession",[this](Context& ctx){
-            std::string oldlabel = types.label.to_std();
-            cry("GETSESSION");
-            types.label = oldlabel;
-        });
-
         void manage_sessions(const std::string& unitcode) {
             while(true) {
                 g_ptr<Webcorn_Core> unit = nullptr;
@@ -329,54 +325,41 @@ namespace Acorn {
                         } else {
                             ColCol& sessions = types[session_col];
                             std::string token = "";
+                            print(green("Logging in unit "+std::to_string(unit->uid)+" for "+arg));
+                            uint32_t seshid = 0;
+                            Session o;
                             if(sessions.hasKey(arg)) {
-                                uint32_t idx = sessions.getidx(arg.data(),arg.length());
-                                token = sessions[idx].label.to_std();
+                                uint32_t seshid = sessions.getidx(arg.data(),arg.length());
+                                token = sessions[seshid].label.to_std();
+                                Ptr optr(&types,session_col,seshid,0);
+                                o = optr;
                                 print("Retrived token ",token," for ",arg);
                             } else {
                                 token = generate_token();
-                                g_ptr<Server> new_server = make<Server>();
-                                new_server->thread = make<Thread>();
-                                g_ptr<Webcorn_Core> webcorn = make_unit<Webcorn_Core>();
-                                new_server->unit = webcorn->uid;
-                                new_server->sethash(token);
-                                new_server->authourized = true;
-                                {
-                                    std::lock_guard<std::mutex> lock(servers_mutex);
-                                    servers << new_server;
-                                }
-                                uint16_t newid = webcorn->uid;
-                                print("Dispatched a new server for user ",new_server->gethash()," token ",token," unit ",newid);
-                                new_server->thread->run_blocking([webcorn, unitcode]() mutable {
-                                    webcorn->run(webcorn->process(unitcode));
-                                });
-
+                                distributed_tokens.put(token, true);
                                 Col newsession;
                                 newsession.label = token;
-                                newsession.index = newid;
+                                newsession.index = server->unit;
                                 newsession.heterogenous = true;
                                 _layout& l = layouts.get(session_id);
                                 newsession.tag = session_id; newsession.element_size = l.total_size;
                                 newsession.push_default();
-                                uint32_t seshid = sessions.length();
+                                seshid = sessions.length();
                                 sessions.put(arg,newsession); //Do not use the sessions col refrence after this point
-
                                 Ptr optr(&types,session_col,seshid,0);
-                                Session o = optr;
+                                o = optr;
                                 o.username(get_ticket(name_store_id,1,char_id));
                                 o.username() = arg;
+                                o.userpath(get_ticket(name_store_id,1,char_id));
+                                o.userpath() = "mixos-acorn/web/thistle/users/"+arg+"/";
                                 uint32_t ts = (uint32_t)std::time(nullptr);
                                 o.timestamp(ts);
-
-                                new_server->session = o; //Give it its session
-
-                                distributed_tokens.put(token,true);
+                                server->authourized = true;
                             }
+                            server->session = o; //Give it its session
                             unit->types.label = token;
-                        }
-                    } else if(cmd=="GETSESSION") {
-                        if(server->authourized) {
-                            Session o = server->session;
+                            server->sethash(token);
+
                             ColCol& unitdata = unit->types[unitdata_col];
                             value_col unit_global_values(unit->uid, unitdata_col, global_value_table_idx);
                             if(unit_global_values.hasKey("session")) {
@@ -385,10 +368,9 @@ namespace Acorn {
                                 unit->copy_session(s,o);
                                 print("Session coppied to unit ",unit->uid);
                             }
-                        } else {
-                            print(yellow("webcorn:manage_sessions:GETSESSION server is not authourized, please log in"));
-                            unit->types.live = true;
+                            distributed_tokens.put(token,true);
                         }
+                        unit->types.live = true;
                     } else if(cmd=="FILE") {
                         if(session_col==0) {
                             print(red("webcorn:manage_sessions:FILE no valid session column in the main unit! Ensure a session manager was started"));
@@ -591,6 +573,25 @@ namespace Acorn {
             return is_structural[name] || name.substr(0,5) == "data-";
         }
 
+        std::string html_escape_string(const std::string& content) {
+            std::string escaped;
+            int space_count = 0;
+            for(char c : content) {
+                switch(c) {
+                    case '"': escaped+="&quot;"; break;
+                    default:   escaped += c; break;
+                }
+            }
+            return escaped;
+        }
+        uint32_t escape_str_id = add_function("escape_str",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string content = resolve_string_ticket(ctx.node().children()[0]);
+            std::string escaped = html_escape_string(content.to_std());
+            string output = resolve_string_ticket(ctx.node());
+            output = escaped;
+        },sizeof(Ptr),string_id);
+
         void emit_inline_html(Context& ctx) {
             if(ctx.node().mute()) return;
             std::string s = "";
@@ -764,15 +765,9 @@ namespace Acorn {
             }
         };
 
-        uint32_t datasheet_id = reg_id("datahsheet");
-        uint32_t metadatasheet_id = reg_id("metadatasheet");
-        uint32_t notesheet_id = reg_id("notesheet");
-        uint32_t scriptsheet_id = reg_id("scriptsheet");
-        uint32_t storesheet_id = reg_id("storesheet");
-        uint32_t formsheet_id = reg_id("formsheet");
-
         uint32_t find_sheet_pools_start(uint32_t sheetpool) {
             while(types[sheetpool].tag != datasheet_id) {
+                print(sheetpool,": ",labels[types[sheetpool].tag]);
                 if(sheetpool == 0) {
                     print(red("webcorn:find_sheet_pools_start unable to find the datasheet")); 
                     return 0;
@@ -1553,6 +1548,7 @@ namespace Acorn {
             ctx.node().value().set((void*)&p);
         },sizeof(Ptr),ptr_id);
 
+
         void init() override {
             set_binding_powers(colon_id,4,6);
             n_handlers[colon_id] = [this](Context& ctx){
@@ -1563,6 +1559,59 @@ namespace Acorn {
             register_type("inlined",inlined_id,0);
             register_type("invisible",invisible_id,0);
 
+
+            add_function("plen",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                Ptr pptr(&types,pool,0,0);
+                uint32_t plen = resolve_to_pool(pptr).length();
+                ctx.node().value().set((void*)&plen);
+            },4,int_id);
+
+            add_function("clen",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t col = *(int*)ctx.node().children()[1].value().get();
+                Ptr cptr(&types,pool,col,0);
+                uint32_t clen = resolve_to_col(cptr).length();
+                ctx.node().value().set((void*)&clen);
+            },4,int_id);
+
+            add_function("clabel",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t col = *(int*)ctx.node().children()[1].value().get();
+                Ptr cptr(&types,pool,col,0);
+                string output = resolve_string_ticket(ctx.node());
+                output = resolve_to_col(cptr).label.to_std();
+            },sizeof(Ptr),string_id);
+
+            add_function("resolve_as_Ptr",[this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node().value().set(resolve_ptr(*(Ptr*)ctx.node().children()[0].value().get()));
+            },sizeof(Ptr),ptr_id);
+
+            add_function("makePtr3",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().value().get();
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t idx = *(int*)ctx.node().children()[1].value().get();
+                uint32_t sidx = *(int*)ctx.node().children()[2].value().get();
+                p.pool = pool; p.idx = idx; p.sidx = sidx;
+                p.cachelevel = 3; p.cache = &types;
+            },sizeof(Ptr),ptr_id);
+
+            add_function("value_as_string",[this](Context& ctx){
+                standard_sub_process(ctx);
+                string output = resolve_string_ticket(ctx.node());
+                output = value_as_string(*(Ptr*)ctx.node().children()[0].value().get());
+            },sizeof(Ptr),string_id);
+
+            add_function("is_live",[this](Context& ctx){
+                standard_sub_process(ctx);
+                bool b = is_live(*(Ptr*)ctx.node().children()[0].value().get());
+                ctx.node().value().set((void*)&b);
+            },1,bool_id);
 
 
             html_handlers.default_function = [this](Context& ctx) {

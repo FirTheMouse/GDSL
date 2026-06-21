@@ -5,6 +5,19 @@ function post(body) {
     })
 }
 
+function run(...args) {
+    const body = args.join('').replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'");
+    fetch(window.location.pathname, {
+        method: "RUN",
+        body: body
+    })
+}
+
 function fragthree(target, instruction, content) {
     fetch(window.location.pathname, {
         method: "FRAG",

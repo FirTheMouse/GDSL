@@ -20,9 +20,6 @@
 
     register input;
     "input" {
-        in naming {
-            ctx.node.children.push(ctx.result.take(ctx.index+1));
-        }
         in htmlemiting {
             ctx.source.append("<input");
             emit_inline_html;
@@ -165,7 +162,6 @@
     register table;
     "table" {
         in htmlemiting {
-            execut(ctx.node.children.get(0));
             ctx.source.append("<table");
             emit_inline_html;
             ctx.source.append(">");
@@ -174,19 +170,35 @@
         }
     }
 
+    register row;
+    "row" {
+        in htmlemiting {
+            ctx.source.append("<tr");
+            emit_inline_html;
+            ctx.source.append(">");
+            emit_contents;
+            ctx.source.append("</tr>");
+        }
+    }
+
+    register column;
+    "column" {
+        in htmlemiting {
+            ctx.source.append("<td");
+            emit_inline_html;
+            ctx.source.append(">");
+            emit_contents;
+            ctx.source.append("</td>");
+        }
+    }
+
     //save_sheet(create_sheet,"wip");
     //save_sheet(create_sheet,"redberry");
 ##
 
 global Session session;
-//This is a temporary kludge until I iron out how SESSION cries should shift a unit rather than starting a new one so we don't need this check
-getsession;
-if(session.username.length==0) {
-    print("Starting a guest unit");
-} else {
-    print("Starting an authourized unit");
-}
 
+print("Session ip: ",session.ip);
 
 print("Compiling");
 Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
@@ -197,10 +209,6 @@ while(0<1) {
     int cfd = unit_index;
     if(cfd!=0) {
         print("Unit ",unit_uid," recived request ",cfd);
-        if(session.username.length!=0) {
-            getsession;
-            print("Unit retrived its session, username: ",session.username);
-        }
         string req = unit_label;
         //print("Req:\n",req);
 
@@ -249,6 +257,16 @@ while(0<1) {
                 ctx.source = src;
                 frag page;
                 response_body.append(ctx.source);
+            }
+        }
+
+        if(method=="RUN") {
+            int body_start = req.find("\r\n\r\n");
+            if(body_start>=0) {
+                string src = req.slice(body_start+4,req.length);
+                print("Running:\n",src);
+                Node root = compile(src);
+                execut root;
             }
         }
 

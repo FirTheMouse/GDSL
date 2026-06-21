@@ -8,7 +8,6 @@
 #include <atomic>
 #include <mutex>
 #include <deque>
-#include <thread>
 #include <future>
 #include <functional>
 #include "../util/util.hpp"

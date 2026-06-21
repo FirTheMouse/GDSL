@@ -97,6 +97,7 @@ namespace Acorn {
             ctx.state(3);
         });
 
+        uint32_t suspend_unit_id = add_function("suspend_unit",[this](Context& ctx){print("Suspended unit"); suspend();});
 
         uint32_t ptr_get_id = overload_type(ptr_id,".\"get\"","PTR_GET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
             standard_sub_process(ctx);
@@ -260,14 +261,11 @@ namespace Acorn {
         });
 
         uint32_t string_append_id = overload_type(string_id,"+string","STRING_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
-            string l(*(Ptr*)ctx.node().children()[0].value().get());
-            string r(*(Ptr*)ctx.node().children()[1].value().get());
-            if(!is_live(ctx.node().value().data_ptr())||!is_live(*(Ptr*)ctx.node().value().get())) {
-                Ptr ticket = get_ticket(name_store_id,1,char_id); ctx.node().value().set((void*)&ticket);
-            }
-            string o(*(Ptr*)ctx.node().value().get());
-            o.col().clear();
-            o.push(l.to_std()); o.push(r.to_std());
+            standard_sub_process(ctx);
+            string l = resolve_string_ticket(ctx.node().children()[0]);
+            string r = resolve_string_ticket(ctx.node().children()[1]);
+            string output = resolve_string_ticket(ctx.node());
+            output.col().clear(); output.push(l.to_std()); output.push(r.to_std());
         });
 
         uint32_t string_func_append_id = overload_type(string_id,".\"append\"","STRING_FUNC_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
@@ -1159,7 +1157,9 @@ namespace Acorn {
                 } else if(vtype==float_id) {
                     float f = std::stof(name); ctx.node().value().set((void*)&f);
                 } else if(vtype==ptr_id) {
-                    Ptr p = string_to_Ptr(name); ctx.node().value().set((void*)&p);
+                    Ptr p = string_to_Ptr(name); 
+                    if(p.cachelevel==3) p.cache = &types; //Add fillins for other caches somehow later
+                    ctx.node().value().set((void*)&p);
                 } else if(vtype==string_id) { //This is a race condition
                     Ptr p = get_ticket(name_store_id,1,char_id); string s(p); s = name; ctx.node().value().set((void*)&p);
                 } else if(vtype==bool_id) {

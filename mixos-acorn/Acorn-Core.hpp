@@ -1,5 +1,6 @@
 #pragma once
 
+#include <thread>
 #include "../core/Golden.hpp"
 #include "../mixos-acorn/util/Acorn-Type.hpp"
 #include "../ext/g_lib/core/q_object.hpp"
@@ -1030,8 +1031,8 @@ namespace Acorn {
         Stage* active_stage;
         list<Watcher> watchers;
 
-        Context stashed_ctx = deadptr;
-        uint32_t stashed_idx = 0;
+        bool running = true; 
+        Context unit_ctx = deadptr;
 
         uint16_t derive_uid(bool init_layouts) {
             DEBUG_ONLY(
@@ -2154,8 +2155,14 @@ namespace Acorn {
         uint32_t standard_travel_pass(Node root, Context sub = deadptr);
         uint32_t resume_travel_pass(Context ctx);
 
+        void suspend() {running = false;}
+        void resume() {running = true;}
+
         inline void standard_process(Context& ctx, uint32_t type) {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.prefix) w.prefix(ctx);})
+            while(!running) {
+                std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+            }
             active_stage->run(type)(ctx);
             DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
         }
@@ -2476,24 +2483,27 @@ namespace Acorn {
         DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
         node_col children = root.children();
         newline("Travel pass over "+std::to_string(children.length())+" nodes");
-        Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr,travel_pass);
-        int& i = ctx.index();
+        Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr,travel_pass,unit_ctx);
         ctx.root(root);
         ctx.sub(sub);
-        while(i < ctx.result().length()) {
-            ctx.node(ctx.result().get(i));
-            standard_process(ctx);
-            Node nleft = ctx.result().get(i);
-            ctx.left(nleft);
+        unit_ctx = ctx;
+        while(unit_ctx.index() < unit_ctx.result().length()) {
+            unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
+            standard_process(unit_ctx);
+            Node nleft = unit_ctx.result().get(unit_ctx.index());
+            unit_ctx.left(nleft);
             DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
-            if(ctx.state()>0) { //This is the return/break process
+            if(unit_ctx.state()>0) { //This is the return/break process
                 endline();
+                uint32_t state = unit_ctx.state();
+                unit_ctx = unit_ctx.parent();
                 deep_recycle_context(ctx);
-                return ctx.state();
+                return state;
             }
-            i++;
+            unit_ctx.index()++;
         }
         endline();
+        unit_ctx = unit_ctx.parent();
         deep_recycle_context(ctx);
         return 0;
     }

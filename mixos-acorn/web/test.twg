@@ -1,4 +1,6 @@
 ##
+    global int sheetpool;
+    sheetpool = 3;
     register root_path;
     "root_path" {
         in htmlemiting {
@@ -8,21 +10,11 @@
 ##
 
 
-inlined red_background {
-    "background-color" : "red";
-}
-
 root_path {
+    script read_file("mixos-acorn/web/thistle/thistle.js");
+    print("Sheetpool: ",sheetpool);
 
-    div slotted(div tester) {
-        text "words" {
-            "color" : "blue";
-        }
-        tester;
-    }
-
-    div {
-       slotted();
-       slotted();
+    text "testing" {
+        "onclick" : escape_str("run('print(\"Hello from Acorn_script\"); print(\"Sheetpool: \",sheetpool);')");
     }
 }

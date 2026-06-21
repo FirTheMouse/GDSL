@@ -37,19 +37,14 @@ function cell_post(input, label, col, row, target) {
 }
 
 function postForm(fields) {
-    const body = Object.entries(fields)
-        .map(([k,v]) => k + '=' + encodeURIComponent(v))
-        .join('&');
-    fetch(window.location.pathname, {
-        method: "POST",
-        body: body
-    })
-    .then(res => res.text())
-    .then(role => {
-        if(role === 'invalid') {
-            // show error message on the login page
-        } else {
-            window.location.href = '/' + role;
-        }
-    })
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = window.location.pathname;
+    Object.entries(fields).forEach(([k,v]) => {
+        const input = document.createElement('input');
+        input.name = k; input.value = v;
+        form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
 }

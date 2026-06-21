@@ -122,7 +122,7 @@ namespace Acorn {
                 }
             };
             x_handlers[prefix_type] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                if(is_live(ctx.value())&&ctx.value().quals()[0].type()!=ptr_id) { //Beause Ptrs store subtypes in their quals
                     ctx.value().data_col().push_default();
                     ctx.value().data_col().heterogenous = true;
                 }
@@ -809,7 +809,7 @@ namespace Acorn {
 
         void init_literals() {
             value_printers[object_id] = [this](Context& ctx) {ctx.source(Ptr_as_string(ctx.value().data_ptr()));};
-            value_printers[ptr_id] = [this](Context& ctx) {ctx.source(Ptr_as_string(ctx.value().data_ptr()));};
+            value_printers[ptr_id] = [this](Context& ctx) {Ptr p = *(Ptr*)ctx.value().get(); ctx.source(Ptr_to_string(p,p.cachelevel));};
             value_printers[float_id] = [](Context& ctx) {ctx.source(std::to_string(*(float*)ctx.value().get()));};
             value_printers[int_id] = [](Context& ctx) {void* p = ctx.value().get(); DEBUG_ONLY(if(ERROR_FLAG) {return;}) ctx.source(std::to_string(*(int*)p));};
             value_printers[char_id] = [](Context& ctx) {ctx.source(std::string(1,*(char*)ctx.value().get()));};
@@ -1577,6 +1577,45 @@ namespace Acorn {
                         case 't':  ctx.node().name().push('\t'); break;
                         case 'r':  ctx.node().name().push('\r'); break;
                         case '"':  ctx.node().name().push('"');  break;
+                        case '\\': ctx.node().name().push('\\'); break;
+                        default:   ctx.node().name().push(next); break;
+                    }
+                    at_x += 1.0f;
+                    ctx.index()++;
+                } else if(c == '\n') {
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                } else {
+                    ctx.node().name().push(c);
+                }
+            };
+
+            //Add handeling as a single char later if we only ever iterate over one item, for now this is just another way to make strings (for TwigSnap)
+            tokenizer_state_functions[single_quote_id] = [this](Context& ctx) {
+                char c = ctx.source().at(ctx.index());
+
+                if(ctx.node().quals().empty()) {
+                    Node open_token = copy_as_token(ctx.node());
+                    ctx.node().quals() << open_token;
+                    ctx.node().type(string_id);
+                    ctx.node().name().col().clear();
+                    ctx.node().x(at_x);
+                    ctx.node().y(at_y);
+                }
+
+                if(c == '\'') {
+                    ctx.state(0);
+                    Node closer = copy_as_token(ctx.node().quals()[0]);
+                    closer.x(at_x); closer.y(at_y);
+                    ctx.node().quals() << closer;
+                } else if(c == '\\' && ctx.index()+1<ctx.source().length()) {
+                    char next = ctx.source().at(ctx.index() + 1);
+                    switch(next) {
+                        case 'n':  ctx.node().name().push('\n'); break;
+                        case 't':  ctx.node().name().push('\t'); break;
+                        case 'r':  ctx.node().name().push('\r'); break;
+                        case '"':  ctx.node().name().push('"');  break;
+                        case '\'':  ctx.node().name().push('\'');  break;
                         case '\\': ctx.node().name().push('\\'); break;
                         default:   ctx.node().name().push(next); break;
                     }

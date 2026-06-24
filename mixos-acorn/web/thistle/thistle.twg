@@ -555,7 +555,7 @@ login {
 ##
 
 
-template div build_render_sheet(int spool) {
+stateless template div build_render_sheet(int spool) {
     div {
         "display" : "flex";
         "justify-content" : "center";
@@ -568,7 +568,24 @@ template div build_render_sheet(int spool) {
 
                     //Headers
                     row {
-                        for(int i=0;i<lenc;i++) {
+                        template div makeheader(int colum) {
+                            input {
+                                "border" : "none";
+                                "background-color" : "transparent";
+                                "width" : "100%";
+                                "padding" : "8px 4px";
+                                "font-size" : "13px";
+                                "font-family" : "system-ui, sans-serif";
+                                "value" : clabel(spool,colum);
+                                "onchange" : capture(
+                                    string myval ; "this.value"
+                                ) {
+                                    csetlabel(spool,colum,myval);
+                                }
+                            }
+                        }
+
+                        for(int c=0;c<lenc;c++) {
                             column {
                                 "background-color" : "rgb(240, 240, 240)";
                                 "padding" : "10px 12px";
@@ -579,9 +596,9 @@ template div build_render_sheet(int spool) {
                                 "color" : "rgb(80,80,80)";
                                 "font-family" : "system-ui, sans-serif";
                                 "border-right" : "1px solid rgb(200,200,200)";
-                                text clabel(spool,i);
+                                makeheader(c);
                             }
-                            int lenco = clen(spool,i);
+                            int lenco = clen(spool,c);
                             if(lenco>lenr) {
                                 lenr = lenco;
                             }
@@ -592,25 +609,68 @@ template div build_render_sheet(int spool) {
                     for(int r=0;r<lenr;r++) {
                         row {
                             "border-bottom" : "1px solid rgb(220,220,220)";
+
+                                template div makecell(int colum) {
+                                    string tostr = "";
+                                    Ptr cellptr = makePtr3(spool,colum,r);
+                                    Ptr p = resolve_as_Ptr(cellptr);
+                                    if(is_live(p)) {
+                                        tostr = value_as_string(p);
+                                    }
+
+                                    print("Adding cell: ",cellptr);
+
+                                    bool is_open = false;
+                                    div cell_context_menu {
+                                        "display" : (is_open ? "block" : "none");
+                                        "position" : "absolute";
+                                        "z-index" : "100";
+                                        "top" : "0";
+                                        "left" : "100%";
+                                        "background" : "white";
+                                        "border" : "1px solid rgb(200,200,200)";
+                                        "border-radius" : "6px";
+                                        "box-shadow" : "0 4px 12px rgba(0,0,0,0.12)";
+                                        "min-width" : "120px";
+                                        "padding" : "4px";
+                                        cellptr = makePtr3(spool,colum,r);
+                                        p = resolve_as_Ptr(cellptr);
+                                        if(is_live(p)) {
+                                            tostr = value_as_string(p);
+                                        }
+                                        text tostr;
+                                    }  
+
+                                    input {
+                                        "border" : "none";
+                                        "background-color" : "transparent";
+                                        "width" : "100%";
+                                        "padding" : "8px 4px";
+                                        "font-size" : "13px";
+                                        "font-family" : "system-ui, sans-serif";
+                                        "value" : tostr;                                                                    
+                                        "onchange" : capture(
+                                            string myval ; "this.value"
+                                        ) {
+                                            string cellset = to_string(cellptr)+"="+myval;
+                                            print("Setting cell: ",cellset);
+                                            setcell(cellset);
+                                        }
+
+                                        "oncontextmenu" : capture(
+                                            js_do("event.preventDefault();")
+                                        ) {
+                                            is_open = (is_open ? false : true);
+                                            cell_context_menu.reload;
+                                        }
+                                    }
+                                }
+
                                 for(int c=0;c<lenc;c++) {
                                     column {
+                                        "position" : "relative";
                                         "border-right" : "1px solid rgb(200,200,200)";
-                                            string tostr = "";
-                                            Ptr cellptr = makePtr3(spool,c,r);
-                                            Ptr p = resolve_as_Ptr(cellptr);
-                                            if(is_live(p)) {
-                                                tostr = value_as_string(p);
-                                            }
-                                            input {
-                                                "border" : "none";
-                                                "background-color" : "transparent";
-                                                "width" : "100%";
-                                                "padding" : "8px 4px";
-                                                "font-size" : "13px";
-                                                "font-family" : "system-ui, sans-serif";
-                                                "value" : tostr;                                                                    
-                                                "onchange" : escape_str("run('setcell(\""+to_string(cellptr)+"=',this.value,'\")')");
-                                            }
+                                        makecell(c);
                                     }
                                 }
                         }
@@ -657,7 +717,7 @@ build {
                             "display" : "flex";
                             "gap" : "8px";
 
-                                template div control_btns(string label, string behaviour) { 
+                                stateless template div control_btns(string label, string behaviour) { 
                                     button {
                                         "onclick" : behaviour;
                                         "height" : "100%"; 
@@ -666,9 +726,9 @@ build {
                                     } 
                                 }
 
-                                control_btns("S","save_sheet("+to_string(sheetpool)+",\""+sheetname+"\")");
-                                control_btns("+C","add_column_to_sheet("+to_string(sheetpool)+"); emit_reload(ctx,cast_to_Node("+call_owner_as_string(build_sheet_panel)+"))");
-                                control_btns("+R","add_row_to_sheet("+to_string(sheetpool)+"); emit_reload(ctx,cast_to_Node("+call_owner_as_string(build_sheet_panel)+"))");                              
+                                control_btns("S",capture{save_sheet(sheetpool,sheetname);});
+                                control_btns("+C",capture{add_column_to_sheet(sheetpool); build_sheet_panel.reload;});
+                                control_btns("+R",capture{add_row_to_sheet(sheetpool); build_sheet_panel.reload;});                              
                         }
 
                         div {

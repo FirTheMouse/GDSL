@@ -93,6 +93,36 @@ inline std::string add_commas(int num) {
         }
         return escaped;
     }
+
+    std::string strip_ansi(const std::string& s) {
+        std::string out;
+        bool in_escape = false;
+        for(int i = 0; i < s.length(); i++) {
+            if(s[i] == '\033') { in_escape = true; continue; }
+            if(in_escape) {
+                if(s[i] == 'm') in_escape = false;
+                continue;
+            }
+            out += s[i];
+        }
+        return out;
+    }
+    
+    std::string html_escape_string(const std::string& content) {
+        std::string escaped;
+        int space_count = 0;
+        for(char c : content) {
+            switch(c) {
+                case '<': escaped += "&lt;"; break;
+                case '>': escaped += "&gt;"; break;
+                case '&': escaped += "&amp;"; break;
+                case '\'': escaped += "&apos;"; break;
+                case '"': escaped+="&quot;"; break;
+                default:   escaped += c; break;
+            }
+        }
+        return escaped;
+    }
   
 namespace sgen {
     struct namebase {

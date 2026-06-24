@@ -69,7 +69,13 @@ namespace Acorn {
         uint32_t else_id = make_tokenized_keyword("else");
 
         uint32_t read_file_id = make_tokenized_keyword("read_file");
-        uint32_t write_file_id = make_tokenized_keyword("write_file");
+        uint32_t write_file_id = add_function("write_file",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string path = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            string contents = (string&)*(Ptr*)ctx.node().children()[1].value().get();
+            DEBUG_ONLY(if(ERROR_FLAG){return;})
+            writeFile(path.to_std(),contents.to_std());
+        });
         uint32_t compile_id = make_tokenized_keyword("compile");
 
         uint32_t live_qual = register_qual_ids("live");
@@ -216,7 +222,6 @@ namespace Acorn {
             }
             col.set(index,data);
         });
-
 
         uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
@@ -746,6 +751,36 @@ namespace Acorn {
                 }
             };
 
+
+            add_function("newline",[this](Context& ctx){
+                uspan->newline(children_to_string(ctx,ctx.node().children()));
+            });
+            add_function("log",[this](Context& ctx){
+                uspan->log(children_to_string(ctx,ctx.node().children()));
+            });
+            add_function("udump",[this](Context& ctx){
+                uspan->print_all();
+            });
+            add_function("ussw",[this](Context& ctx){ //uspan_setup_standard_watcher
+                setup_uspan_standard_watchers();
+            });
+            add_function("ursw",[this](Context& ctx){ //uspan_remove_standard_watcher
+                for(int i=0;i<watchers.length();i++) {if(watchers[i].label=="uspan_core") watchers.removeAt(i); break;}
+            });
+            add_function("ures",[this](Context& ctx){ //uspan_restart
+                uspan->restart();
+            });
+            add_function("utg",[this](Context& ctx){ //uspan_time_get
+                string output = resolve_string_ticket(ctx.node());
+                output = ftime(uspan->get_root_time());
+            },sizeof(Ptr),string_id);
+            add_function("uts",[this](Context& ctx){ //uspan_time_start
+                uspan->restart_root_time();
+            });
+            add_function("ute",[this](Context& ctx){ //uspan_time_end
+                string output = resolve_string_ticket(ctx.node());
+                output = ftime(uspan->end_root_time());
+            },sizeof(Ptr),string_id);
 
             tokenizer_state_functions[comment_brace] = [this](Context& ctx) {
                 char c = ctx.source().at(ctx.index());

@@ -152,6 +152,7 @@ struct SeqLine : public q_object
     }
 
     Log::Line timer;
+    double start_ns = 0.0;
     std::string label = "";
     SeqLine* parent = nullptr;
     list<g_ptr<SeqLine>> children;
@@ -220,8 +221,14 @@ public:
     inline int get_count(const std::string &label) {return counters.getOrDefault(label, 0);}
     void print_counters() {for (auto label : counters.keySet())  { print(label, ": ", get_count(label)); }}
 
+
     g_ptr<SeqLine> line_root = nullptr;
     g_ptr<SeqLine> on_line = nullptr;
+
+    void restart() {line_root = make<SeqLine>("Root",false); line_root->timer.start();}
+    void restart_root_time() {line_root->timer.start();}
+    double get_root_time() {return line_root->timer.time_ns();}
+    double end_root_time() {return line_root->timer.end();}
 
     g_ptr<SeqLine> get_last_line() {
         if(on_line) return on_line;
@@ -231,7 +238,11 @@ public:
     void add_line(const std::string& label) {
         g_ptr<SeqLine> parent = get_last_line();
         parent->children << make<SeqLine>(label,false);
-        parent->children.last()->parent = parent.getPtr();
+        SeqLine* child = parent->children.last().getPtr();
+        child->parent = parent.getPtr();
+        child->start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            child->timer.start_ - line_root->timer.start_
+        ).count();
         on_line = parent->children.last();
 
         if(log_everything)
@@ -276,6 +287,47 @@ public:
 
     double endline() {
         return end_line();
+    }
+
+    std::string print_as_flamechart() {
+        if(line_root->children.empty()) return "";
+        line_root->timer = line_root->children[0]->timer;
+        double root_duration = line_root->timer.total_time_;
+        double W = 2400.0, row_h = 24.0;
+        
+        int max_depth = 0;
+        std::function<void(SeqLine*, int)> get_depth = [&](SeqLine* n, int d) {
+            max_depth = std::max(max_depth, d);
+            for(auto& c : n->children) if(!c->is_log) get_depth(c.getPtr(), d+1);
+        };
+        get_depth(line_root.getPtr(), 0);
+        
+        double total_h = (max_depth + 1) * row_h;
+        
+        std::string svg = "<svg xmlns='http://www.w3.org/2000/svg' width='" + std::to_string((int)W) + 
+            "' height='" + std::to_string((int)total_h) + 
+            "' viewBox='0 0 " + std::to_string((int)W) + " " + 
+            std::to_string((int)total_h) + "'>\n";
+        
+        std::function<void(SeqLine*, int)> render = [&](SeqLine* n, int depth) {
+            double x = (n->start_ns / root_duration) * W;
+            double w = std::max((n->timer.total_time_ / root_duration) * W, 1.0);
+            double y = total_h - (depth + 1) * row_h; // flip: depth 0 at bottom
+            int hue = (int)(x * 0.3) % 360;
+            std::string label = html_escape_string(strip_ansi(n->label));
+            svg += "<rect x='" + std::to_string(x) + "' y='" + std::to_string(y) +
+                   "' width='" + std::to_string(w) + "' height='" + std::to_string(row_h-1) +
+                   "' fill='hsl(" + std::to_string(hue) + ",60%,65%)' stroke='white' stroke-width='0.5'>" +
+                   "<title>" + label + " [" + html_escape_string(strip_ansi(ftime(n->timer.total_time_))) + "]</title></rect>\n";
+            if(w > 15) {
+                svg += "<text x='" + std::to_string(x+2) + "' y='" + std::to_string(y + row_h*0.65) +
+                       "' font-size='10' fill='black'>" + label.substr(0, (int)(w/5.5)) + "</text>\n";
+            }
+            for(auto& c : n->children) if(!c->is_log) render(c.getPtr(), depth+1);
+        };
+        render(line_root.getPtr(), 0);
+        svg += "</svg>";
+        return svg;
     }
 };
 

@@ -1213,3 +1213,70 @@ root_path {
         //DEBUG_ROOT;
     }
 }
+
+STATELESS TABLE RENDER
+
+
+stateless template div build_render_sheet(int spool) {
+    div {
+        "display" : "flex";
+        "justify-content" : "center";
+        "width" : "100%";
+            table {
+                "border-collapse" : "collapse";
+                "width" : "100%";
+                    int lenc = plen(spool); //Columns
+                    int lenr = 0; //Rows
+
+                    //Headers
+                    row {
+                        for(int i=0;i<lenc;i++) {
+                            column {
+                                "background-color" : "rgb(240, 240, 240)";
+                                "padding" : "10px 12px";
+                                "font-size" : "14px";
+                                "color" : "rgb(26, 26, 26)";
+                                "font-size" : "13px";
+                                "font-weight" : "600";
+                                "color" : "rgb(80,80,80)";
+                                "font-family" : "system-ui, sans-serif";
+                                "border-right" : "1px solid rgb(200,200,200)";
+                                text clabel(spool,i);
+                            }
+                            int lenco = clen(spool,i);
+                            if(lenco>lenr) {
+                                lenr = lenco;
+                            }
+                        }
+                    }
+                    
+                    //Render each column
+                    for(int r=0;r<lenr;r++) {
+                        row {
+                            "border-bottom" : "1px solid rgb(220,220,220)";
+                                for(int c=0;c<lenc;c++) {
+                                    column {
+                                        "border-right" : "1px solid rgb(200,200,200)";
+                                            string tostr = "";
+                                            Ptr cellptr = makePtr3(spool,c,r);
+                                            Ptr p = resolve_as_Ptr(cellptr);
+                                            if(is_live(p)) {
+                                                tostr = value_as_string(p);
+                                            }
+                                            input {
+                                                "border" : "none";
+                                                "background-color" : "transparent";
+                                                "width" : "100%";
+                                                "padding" : "8px 4px";
+                                                "font-size" : "13px";
+                                                "font-family" : "system-ui, sans-serif";
+                                                "value" : tostr;                                                                    
+                                                "onchange" : escape_str("run_raw('setcell(\""+to_string(cellptr)+"=',this.value,'\")')");
+                                            }
+                                    }
+                                }
+                        }
+                    }
+            }
+    }
+}

@@ -134,16 +134,16 @@ int main(int argc, char* argv[]) {
     // test->test_acorn();
 
     //Log::Line t; t.start();
-    // g_ptr<Acorn::Acorn_Script> acorn = Acorn::make_unit<Acorn::Acorn_Script>();
+    g_ptr<Acorn::Acorn_Script> acorn = Acorn::make_unit<Acorn::Acorn_Script>();
     // acorn->setup_standard_watchers();
     // acorn->setup_trace_res_flipbook();
-    // // acorn->setup_stamp_res_flipbook();
-    // acorn->run(acorn->process(readFile("mixos-acorn/test.gld")));
+    // acorn->setup_stamp_res_flipbook();
+    acorn->run(acorn->process(readFile("mixos-acorn/test.gld")));
     //print(ftime(t.end()));
 
-    g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
-    //webcorn->setup_trace_res_flipbook();
-    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    // g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
+    // //webcorn->setup_trace_res_flipbook();
+    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
     // g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
     // //webcorn->setup_trace_res_flipbook();

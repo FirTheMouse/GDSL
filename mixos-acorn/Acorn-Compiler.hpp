@@ -442,6 +442,21 @@ namespace Acorn {
 
         uint32_t hoisted_id = add_qual("hoisted");
         uint32_t gloabl_qual = add_qual("global");
+
+        Value distribute_value_children(Node node, const std::string& label, Value val) {
+            for(int c = 0;c<node.children().length();c++) {
+                Node child = node.children()[c];
+                for(int s = 0;s<child.scopes().length();s++) {
+                    Node scope = child.scopes().get(s);
+                    if(scope.owner().idx==child.idx) {
+                        val = distribute_value(scope,label,val,0);
+                    }
+                }
+                val = distribute_value_children(child, label, val);
+            }
+            return val;
+        }
+
         Value distribute_value(Node node, const std::string& label, Value val, int initial_hoist) {
             if(initial_hoist!=0) {
                 Node climb = node;
@@ -470,8 +485,23 @@ namespace Acorn {
                         }
                     }
                 }
+                val = distribute_value_children(child,label,val);
             }
             return val;
+        }
+
+        Node distribute_node_children(Node node, const std::string& label, Node carry) {
+            for(int c = 0;c<node.children().length();c++) {
+                Node child = node.children()[c];
+                for(int s = 0;s<child.scopes().length();s++) {
+                    Node scope = child.scopes().get(s);
+                    if(scope.owner().idx==child.idx) {
+                        carry = distribute_node(scope,label,carry,0);
+                    }
+                }
+                carry = distribute_node_children(child, label, carry);
+            }
+            return carry;
         }
 
         Node distribute_node(Node node, const std::string& label, Node carry, int inital_hoist) {
@@ -503,6 +533,7 @@ namespace Acorn {
                         }
                     }
                 }
+                carry = distribute_node_children(child,label,carry);
             }
             return carry;
         }
@@ -1447,7 +1478,21 @@ namespace Acorn {
                 for(int i = 0; i < call.children().length(); i++) {
                     Node c = call.children()[i];
                     process_node(ctx, c.children()[1]);
-                    value_alias_table.put(c.children()[0].value().idx, c.children()[1].value());
+                    Value newv = make_value(); newv.copy(c.children()[1].value(),true);
+                    if(newv.type()==string_id||newv.type()==ptr_id) { //Another thing that's a problem becuse we don't have a proper normalization system yet
+                        Ptr oldval = *(Ptr*)newv.get();
+
+                        if(newv.type()==string_id||newv.type()==ptr_id) { //Another thing that's a problem becuse we don't have a proper normalization system yet
+                            Ptr oldval = *(Ptr*)newv.get(); //Not making this work for anything other than strings yet, a burn is coming that will make this much simpler, I hope
+                            if(newv.type()==string_id) {
+                                Ptr ticket = get_ticket(name_store_id,1,char_id);
+                                string s = (string&)oldval; string s2 = (string&)ticket;
+                                s2 = s.to_std();
+                                newv.set((void*)&ticket);
+                            }
+                        }
+                    }
+                    value_alias_table.put(c.children()[0].value().idx, newv);
                 }
             } else {
                 for(int i = 0; i < call.children().length(); i++) {
@@ -1542,14 +1587,18 @@ namespace Acorn {
             return id;
         }
 
-        uint32_t print_id = add_function("print",[this](Context& ctx){ 
+        std::string children_to_string(Context& ctx, node_col children) {
             std::string to_print = "";
             for(int i=0;i<ctx.node().children().length();i++) {
                 Node c = ctx.node().children()[i];
                 process_node(ctx,c);
                 to_print += value_as_string(c.value());
             }
-            print(to_print);
+            return to_print;
+        }
+
+        uint32_t print_id = add_function("print",[this](Context& ctx){ 
+            print(children_to_string(ctx,ctx.node().children()));
         });
         uint32_t return_id = make_tokenized_keyword("return");
 

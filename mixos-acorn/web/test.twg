@@ -1,3 +1,4 @@
+
 ##
     register root_path;
     "root_path" {
@@ -19,7 +20,7 @@
 root_path {
     script read_file("mixos-acorn/web/thistle/thistle.js");
     div {
-        template div dropdown(string label, string behaviour) {
+        template div dropdown(string label) {
             string open;
             div display {
                 if(open=="yes") {
@@ -32,12 +33,29 @@ root_path {
                 button {
                     text label;
                     "background-color" : "red";
-                    "onclick" : behaviour;
+                    "onclick" : capture(
+                            string recive; "'my_id'", 
+                            string recivejs; js_do("console.log('hello'); return 'val';"), 
+                            string other; js_lit(label)) 
+                        {
+                            print("Recived: ",recive);
+                            print("Other: ",other);
+                            print("JS: ",recivejs);
+                            print("Label: ",label);
+                            if(open=="yes") {
+                                open = "no";
+                            } else {
+                                open = "yes";
+                            }
+                            display.reload;
+                    }
                 }
             }
         }   
 
-        dropdown("A",capture{print("Hello world!");});
-        DEBUG_ROOT;
+        for(int i=0;i<3;i++) {
+            dropdown(to_string(i));
+                    DEBUG_ROOT;
+        }
     }
 }

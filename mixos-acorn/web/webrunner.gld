@@ -243,7 +243,8 @@ global Session session;
 print("Session ip: ",session.ip);
 
 print("Compiling");
-Node twig = compile(read_file("mixos-acorn/web/test.twg"));
+Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
+//Node twig = compile(read_file("mixos-acorn/web/test.twg"));
 print("Compiled");
 Node page = twig.children.get(0);
 
@@ -259,13 +260,16 @@ while(0<1) {
         string method = first_line.substr(0, first_line.find(" "));
         string slashpath = first_line.slice(" ", 1, 2);
         string path = slashpath.substr(1,slashpath.length-1); //Strip the slash
-        print("Port 8080");
         print("Method: ",method);
-        print("Slashpath: ",slashpath);
-        print("Path: ",path);
+        print("Path: ",slashpath);
 
         if(path.length==0) {
             path = "root_path"; //For routing
+        } else if(path=="favicon.ico") {
+            close(cfd);
+            print("Unit ",unit_uid," completed favicon request ",cfd);
+            unit_setindex(0);
+            continue;
         }
         for(int i=0;i<twig.children.length;i++) {
             Node child = twig.children.get(i);
@@ -349,7 +353,10 @@ while(0<1) {
                         }
                     }
                 }
+
+                ures;
                 execut root;
+                print("Time: ",ute);
 
                 src = ctx.source;
                 string target = src.slice(0,src.find(" "));
@@ -360,6 +367,7 @@ while(0<1) {
                     print("INSTR: ",instr); 
                     print("CONTENT LEN: ",content.length); 
                     response_body = content;
+                    //response_body = "<div id=\""+instr+"\">"+uspan_flame_chart+"</div>";
                 }
             }
         }

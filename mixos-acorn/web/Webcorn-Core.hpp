@@ -768,23 +768,12 @@ namespace Acorn {
             "role","lang","colspan", "rowspan", "scope",
             "rows", "cols", "autocorrect", "autocapitalize", "spellcheck", "wrap",
             "autocomplete", "autofocus", "enctype", "novalidate", "pattern", "size",
-            "download", "controls", "autoplay", "loop", "muted", "poster"
+            "download", "controls", "autoplay", "loop", "muted", "poster",  "oncontextmenu"
         }, false};
         bool is_prop_structural(const std::string& name) {
             return is_structural[name] || name.substr(0,5) == "data-";
         }
 
-        std::string html_escape_string(const std::string& content) {
-            std::string escaped;
-            int space_count = 0;
-            for(char c : content) {
-                switch(c) {
-                    case '"': escaped+="&quot;"; break;
-                    default:   escaped += c; break;
-                }
-            }
-            return escaped;
-        }
         uint32_t escape_str_id = add_function("escape_str",[this](Context& ctx){
             standard_sub_process(ctx);
             string content = resolve_string_ticket(ctx.node().children()[0]);
@@ -798,7 +787,9 @@ namespace Acorn {
             ctx.root(c);
             std::string old_source = ctx.source().to_std();
 
-            if(c.children()[0].value().type()==string_id) {
+            if(c.children()[0].type()==literal_id) {
+                prop = c.children()[0].name().to_std();
+            } else if(c.children()[0].value().type()==string_id) {
                 process_node(ctx,c.children()[0]);
                 if(!is_live(c.children()[0].value().data_ptr())) { //For templates and such where we might use an identifer
                     ctx.root(saved_root);
@@ -811,7 +802,9 @@ namespace Acorn {
             }
 
             if(c.children().length()>1) {
-                if(c.children()[1].value().type()==string_id) {
+                if(c.children()[1].type()==literal_id) {
+                    val = c.children()[1].name().to_std();
+                } else if(c.children()[1].value().type()==string_id) {
                     process_node(ctx,c.children()[1]);
                     if(!is_live(c.children()[1].value().data_ptr())) {
                         ctx.root(saved_root);
@@ -1980,6 +1973,15 @@ namespace Acorn {
                 output = resolve_to_col(cptr).label.to_std();
             },sizeof(Ptr),string_id);
 
+            add_function("csetlabel",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t col = *(int*)ctx.node().children()[1].value().get();
+                string label = (string&)*(Ptr*)ctx.node().children()[2].value().get();
+                Ptr cptr(&types,pool,col,0);
+                resolve_to_col(cptr).label = label.to_std();
+            });
+
             add_function("resolve_as_Ptr",[this](Context& ctx){
                 standard_sub_process(ctx);
                 ctx.node().value().set(resolve_ptr(*(Ptr*)ctx.node().children()[0].value().get()));
@@ -2034,6 +2036,11 @@ namespace Acorn {
                 Node owner = n.scopes()[0].owner();
                 ctx.node().value().set((void*)&owner);
             },sizeof(Ptr),node_id);
+
+            add_function("uspan_flame_chart",[this](Context& ctx){
+                string output = resolve_string_ticket(ctx.node());
+                output = uspan->print_as_flamechart();
+            },sizeof(Ptr),string_id);
 
 
             html_handlers.default_function = [this](Context& ctx) {

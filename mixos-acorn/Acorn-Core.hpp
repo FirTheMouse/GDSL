@@ -988,6 +988,7 @@ namespace Acorn {
         Handler suffix = nullptr;
         Handler stagend = nullptr;
         Handler logger = nullptr;
+        Handler passstart = nullptr;
     };  
 
     static void write_TypeCol(std::ostream& out, ColCol& type) {
@@ -1046,6 +1047,7 @@ namespace Acorn {
         public:
         Stage* active_stage;
         list<Watcher> watchers;
+        g_ptr<Log::Span> uspan = make<Log::Span>();
 
         bool running = true; 
         Context unit_ctx = deadptr;
@@ -1128,6 +1130,36 @@ namespace Acorn {
             };
             def.stagend = [this](Context& ctx){
                 endline();
+            };
+            watchers << def;
+        }
+
+        void setup_uspan_standard_watchers() {
+            Watcher def("uspan_core");
+            def.stagestart = [this](Context& ctx){
+                if(active_stage) {
+                    uspan->newline(active_stage->label);
+                }
+            };
+            def.passstart = [this](Context& ctx){
+                if(ctx.pass()!=0) {
+                    uspan->newline(labels[ctx.pass()]+" over "+std::to_string(ctx.result().length())+" nodes");
+                }
+            };
+            def.prefix = [this](Context& ctx){
+                if(is_live(ctx.qual())) {
+                    uspan->newline(active_stage->label+": "+labels[ctx.qual().type()]+" in "+ctx.node().name().to_std());
+                } else {
+                    uspan->newline(active_stage->label+": "+node_info(ctx.node()));
+                }
+            };
+            def.suffix = [this](Context& ctx){
+                //if(ERROR_FLAG) {uspan->log(red("Marked "+Ptr_as_string(ctx.node())+" as error")); mark_error(ctx.node());}
+                //uspan->log(green("After: "),node_info(ctx.node()));
+                uspan->endline();
+            };
+            def.stagend = [this](Context& ctx){
+                uspan->endline();
             };
             watchers << def;
         }
@@ -1854,7 +1886,9 @@ namespace Acorn {
                 if(resolve_to_col(value.data_ptr()).empty()) {
                     to_return += ", value: "+gray("empty")+" @"+ptr_addr;
                 } else {
-                    to_return += ", value: "+gray(tag_to_str(value.type(),value.get()))+" @"+ptr_addr;
+                    std::string tagstr = tag_to_str(value.type(),value.get());
+                    if(tagstr.length()>50) tagstr = tagstr.substr(0,50); //Disable this to disable truncation of large values
+                    to_return += ", value: "+gray(tagstr)+" @"+ptr_addr;
                 }
                 DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_to_string(value)),red(" but the value was invalid")); return to_return;})
             }
@@ -2233,7 +2267,7 @@ namespace Acorn {
                 if(qual.mute()) continue;
                 ctx.qual(qual);
                 //if(active_stage->has(qual.type()+1))
-                    active_stage->run(qual.type()+1)(ctx);
+                standard_process(ctx,qual.type()+1);
             }
             ctx.value(saved_value);
             ctx.qual(saved_qual);
@@ -2246,7 +2280,7 @@ namespace Acorn {
                 Node qual = node.quals()[q];
                 if(qual.mute()) continue;
                 ctx.qual(qual);
-                active_stage->run(qual.type()+2)(ctx);
+                standard_process(ctx,qual.type()+2);
             }
             ctx.node(saved_node);
             ctx.qual(saved_qual);
@@ -2514,6 +2548,7 @@ namespace Acorn {
         ctx.root(root);
         ctx.sub(sub);
         unit_ctx = ctx;
+        DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
         while(unit_ctx.index() < unit_ctx.result().length()) {
             unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
             standard_process(unit_ctx);
@@ -2521,6 +2556,7 @@ namespace Acorn {
             unit_ctx.left(nleft);
             DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
             if(unit_ctx.state()>0) { //This is the return/break process
+                DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
                 endline();
                 uint32_t state = unit_ctx.state();
                 unit_ctx = unit_ctx.parent();
@@ -2529,6 +2565,7 @@ namespace Acorn {
             }
             unit_ctx.index()++;
         }
+        DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
         endline();
         unit_ctx = unit_ctx.parent();
         deep_recycle_context(ctx);

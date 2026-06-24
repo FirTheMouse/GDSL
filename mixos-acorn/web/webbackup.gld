@@ -956,3 +956,260 @@ root_path {
         root(files.get(i),i);
     }
 }
+
+BACKUP:
+
+control_btns("+C","fragthree('main_sheet','add_column','0')");
+control_btns("+R","fragthree('main_sheet','add_row','0')");
+control_btns("+F","fragthree('main_sheet','add_form','0')");
+control_btns("0","fragthree('main_sheet','rendermode','0')");
+control_btns("9","fragthree('main_sheet','rendermode','9')");
+control_btns("--","fragthree('main_sheet','rendermode','-')");
+control_btns("++","fragthree('main_sheet','rendermode','+')");
+control_btns("S","fragthree('main_sheet','to_sheet','')");
+control_btns("F","fragthree('main_sheet','to_form','')");
+control_btns("D","fragthree('main_sheet','to_debug','')");
+
+
+                            div {
+                                "display" : "flex";
+                                "justify-content" : "center";
+                                "width" : "100%";
+                                sheet main_sheet {
+                                    "id" : "main_sheet";
+                                    invisible header_style {
+                                        "background-color" : "rgb(240, 240, 240)";
+                                        "padding" : "10px 12px";
+                                        "font-size" : "14px";
+                                        "color" : "rgb(26, 26, 26)";
+                                        text_theme;
+                                    }
+                                    invisible column_style {
+                                        "border-right" : "1px solid rgb(200,200,200)";
+                                    }
+                                    invisible row_style {
+                                        "border-bottom" : "1px solid rgb(220,220,220)";
+                                    }
+                                     invisible input_style {
+                                        "border" : "none";
+                                        "background-color" : "transparent";
+                                        "width" : "100%";
+                                        "padding" : "8px 4px";
+                                        "font-size" : "13px";
+                                        "font-family" : "system-ui, sans-serif";
+                                    }
+                                    invisible select_style {
+                                        input_theme;
+                                    }
+                                    invisible form_input_style {
+                                        "border" : "none";
+                                        "border-bottom" : "2px solid rgb(200,200,200)";
+                                        "border-radius" : "0px";
+                                        "background-color" : "transparent";
+                                        "padding" : "8px 0px";
+                                        input_theme;
+                                    }
+                                    invisible field_style {
+                                        "display" : "flex";
+                                        "flex-direction" : "column";
+                                        "gap" : "6px";
+                                        "margin-bottom" : "20px";
+                                    }
+                                    invisible label_style {
+                                        text_theme;
+                                    }
+                                    invisible header_label_style {
+                                        "font-size" : "16px";
+                                        text_theme;
+                                    }
+                                    invisible context_menu_style {
+                                        "display" : "none"
+                                        "background" : "white";
+                                        "border" : "1px solid rgb(200,200,200)";
+                                        "border-radius" : "4px";
+                                        "padding" : "8px";
+                                        "min-width" : "200px";
+                                        "box-shadow" : "0 4px 12px rgba(0,0,0,0.15)";
+                                    }
+                                    invisible context_menu_header_style {
+                                        "font-size" : "11px";
+                                        "color" : "rgb(150,150,150)";
+                                        text_theme;
+                                        "margin-bottom" : "6px";
+                                    }
+                                    invisible context_menu_body_style {
+                                        "display" : "flex";
+                                        "flex-direction" : "column";
+                                        "gap" : "4px";
+                                    }
+                                    invisible context_menu_label_style {
+                                        "font-size" : "12px";
+                                        text_theme;
+                                    }
+                                    invisible context_menu_input_style {
+                                        input_theme;
+                                    }
+                                }
+                            }                          
+
+TESTING:
+
+##
+    register root_path;
+    "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+
+    "component" {
+        on ".\"tested\"" int {
+            print("TESTING ON!!");
+            ctx.node.value.set(3);
+        }
+    }
+##
+
+root_path {
+    script read_file("mixos-acorn/web/thistle/thistle.js");
+
+    template div wubria {
+        "background-color" : "blue";
+        text "testing";
+    }
+    wubria;
+
+    div wub {
+        text "testing" {
+            "onclick" : {
+                Node n = call_owner(wub);
+                n.scopes.get(0).children.get(0).children.get(0).name = "iswub";
+                emit_reload(ctx,n);
+            }
+        }
+        "background-color" : "red";
+    }
+    print(wub.tested);
+}
+
+TEST SNIPPETS WHILE BRAINSTORMING
+
+clientside(string testing "testwords", string things "testthings") {
+    print(testing);
+    print(things);
+    print("TESTED");
+}
+
+capture(
+    string testing = js_call("
+        event.stopPropagation();
+        return "'"+id+"'";
+    ");
+) {
+    print(testing);
+}
+
+
+capture(
+    js_call("event.stopPropagation()"), 
+    string recive_id = "'"+recive_id+"'",
+) {
+    print("Recived id: ",recive_id);
+} capture(
+    js_call("window.href = '/'")
+);
+
+
+
+onclient(string recive_id = id, string testing = js_call("
+    event.stopPropagation();
+    return "'"+id+"'";
+")) {
+
+}
+onclient("")
+
+MAIN RUNNER
+
+string unitcode = read_file("mixos-acorn/web/webrunner.gld");
+
+start_session_manager(unitcode);
+print("Started the session manager");
+
+int fd = socket;
+bind(fd,8080);
+listen(fd);
+print("Opened a new server on 8080");
+
+while(0<1) {
+    int cfd = accept(fd);
+    string req = read(cfd);
+
+    string session = get_cookie(req,"session");
+
+    print("Dispatching server to handle request ",cfd);
+    dispatch_unit(session,cfd,req,unitcode);
+}  
+
+
+DROPDOWN TEST CODE
+
+##
+    register root_path;
+    "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+##
+    global string js(string s) {
+        print("Catching");
+        string str = "(()=>{"+s+"})()";
+        print(str);
+        return str;
+    }
+##
+
+root_path {
+    script read_file("mixos-acorn/web/thistle/thistle.js");
+    div {
+        template div dropdown(string label) {
+            string open;
+            div display {
+                if(open=="yes") {
+                    text "I'm open";
+                } else {
+                    text "I'm closed";
+                }
+            }
+            div {
+                button {
+                    text label;
+                    "background-color" : "red";
+                    "onclick" : capture(
+                            string recive; "'my_id'", 
+                            string recivejs; js_do("console.log('hello'); return 'val';"), 
+                            string other; js_lit(label)) 
+                        {
+                            print("Recived: ",recive);
+                            print("Other: ",other);
+                            print("JS: ",recivejs);
+                            if(open=="yes") {
+                                open = "no";
+                            } else {
+                                open = "yes";
+                            }
+                            display.reload;
+                    }
+                }
+            }
+        }   
+
+        for(int i=0;i<3;i++) {
+            dropdown(to_string(i));
+        }
+        //DEBUG_ROOT;
+    }
+}

@@ -467,7 +467,7 @@ namespace Acorn {
             }
         }
         inline void* operator[](uint32_t index) {return get(index);}
-        inline void* last() {return get(size-1);}
+        inline void* last() {return qget(size-(element_size));}
 
         void qput(const void* element, const void* key, uint32_t key_size, uint32_t key_tag) {
             CCol c;

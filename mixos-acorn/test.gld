@@ -1,4 +1,1 @@
-string w = "words"+"things"+"stuff";
-print("Testing concatanate: ",w);
-
-DEBUG_ROOT;
+print("hey",if(true){print("Hello");});

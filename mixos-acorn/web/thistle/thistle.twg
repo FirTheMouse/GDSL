@@ -42,6 +42,9 @@ inlined basic_button {
 ##
     global int sheetpool;
     global string sheetname;
+    global Node sidebar_reload_target;
+    sheetpool = load_sheet("redberry");
+    sheetname = "redberry";
 ##
 
 div side_bar {
@@ -93,7 +96,7 @@ div side_bar {
             }
         }
 
-        div func_btn_temp(string function, string color, string label) {
+        template div func_btn_temp(string function, string color, string label) {
             div {
                 "onclick" : function;
                 "cursor" : "pointer";
@@ -135,22 +138,16 @@ div side_bar {
         "padding" : "8px 0px";
 
         script "
-            function loadForm(el, body) {
+            function loadForm(el) {
                 document.querySelectorAll('.form_box').forEach(box => {
                     box.style.backgroundColor = 'transparent';
                 });
                 el.style.backgroundColor = 'rgba(130, 43, 111, 0.12)';
-                
-                fetch(window.location.pathname, {
-                    method: 'RUN',
-                    body: body
-                })     
-                .then(r => r.text())
+                return 'done';
             }
         ";
 
-
-        div form_temp(string words, string id) {
+        template div form_temp(string words, string id) {
             div {
                 "class" : "form_box";
                 "id" : id;
@@ -158,6 +155,8 @@ div side_bar {
                 "padding" : "8px";
                 "display" : "flex";
                 "align-items" : "center";
+                "position" : "relative";
+                "justify-content" : "space-between";
                 "gap" : "10px";
                 "width" : "100%";
                 "height" : "36px";
@@ -166,10 +165,22 @@ div side_bar {
                 "background-color" : "transparent";
                 "transition" : "background-color 0.15s ease";
 
-                "onclick" : escape_str("loadForm(this,'sheetpool=load_sheet(\""+id+"\");')");
                 "onmouseenter" : "if(this.style.backgroundColor==='transparent')this.style.backgroundColor='rgba(0,0,0,0.04)'";
-                "onmouseleave" : "console.log(this.style.backgroundColor); if(this.style.backgroundColor==='rgba(0, 0, 0, 0.04)')this.style.backgroundColor='transparent'";
+                "onmouseleave" : "if(this.style.backgroundColor==='rgba(0, 0, 0, 0.04)')this.style.backgroundColor='transparent'";
                 
+                "onclick" : capture(
+                    js_do("
+                        document.querySelectorAll('.form_box').forEach(box => {
+                            box.style.backgroundColor = 'transparent';
+                        });
+                        this.style.backgroundColor = 'rgba(130, 43, 111, 0.12)';
+                    "),
+                    string recive_sheetname ; js_lit(id)
+                ) {          
+                    sheetname = recive_sheetname;
+                    emit_reload(ctx,sidebar_reload_target);
+                }
+
                 text words {
                     "class" : "label";
                     "opacity" : "0";
@@ -177,10 +188,51 @@ div side_bar {
                     "font-size" : "14px";
                     text_theme;
                 }
+                
+                bool context_open;
+                div context_panel {
+                    "display" : (context_open ? "block" : "none");
+                    "position" : "absolute";
+                    "top" : "100%";
+                    "right" : "0";
+                    "z-index" : "100";
+                    "background" : "white";
+                    "border" : "1px solid rgb(200,200,200)";
+                    "border-radius" : "6px";
+                    "box-shadow" : "0 4px 12px rgba(0,0,0,0.12)";
+                    "min-width" : "120px";
+                    "padding" : "4px";
+
+                    hoisted string context_panel_input;
+                    input {
+                        "value" : context_panel_input;
+                         "onchange" : capture(string reciver ; "this.value") { 
+                            context_panel_input = reciver;
+                        }
+                    }
+                }
+
+                text "..." {
+                    "onclick" : capture(
+                            string recive_id ; js_do("event.stopPropagation(); return '"+id+"';")
+                    ) {
+                        context_open = (context_open ? false : true);
+                        print(recive_id," opened their context menu");
+                        if(context_panel_input.length!=0) {
+                            print("Consuming: ",context_panel_input);
+                        }
+                        context_panel.reload;
+                    }
+                    "class" : "label";
+                    "opacity" : "0";
+                    "transition" : "opacity 0.15s ease";
+                    "font-size" : "16px";
+                    text_theme;
+                }
             }
         }
 
-        if(session.userpath.length==0) {
+        if(session.userpath.length==99) { //Normally 0, just disabled for convience
             text "Please log in" {
                 "class" : "label";
                 "opacity" : "0";
@@ -189,7 +241,7 @@ div side_bar {
                 text_theme;
             }
         } else {
-            Ptr string files = list_files_in_directory(session.userpath+"sheets");
+            Ptr string files = list_files_in_directory("mixos-acorn/web/thistle/users/fir/sheets");
             for(int i=0;i<files.length;i++) {
                 form_temp(files.get(i),files.get(i));
             }
@@ -256,7 +308,7 @@ root_path {
                             card_theme;
                             "border-radius" : "12px";
                             "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
-                                button to_new {
+                                button {
                                     "id" : "to_new";
                                     "onclick" : "goTo('/new')";
                                     text "New" {
@@ -265,7 +317,7 @@ root_path {
                                     }
                                     basic_button;
                                 }
-                                button to_todo {
+                                button {
                                     "id" : "to_todo";
                                     "onclick" : "goTo('/build')";
                                     text "Build" {
@@ -274,7 +326,7 @@ root_path {
                                     }
                                     basic_button;
                                 }
-                                button to_sent {
+                                button {
                                     "id" : "to_sent";
                                     "onclick" : "goTo('/audit')";
                                     text "Audit" {
@@ -396,7 +448,7 @@ login {
                                         }
                                 }
 
-                                button login {
+                                button {
                                     "id" : "login";
                                     "onclick" : "postForm({username: getel('username').value, password: getel('password').value})";
                                     text "Login" {
@@ -502,8 +554,73 @@ login {
     }
 ##
 
-build {
+
+template div build_render_sheet(int spool) {
     div {
+        "display" : "flex";
+        "justify-content" : "center";
+        "width" : "100%";
+            table {
+                "border-collapse" : "collapse";
+                "width" : "100%";
+                    int lenc = plen(spool); //Columns
+                    int lenr = 0; //Rows
+
+                    //Headers
+                    row {
+                        for(int i=0;i<lenc;i++) {
+                            column {
+                                "background-color" : "rgb(240, 240, 240)";
+                                "padding" : "10px 12px";
+                                "font-size" : "14px";
+                                "color" : "rgb(26, 26, 26)";
+                                "font-size" : "13px";
+                                "font-weight" : "600";
+                                "color" : "rgb(80,80,80)";
+                                "font-family" : "system-ui, sans-serif";
+                                "border-right" : "1px solid rgb(200,200,200)";
+                                text clabel(spool,i);
+                            }
+                            int lenco = clen(spool,i);
+                            if(lenco>lenr) {
+                                lenr = lenco;
+                            }
+                        }
+                    }
+                    
+                    //Render each column
+                    for(int r=0;r<lenr;r++) {
+                        row {
+                            "border-bottom" : "1px solid rgb(220,220,220)";
+                                for(int c=0;c<lenc;c++) {
+                                    column {
+                                        "border-right" : "1px solid rgb(200,200,200)";
+                                            string tostr = "";
+                                            Ptr cellptr = makePtr3(spool,c,r);
+                                            Ptr p = resolve_as_Ptr(cellptr);
+                                            if(is_live(p)) {
+                                                tostr = value_as_string(p);
+                                            }
+                                            input {
+                                                "border" : "none";
+                                                "background-color" : "transparent";
+                                                "width" : "100%";
+                                                "padding" : "8px 4px";
+                                                "font-size" : "13px";
+                                                "font-family" : "system-ui, sans-serif";
+                                                "value" : tostr;                                                                    
+                                                "onchange" : escape_str("run('setcell(\""+to_string(cellptr)+"=',this.value,'\")')");
+                                            }
+                                    }
+                                }
+                        }
+                    }
+            }
+    }
+}
+
+build {
+    div build_root {
         style "
             td:hover {
                 background-color:rgb(234, 234, 234);
@@ -527,8 +644,8 @@ build {
             "display" : "flex";
             "min-height" : "100vh";
                 side_bar;
-
-                div {
+                div build_sheet_panel {
+                    sidebar_reload_target = call_owner(build_sheet_panel);
                     "flex" : "1";
                     "display" : "flex";
                     "flex-direction" : "column";
@@ -539,119 +656,36 @@ build {
                             "width" : "100%";
                             "display" : "flex";
                             "gap" : "8px";
-                                div control_btns(string label, string behaviour) { 
-                                    button instance {
-                                        "onclick" : behaviour; 
+
+                                template div control_btns(string label, string behaviour) { 
+                                    button {
+                                        "onclick" : behaviour;
                                         "height" : "100%"; 
                                         "width" : "40px"; 
                                         text label { text_theme; }
                                     } 
                                 }
 
-                                control_btns("+C","fragthree('main_sheet','add_column','0')");
-                                control_btns("+R","fragthree('main_sheet','add_row','0')");
-                                control_btns("+F","fragthree('main_sheet','add_form','0')");
-                                control_btns("0","fragthree('main_sheet','rendermode','0')");
-                                control_btns("9","fragthree('main_sheet','rendermode','9')");
-                                control_btns("--","fragthree('main_sheet','rendermode','-')");
-                                control_btns("++","fragthree('main_sheet','rendermode','+')");
-                                control_btns("S","fragthree('main_sheet','to_sheet','')");
-                                control_btns("F","fragthree('main_sheet','to_form','')");
-                                control_btns("D","fragthree('main_sheet','to_debug','')");
+                                control_btns("S","save_sheet("+to_string(sheetpool)+",\""+sheetname+"\")");
+                                control_btns("+C","add_column_to_sheet("+to_string(sheetpool)+"); emit_reload(ctx,cast_to_Node("+call_owner_as_string(build_sheet_panel)+"))");
+                                control_btns("+R","add_row_to_sheet("+to_string(sheetpool)+"); emit_reload(ctx,cast_to_Node("+call_owner_as_string(build_sheet_panel)+"))");                              
                         }
 
                         div {
                             "display" : "flex";
-                            "justify-content" : "center";
-                            "align-items" : "end";
+                            "justify-content" : "flex-start";
+                            "align-items" : "stretch";
+                            "flex-direction" : "column";
                             "width" : "480px";
                             "padding" : "40px";
                             "gap" : "12px";
                             card_theme;
                             "border-radius" : "12px";
                             "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
-
-                            div {
-                                "display" : "flex";
-                                "justify-content" : "center";
-                                "width" : "100%";
-                                sheet main_sheet {
-                                    "id" : "main_sheet";
-                                    invisible header_style {
-                                        "background-color" : "rgb(240, 240, 240)";
-                                        "padding" : "10px 12px";
-                                        "font-size" : "14px";
-                                        "color" : "rgb(26, 26, 26)";
-                                        text_theme;
-                                    }
-                                    invisible column_style {
-                                        "border-right" : "1px solid rgb(200,200,200)";
-                                    }
-                                    invisible row_style {
-                                        "border-bottom" : "1px solid rgb(220,220,220)";
-                                    }
-                                     invisible input_style {
-                                        "border" : "none";
-                                        "background-color" : "transparent";
-                                        "width" : "100%";
-                                        "padding" : "8px 4px";
-                                        "font-size" : "13px";
-                                        "font-family" : "system-ui, sans-serif";
-                                    }
-                                    invisible select_style {
-                                        input_theme;
-                                    }
-                                    invisible form_input_style {
-                                        "border" : "none";
-                                        "border-bottom" : "2px solid rgb(200,200,200)";
-                                        "border-radius" : "0px";
-                                        "background-color" : "transparent";
-                                        "padding" : "8px 0px";
-                                        input_theme;
-                                    }
-                                    invisible field_style {
-                                        "display" : "flex";
-                                        "flex-direction" : "column";
-                                        "gap" : "6px";
-                                        "margin-bottom" : "20px";
-                                    }
-                                    invisible label_style {
-                                        text_theme;
-                                    }
-                                    invisible header_label_style {
-                                        "font-size" : "16px";
-                                        text_theme;
-                                    }
-                                    invisible context_menu_style {
-                                        "display" : "none"
-                                        "background" : "white";
-                                        "border" : "1px solid rgb(200,200,200)";
-                                        "border-radius" : "4px";
-                                        "padding" : "8px";
-                                        "min-width" : "200px";
-                                        "box-shadow" : "0 4px 12px rgba(0,0,0,0.15)";
-                                    }
-                                    invisible context_menu_header_style {
-                                        "font-size" : "11px";
-                                        "color" : "rgb(150,150,150)";
-                                        text_theme;
-                                        "margin-bottom" : "6px";
-                                    }
-                                    invisible context_menu_body_style {
-                                        "display" : "flex";
-                                        "flex-direction" : "column";
-                                        "gap" : "4px";
-                                    }
-                                    invisible context_menu_label_style {
-                                        "font-size" : "12px";
-                                        text_theme;
-                                    }
-                                    invisible context_menu_input_style {
-                                        input_theme;
-                                    }
-                                }
-                            }                          
-                        }
+                            if(sheetpool!=0) {
+                                build_render_sheet(sheetpool);
+                            }
+                        } 
                 }
         }
     }
@@ -977,7 +1011,7 @@ audit {
                                 "gap" : "12px";
                                 "margin-top" : "auto";
                                 "width" : "100%";
-                                    button approve {
+                                    button {
                                         "id" : "approve";
                                         "display" : "flex";
                                         "justify-content" : "center";
@@ -1022,9 +1056,6 @@ audit {
         return out;
     }
 
-    sheetpool = load_sheet("redberry");
-
-
     register admin;
     "admin" {
         in htmlemiting {
@@ -1050,7 +1081,7 @@ audit {
     }
 ##
 
-div std_render_sheet(int spool) {
+template div std_render_sheet(int spool) {
     div {
         "display" : "flex";
         "justify-content" : "center";
@@ -1104,7 +1135,7 @@ div std_render_sheet(int spool) {
                                                 "font-size" : "13px";
                                                 "font-family" : "system-ui, sans-serif";
                                                 "value" : tostr;                                                                    
-                                                "onchange" : escape_str("run('setcell(\""+to_string(cellptr)+"=',this.value,'\")')");
+                                                "onchange" : escape_str("run_raw('setcell(\""+to_string(cellptr)+"=',this.value,'\")')");
                                             }
                                     }
                                 }
@@ -1139,7 +1170,7 @@ admin {
             background_theme;
 
 
-            div control_btns(string label, string behaviour) { 
+            template div control_btns(string label, string behaviour) { 
                 button instance {
                     "onclick" : behaviour; 
                     "height" : "100%"; 
@@ -1148,9 +1179,9 @@ admin {
                 } 
             }
 
-            control_btns("S",escape_str("run('save_sheet("+to_string(sheetpool)+",\"redberry\")')"));
-            control_btns("+C",escape_str("run('add_column_to_sheet("+to_string(sheetpool)+")')"));
-            control_btns("+R",escape_str("run('add_row_to_sheet("+to_string(sheetpool)+")')"));
+            control_btns("S",escape_str("run_raw('save_sheet("+to_string(sheetpool)+",\"redberry\")')"));
+            control_btns("+C",escape_str("run_raw('add_column_to_sheet("+to_string(sheetpool)+")')"));
+            control_btns("+R",escape_str("run_raw('add_row_to_sheet("+to_string(sheetpool)+")')"));
 
             div {
                 "flex" : "1";

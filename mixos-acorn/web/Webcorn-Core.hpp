@@ -491,6 +491,154 @@ namespace Acorn {
             print("Server fd is now ",server->getfd());
         });
 
+
+        bool is_websocket_upgrade(const std::string& request) {
+            return request.find("Upgrade: websocket") != std::string::npos;
+        }
+        
+        std::string get_websocket_key(const std::string& request) {
+            size_t pos = request.find("Sec-WebSocket-Key: ");
+            if(pos == std::string::npos) return "";
+            pos += 19;
+            size_t end = request.find("\r\n", pos);
+            return request.substr(pos, end - pos);
+        }
+        
+        std::string sha1_base64(const std::string& input) {
+            // SHA1 constants
+            uint32_t h0 = 0x67452301;
+            uint32_t h1 = 0xEFCDAB89;
+            uint32_t h2 = 0x98BADCFE;
+            uint32_t h3 = 0x10325476;
+            uint32_t h4 = 0xC3D2E1F0;
+        
+            // Pre-processing: adding padding
+            std::string msg = input;
+            uint64_t bit_len = input.size() * 8;
+            msg += (char)0x80;
+            while(msg.size() % 64 != 56) msg += (char)0x00;
+            for(int i = 7; i >= 0; i--) msg += (char)((bit_len >> (i*8)) & 0xFF);
+        
+            // Process each 512-bit chunk
+            for(size_t chunk = 0; chunk < msg.size(); chunk += 64) {
+                uint32_t w[80];
+                for(int i = 0; i < 16; i++) {
+                    w[i] = ((uint8_t)msg[chunk+i*4]   << 24) |
+                           ((uint8_t)msg[chunk+i*4+1] << 16) |
+                           ((uint8_t)msg[chunk+i*4+2] << 8)  |
+                           ((uint8_t)msg[chunk+i*4+3]);
+                }
+                for(int i = 16; i < 80; i++) {
+                    uint32_t n = w[i-3]^w[i-8]^w[i-14]^w[i-16];
+                    w[i] = (n<<1)|(n>>31); // left rotate 1
+                }
+        
+                uint32_t a=h0, b=h1, c=h2, d=h3, e=h4;
+        
+                for(int i = 0; i < 80; i++) {
+                    uint32_t f, k;
+                    if(i<20)      { f=(b&c)|((~b)&d); k=0x5A827999; }
+                    else if(i<40) { f=b^c^d;          k=0x6ED9EBA1; }
+                    else if(i<60) { f=(b&c)|(b&d)|(c&d); k=0x8F1BBCDC; }
+                    else          { f=b^c^d;          k=0xCA62C1D6; }
+        
+                    uint32_t temp = ((a<<5)|(a>>27)) + f + e + k + w[i];
+                    e=d; d=c; c=(b<<30)|(b>>2); b=a; a=temp;
+                }
+        
+                h0+=a; h1+=b; h2+=c; h3+=d; h4+=e;
+            }
+        
+            // Produce 20-byte digest
+            uint8_t digest[20];
+            for(int i=0;i<4;i++) {
+                digest[i]    = (h0>>(24-i*8))&0xFF;
+                digest[i+4]  = (h1>>(24-i*8))&0xFF;
+                digest[i+8]  = (h2>>(24-i*8))&0xFF;
+                digest[i+12] = (h3>>(24-i*8))&0xFF;
+                digest[i+16] = (h4>>(24-i*8))&0xFF;
+            }
+        
+            // Base64 encode
+            const char* b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            std::string out;
+            for(int i=0;i<20;i+=3) {
+                uint32_t n = ((uint32_t)digest[i]<<16) | 
+                             (i+1<20?(uint32_t)digest[i+1]<<8:0) | 
+                             (i+2<20?(uint32_t)digest[i+2]:0);
+                out += b64[(n>>18)&63];
+                out += b64[(n>>12)&63];
+                out += (i+1<20) ? b64[(n>>6)&63] : '=';
+                out += (i+2<20) ? b64[n&63]      : '=';
+            }
+            return out;
+        }
+
+        std::string make_websocket_accept(const std::string& key) {
+            return sha1_base64(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+        }
+
+        std::string websocket_handshake(const std::string& accept_key) {
+            return "HTTP/1.1 101 Switching Protocols\r\n"
+                   "Upgrade: websocket\r\n"
+                   "Connection: Upgrade\r\n"
+                   "Sec-WebSocket-Accept: " + accept_key + "\r\n"
+                   "\r\n";
+        }
+
+        std::string websocket_read(int fd) {
+            uint8_t header[2];
+            READ_SOCKET(fd, (char*)header, 2);
+            
+            bool masked = header[1] & 0x80;
+            uint64_t length = header[1] & 0x7F;
+            
+            if(length == 126) {
+                uint8_t ext[2];
+                READ_SOCKET(fd, (char*)ext, 2);
+                length = ((uint64_t)ext[0]<<8) | ext[1];
+            } else if(length == 127) {
+                uint8_t ext[8];
+                READ_SOCKET(fd, (char*)ext, 8);
+                length = 0;
+                for(int i=0;i<8;i++) length = (length<<8)|ext[i];
+            }
+            
+            uint8_t mask[4] = {0};
+            if(masked) READ_SOCKET(fd, (char*)mask, 4);
+            
+            std::string payload(length, 0);
+            READ_SOCKET(fd, payload.data(), length);
+            
+            if(masked) {
+                for(size_t i=0;i<length;i++) {
+                    payload[i] ^= mask[i%4];
+                }
+            }
+            
+            return payload;
+        }
+
+        void websocket_write(int fd, const std::string& message) {
+            std::string frame;
+            frame += (char)0x81; // FIN + text opcode
+            
+            size_t len = message.size();
+            if(len <= 125) {
+                frame += (char)len;
+            } else if(len <= 65535) {
+                frame += (char)126;
+                frame += (char)((len>>8)&0xFF);
+                frame += (char)(len&0xFF);
+            } else {
+                frame += (char)127;
+                for(int i=7;i>=0;i--) frame += (char)((len>>(i*8))&0xFF);
+            }
+            
+            frame += message;
+            WRITE_SOCKET(fd, frame.data(), frame.size());
+        }
+
         uint32_t thread_sleep_id = add_function("thread_sleep",[this](Context& ctx){std::this_thread::sleep_for(std::chrono::nanoseconds(100));});
         uint32_t unit_sleep_id = add_function("unit_sleep",[this](Context& ctx){types.live = false;});
         uint32_t unit_wake_id = add_function("unit_wake",[this](Context& ctx){types.live = true;});
@@ -543,14 +691,67 @@ namespace Acorn {
             unit->run(root);
         });
 
-        uint32_t property_id = reg_id("property");
+
         uint32_t properties_id = reg_id("properties");
         uint32_t inlined_id = reg_id("inlined"); uint32_t prefix_inlined_id = reg_id("prefix_inlined");  uint32_t suffix_inlined_id = reg_id("suffix_inlined"); 
         uint32_t invisible_id = reg_id("invisible"); uint32_t prefix_invisible_id = reg_id("prefix_invisible"); uint32_t suffix_invisible_id = reg_id("suffix_invisible");
         uint32_t component_id = reg_id("component"); uint32_t prefix_component_id = reg_id("prefix_component");  uint32_t suffix_component_id = reg_id("suffix_component");
         uint32_t template_qual = add_qual("template");
-
+        uint32_t stateless_qual = add_qual("stateless");
         uint32_t find_node_id = make_tokenized_keyword("find_node");
+        // uint32_t capture_id = add_function("capture",[this](Context& ctx){
+        //     if(!ctx.node().scopes().empty()&&ctx.source().to_std()=="go") { //The property normally owns the scope, but if I find a way to change that...
+        //         ctx.source() = "";
+        //         standard_travel_pass(ctx.node().scopes()[0],ctx);
+        //     } else {
+        //         standard_sub_process(ctx);
+        //         string output = resolve_string_ticket(ctx.node());
+        //         output = "run('"+ctx.source().to_std()+"'";
+        //         for(int i=0;i<ctx.node().children().length();i++) {
+        //             Node arg = ctx.node().children()[i];
+        //             output.push(","+string(*(Ptr*)arg.value().get()).to_std());
+        //         }
+        //         output.push(")");
+        //     }
+        // },sizeof(Ptr),string_id);
+
+        uint32_t capture_id = make_tokenized_keyword("capture");
+        
+        std::string to_js_expr(std::string s) {
+            std::string str = "(()=>{"+s+"})()";
+            return str;
+        }
+        uint32_t to_js_expr_id = add_function("js_do",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string output = resolve_string_ticket(ctx.node());
+            string s = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            output = to_js_expr(s.to_std());
+        },sizeof(Ptr),string_id);
+
+        std::string escape_js_string(const std::string& s) {
+            std::string out;
+            for(char c : s) {
+                switch(c) {
+                    case '\\': out += "\\\\"; break;
+                    case '\'': out += "\\'"; break;
+                    case '\n': out += "\\n"; break;
+                    case '\r': out += "\\r"; break;
+                    case '\t': out += "\\t"; break;
+                    default: out += c; break;
+                }
+            }
+            return out;
+        }
+        std::string to_js_lit(std::string s) {
+            return "'"+escape_js_string(s)+"'";
+        }
+        uint32_t to_js_lit_id = add_function("js_lit",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string output = resolve_string_ticket(ctx.node());
+            string s = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            output = to_js_lit(s.to_std());
+        },sizeof(Ptr),string_id);
+
 
         Stage& html_handlers = reg_stage("htmlemiting");
 
@@ -592,6 +793,48 @@ namespace Acorn {
             output = escaped;
         },sizeof(Ptr),string_id);
 
+        bool resolve_prop_names(Context& ctx, Node c, std::string& prop, std::string& val) {
+            Node saved_root = ctx.root();
+            ctx.root(c);
+            std::string old_source = ctx.source().to_std();
+
+            if(c.children()[0].value().type()==string_id) {
+                process_node(ctx,c.children()[0]);
+                if(!is_live(c.children()[0].value().data_ptr())) { //For templates and such where we might use an identifer
+                    ctx.root(saved_root);
+                    ctx.source() = old_source;
+                    return true;
+                }
+                prop = string(*(Ptr*)c.children()[0].value().get()).to_std();
+            } else {
+                prop = c.children()[0].name().to_std();
+            }
+
+            if(c.children().length()>1) {
+                if(c.children()[1].value().type()==string_id) {
+                    process_node(ctx,c.children()[1]);
+                    if(!is_live(c.children()[1].value().data_ptr())) {
+                        ctx.root(saved_root);
+                        ctx.source() = old_source;
+                        return true;
+                    }
+                    val = string(*(Ptr*)c.children()[1].value().get()).to_std();
+                } else {
+                    val = c.children()[1].name().to_std();
+                }
+            } else if(!c.scopes().empty()) {
+                val = "run('"+Ptr_to_string(c,c.cachelevel)+"')";
+            }
+            else {
+                ctx.root(saved_root);
+                ctx.source() = old_source;
+                return true;
+            }
+            ctx.root(saved_root);
+            ctx.source() = old_source;
+            return false;
+        }
+
         void emit_inline_html(Context& ctx) {
             if(ctx.node().mute()) return;
             std::string s = "";
@@ -599,28 +842,12 @@ namespace Acorn {
             list<std::string> style_prop_labels; list<std::string> style_prop_values;
             for(int i=0;i<ctx.node().children().length();i++) {
                 Node c = ctx.node().children()[i];
-                if(c.type()==property_id) {
+                if(c.type()==property_id||c.type()==to_unary_id(property_id)) {
                     std::string prop = "";
                     std::string val = "";
 
-                    if(c.children()[0].value().type()==string_id) {
-                        process_node(ctx,c.children()[0]);
-                        if(!is_live(c.children()[0].value().data_ptr())) { //For templates and such where we might use an identifer
-                            continue;
-                        }
-                        prop = string(*(Ptr*)c.children()[0].value().get()).to_std();
-                    } else {
-                        prop = c.children()[0].name().to_std();
-                    }
-
-                    if(c.children()[1].value().type()==string_id) {
-                        process_node(ctx,c.children()[1]);
-                        if(!is_live(c.children()[1].value().data_ptr())) {
-                            continue;
-                        }
-                        val = string(*(Ptr*)c.children()[1].value().get()).to_std();
-                    } else {
-                        val = c.children()[1].name().to_std();
+                    if(resolve_prop_names(ctx,c,prop,val)) {
+                        continue;
                     }
 
                     list<std::string>* prop_labels; list<std::string>* prop_values;
@@ -653,6 +880,7 @@ namespace Acorn {
 
         std::string emit_inline_html(Context& ctx, Node node) {
             Node old_node = ctx.node();
+            Node old_qual = ctx.qual(); //Consider jus removing the qual here, it can cause problems with the rerouting
             std::string old_source = ctx.source().to_std();
             ctx.source().col().clear();
             ctx.node(node);
@@ -660,6 +888,7 @@ namespace Acorn {
             std::string to_reutrn = ctx.source().to_std();
             ctx.node(old_node);
             ctx.source() = old_source;
+            ctx.qual(old_qual);
             return to_reutrn;
         }
 
@@ -671,6 +900,73 @@ namespace Acorn {
             return prop_node;
         }
 
+        Node get_prop(Context& ctx, Node node, std::string looking_for) {
+            for(int i=0;i<node.children().length();i++) {
+                Node c = node.children()[i];
+                if(c.type()==property_id||c.type()==to_unary_id(property_id)) {
+                    std::string prop = "";
+                    std::string val = "";
+                    if(resolve_prop_names(ctx,c,prop,val)) {
+                        continue;
+                    }
+                    if(prop==looking_for) {
+                        return c;
+                    }
+                }  
+            }
+            return deadptr;
+        }
+        uint32_t get_prop_id = overload_type(component_id,".\"get_prop\"","GET_PROP",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            Node node = ctx.node().children()[0].scopes()[0];
+            process_node(ctx, ctx.node().children()[1].children()[0]);
+            std::string looking_for = resolve_string_ticket(ctx.node().children()[1].children()[0]).to_std();
+            Node c = get_prop(ctx,node,looking_for);
+            ctx.node().value().set((void*)&c);
+        });
+        uint32_t set_prop_id = overload_type(component_id,".\"set_prop\"","SET_PROP",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            Node node = ctx.node().children()[0].scopes()[0];
+            process_node(ctx, ctx.node().children()[1].children()[0]);
+            process_node(ctx, ctx.node().children()[1].children()[1]);
+            std::string looking_for = resolve_string_ticket(ctx.node().children()[1].children()[0]).to_std();
+            std::string set_to = resolve_string_ticket(ctx.node().children()[1].children()[1]).to_std();
+            Node c = get_prop(ctx,node,looking_for);
+            if(is_live(c)) {
+                c.children()[1].name() = set_to;
+            } else {
+                print(yellow("webcorn:set_prop property "+looking_for+" not found while trying to set to "+set_to));
+            }
+        });
+        uint32_t has_prop_id = overload_type(component_id,".\"has_prop\"","HAS_PROP",make_value(bool_id,1),[this](Context& ctx){
+            Node node = ctx.node().children()[0].scopes()[0];
+            process_node(ctx, ctx.node().children()[1].children()[0]);
+            std::string looking_for = resolve_string_ticket(ctx.node().children()[1].children()[0]).to_std();
+            bool has = is_live(get_prop(ctx,node,looking_for));
+            ctx.node().value().set((void*)&has);
+        });
+        int get_propidx(Context& ctx, Node node, std::string looking_for) {
+            for(int i=0;i<node.children().length();i++) {
+                Node c = node.children()[i];
+                if(c.type()==property_id||c.type()==to_unary_id(property_id)) {
+                    std::string prop = "";
+                    std::string val = "";
+                    if(resolve_prop_names(ctx,c,prop,val)) {
+                        continue;
+                    }
+                    if(prop==looking_for) {
+                        return i;
+                    }
+                }  
+            }
+            return -1;
+        }
+        uint32_t get_propidx_id = overload_type(component_id,".\"get_propidx\"","GET_PROPIDX",make_value(int_id,4),[this](Context& ctx){
+            Node node = ctx.node().children()[0].scopes()[0];
+            process_node(ctx, ctx.node().children()[1].children()[0]);
+            std::string looking_for = resolve_string_ticket(ctx.node().children()[1].children()[0]).to_std();
+            int i = get_propidx(ctx,node,looking_for);
+            ctx.node().value().set((void*)&i);
+        });
+
         //This should definetly be replaced with a cleaner system eventually
         Node webcorn_node_scan(const std::string& label, Node from) {
             //print("SEARCHING: ",node_info(from));
@@ -679,7 +975,7 @@ namespace Acorn {
                 for(int i=0;i<from.scopes()[0].children().length();i++) {
                     Node c = from.scopes()[0].children()[i];
                     //print("   LOOKING AT ",node_to_string(c));
-                    if(c.type()==property_id) {
+                    if(c.type()==property_id||c.type()==to_unary_id(property_id)) {
                         std::string prop = "";
                         std::string val = "";
 
@@ -791,6 +1087,25 @@ namespace Acorn {
             }
             return to_return;
         }
+
+        //ADD NORMALIZATION LATER WHEN THIS NEEDS TO WORK WITH MULTIPLE POOLS
+        void delete_sheet(uint32_t sheetpool) {
+            if(sheetpool>=types.length()) {print(red("webcorn:delete_sheet sheetpool "+std::to_string(sheetpool)+" out of bounds for types length "+std::to_string(types.length()))); return;}
+            sheetpool = find_sheet_pools_start(sheetpool);
+            while(sheetpool < types.length() && types[sheetpool].tag != storesheet_id) {
+                types.removeAt(sheetpool);
+            }
+            if(sheetpool < types.length()) {
+                types.removeAt(sheetpool);
+            }
+        }
+
+        void rename_sheet(uint32_t sheetpool, const std::string& name) {
+            sheetpool = find_sheet_pools_start(sheetpool);
+            types[sheetpool].label = name;
+        }
+
+
         ColCol* find_sheet(list<ColCol*> sheets, uint32_t tag, uint32_t nth = 0) {
             for(auto& sheet : sheets) {
                 if(sheet->tag==tag) {
@@ -1264,6 +1579,17 @@ namespace Acorn {
             ColCol store_pool; store_pool.tag=storesheet_id; types.push(store_pool);
             ctx.node().value().set((void*)&sheetid);
         },4,int_id);
+        uint32_t delete_sheet_id = add_function("delete_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = *(uint32_t*)ctx.node().children()[0].value().get();
+            delete_sheet(sheetpool);
+        });
+        uint32_t rename_sheet_id = add_function("rename_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = *(uint32_t*)ctx.node().children()[0].value().get();
+            string name = resolve_string_ticket(ctx.node().children()[1]);
+            rename_sheet(sheetpool,name.to_std());
+        });
         uint32_t add_form_id = add_function("add_form",[this](Context& ctx){
             standard_sub_process(ctx);
             int idx = *(int*)ctx.node().children()[0].value().get();
@@ -1548,16 +1874,84 @@ namespace Acorn {
             ctx.node().value().set((void*)&p);
         },sizeof(Ptr),ptr_id);
 
+        //Just some experiments
+        uint32_t clientsidescope_id = reg_id("clientsidescope");
+        uint32_t clientside_id = add_function("clientside",[this](Context& ctx){
+            standard_sub_process(ctx);
+            Ptr callptr = ctx.node().scopes()[0];
+            string output = resolve_string_ticket(ctx.node());
+            std::string out = "";
+            out = "run('"+Ptr_to_string(callptr,callptr.cachelevel)+"'";
+            for(int i=0;i<ctx.node().children().length();i++) {
+                Node arg = ctx.node().children()[i];
+                if(arg.type()==var_decl_id) continue;
+                out += ","+string(*(Ptr*)arg.value().get()).to_std();
+            }
+            out+=");";
+            output = out;
+        },sizeof(Ptr),string_id); 
+        uint32_t serversidescope_id = reg_id("serversidescope");
+        uint32_t serverside_id = add_function("serverside",[this](Context& ctx){
+
+        }); 
 
         void init() override {
-            set_binding_powers(colon_id,4,6);
-            n_handlers[colon_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                ctx.node().type(property_id);
-            };
             register_type("div",component_id,0);
             register_type("inlined",inlined_id,0);
             register_type("invisible",invisible_id,0);
+
+            r_handlers[clientside_id] = [this](Context& ctx){
+                if(!ctx.node().scopes().empty()) {
+                    ctx.node().scopes()[0].type(clientsidescope_id);
+                }
+            };
+            x_handlers[clientsidescope_id] = [this](Context& ctx){
+                ctx.state(standard_travel_pass(ctx.node(),ctx));
+            };
+
+            x_handlers[to_unary_id(property_id)] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                if(!ctx.node().scopes().empty()&&ctx.source().to_std()=="go") {
+                    ctx.source() = "";
+                    standard_travel_pass(ctx.node().scopes()[0],ctx);
+                }
+            };
+            x_handlers[property_id] = x_handlers[to_unary_id(property_id)];
+            //M is just the stage when this is most viable, any earlier and we get some issues
+            m_handlers[property_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                if(!ctx.node().scopes().empty()&&ctx.node().children().length()>1) { //Yield the scope
+                    ctx.node().children()[1].scopes().push(ctx.node().scopes().take(0));
+                    ctx.node().children()[1].scopes()[0].owner(ctx.node().children()[1]);
+                }
+            };
+            t_handlers[capture_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));
+            };
+            x_handlers[capture_id] = [this](Context& ctx){
+                if(!ctx.node().scopes().empty()&&ctx.node().scopes()[0].owner()!=ctx.node()) {
+                    ctx.node().scopes()[0].owner(ctx.node());
+                }
+                if(!ctx.node().scopes().empty()&&ctx.source().to_std()=="go") {
+                    ctx.source() = "";
+                    standard_travel_pass(ctx.node().scopes()[0],ctx);
+                } else {
+                    standard_sub_process(ctx);
+                    string output = resolve_string_ticket(ctx.node());
+                    output = "run('"+Ptr_to_string(ctx.node(),ctx.node().cachelevel)+"'";
+                    for(int i=0;i<ctx.node().children().length();i++) {
+                        Node arg = ctx.node().children()[i];
+                        if(arg.type()==var_decl_id) {
+                            output.push(",'[VAR]'");
+                        } else {
+                            //print("ARG: ",node_to_string(arg));
+                            output.push(","+string(*(Ptr*)arg.value().get()).to_std());
+                        }
+                    }
+                    output.push(")");
+                }
+            };
 
 
             add_function("plen",[this](Context& ctx){
@@ -1591,6 +1985,19 @@ namespace Acorn {
                 ctx.node().value().set(resolve_ptr(*(Ptr*)ctx.node().children()[0].value().get()));
             },sizeof(Ptr),ptr_id);
 
+            add_function("resolve_as_Node",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr resolved = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set(resolve_ptr(resolved));
+            },sizeof(Ptr),node_id);
+
+            add_function("cast_to_Node",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
+                if(n.cachelevel==3) n.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
+                ctx.node().value().set((void*)&n);
+            },sizeof(Ptr),node_id);
+
             add_function("makePtr3",[this](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr& p = *(Ptr*)ctx.node().value().get();
@@ -1613,14 +2020,44 @@ namespace Acorn {
                 ctx.node().value().set((void*)&b);
             },1,bool_id);
 
+            add_function("call_owner_as_string",[this](Context& ctx){
+                //We *don't* standard sub process because we don't want to emit to source
+                Node n = ctx.node().children()[0];
+                Ptr ownerptr = n.scopes()[0].owner();
+                string output = resolve_string_ticket(ctx.node());
+                output = Ptr_to_string(ownerptr,ownerptr.cachelevel);
+            },sizeof(Ptr),string_id);
+
+            add_function("call_owner",[this](Context& ctx){
+                //We *don't* standard sub process because we don't want to emit to source
+                Node n = ctx.node().children()[0];
+                Node owner = n.scopes()[0].owner();
+                ctx.node().value().set((void*)&owner);
+            },sizeof(Ptr),node_id);
+
 
             html_handlers.default_function = [this](Context& ctx) {
-                x_handlers.run(ctx.node().type())(ctx);
+                if(is_live(ctx.qual())) {
+                    //print("Running qual: ",node_info(ctx.qual()),red(" for "),node_info(ctx.node()));
+                    if(is_live(ctx.value())) {
+                        //print("Rerouting to value");
+                        x_handlers.run(to_prefix_id(ctx.qual().type()))(ctx);
+                    } else {
+                        //print("Rerouting to node");
+                        x_handlers.run(to_suffix_id(ctx.qual().type()))(ctx);
+                    }
+                } else {
+                    //print("Running: ",node_info(ctx.node()));
+                    //print("Rerouting to X");
+                    x_handlers.run(ctx.node().type())(ctx);
+                }
             };
+
 
             html_handlers[func_call_id] = [this](Context& ctx){
                 uint32_t prelen = ctx.source().length();
                 fire_quals(ctx,ctx.node().value());
+                if(ctx.node().mute()) {ctx.node().mute(false); return;}
                 bool needs_closing = ctx.source().length()!=prelen;
                 x_handlers.run(func_call_id)(ctx);
                 if(needs_closing) {
@@ -1632,14 +2069,37 @@ namespace Acorn {
                     ctx.source().push("</"+tag+">");
                 }
             };
+            html_handlers[func_decl_id] = [this](Context& ctx){
+                fire_quals(ctx,ctx.node().value());
+            };
             html_handlers[prefix_component_id] = [this](Context& ctx){
                 if(ctx.node().type()==func_call_id) {
+                    ctx.qual(deadptr); //Revoke it. Dealing with inner quals and their routing is a minefield!
                     std::string props = emit_inline_html(ctx,ctx.value().type_scope());
                     if(!props.empty()) {
                         ctx.source().push("<div "+props+">");
                     }
+                } else if(ctx.node().type()==func_decl_id&&!ctx.node().has_qual(template_qual)) {
+                    if(ctx.node().children().length()==0) { //Implcit case, for when a div is paramatrized and named but not qualifed as a template, don't emit it!
+                        ctx.qual(deadptr); 
+                        html_handlers.run(component_id)(ctx);
+                    }
                 }
             };
+            x_handlers[prefix_component_id] = html_handlers[prefix_component_id];
+
+            html_handlers[to_prefix_id(template_qual)] = [this](Context& ctx){
+                if(ctx.node().type()==func_call_id&&!ctx.node().has_qual(stateless_qual)) {
+                    //print("Instantiating: [",ctx.node().scopes().length(),"] ",node_info(ctx.node()));
+                    Node scope_owner = ctx.node().scopes()[0].owner();
+                    if(scope_owner!=ctx.node()) { //If we haven't been instantiated yet
+                        Node zero = ctx.node().scopes()[0];
+                        ctx.node().scopes().clear(); ctx.node().scopes() << zero;
+                        ctx.node().scopes() << instantiate_template_scope(ctx.node(),scope_owner,ctx,true);
+                    } 
+                }
+            };
+            x_handlers[to_prefix_id(template_qual)] = html_handlers[to_prefix_id(template_qual)];
 
             r_handlers[prefix_inlined_id] = [this](Context& ctx){
                 if(ctx.node().type()==func_call_id) {
@@ -1660,6 +2120,7 @@ namespace Acorn {
             };
 
             html_handlers[DEBUG_ROOT_id] = [this](Context& ctx) {
+                print("==HTML STAGE==");
                 print(node_to_string(ctx.node().in_scope()));
             };
 
@@ -1740,8 +2201,6 @@ namespace Acorn {
                 ctx.node().value(make_value(int_id,4));
             };
 
-          
-
             uint32_t socket_id = make_tokenized_keyword("socket");
             r_handlers[socket_id] = make_int_node;
             x_handlers[socket_id] = [this](Context& ctx){
@@ -1801,6 +2260,7 @@ namespace Acorn {
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 char buffer[4096];
                 std::string request;
+                
                 while(true) {
                     int bytes = READ_SOCKET(fd, buffer, sizeof(buffer)-1);
                     if(bytes <= 0) break;
@@ -1808,6 +2268,23 @@ namespace Acorn {
                     request += buffer;
                     if(bytes < (int)sizeof(buffer)-1) break;
                 }
+                
+                size_t header_end = request.find("\r\n\r\n");
+                if(header_end != std::string::npos) {
+                    size_t cl_pos = request.find("Content-Length: ");
+                    if(cl_pos != std::string::npos) {
+                        int content_length = std::stoi(request.substr(cl_pos+16));
+                        std::string body = request.substr(header_end+4);
+                        while((int)body.length() < content_length) {
+                            int bytes = READ_SOCKET(fd, buffer, sizeof(buffer)-1);
+                            if(bytes <= 0) break;
+                            buffer[bytes] = 0;
+                            body += buffer;
+                        }
+                        request = request.substr(0, header_end+4) + body;
+                    }
+                }
+                
                 Ptr ticket = get_ticket(name_store_id, 1, char_id);
                 for(auto c : request) types[name_store_id][ticket.idx].push((void*)&c);
                 ctx.node().value().set((void*)&ticket);
@@ -1830,6 +2307,8 @@ namespace Acorn {
                 int fd = *(int*)ctx.node().children()[0].value().get();
                 CLOSE_SOCKET(fd);
             };
+
+            
 
             // x_handlers[make_tokenized_keyword("respond")] = [this](Context& ctx){
             //     int fd = *(int*)ctx.node().children()[0].value().get();

@@ -135,7 +135,8 @@ int main(int argc, char* argv[]) {
 
     //Log::Line t; t.start();
     // g_ptr<Acorn::Acorn_Script> acorn = Acorn::make_unit<Acorn::Acorn_Script>();
-    // // acorn->setup_trace_res_flipbook();
+    // acorn->setup_standard_watchers();
+    // acorn->setup_trace_res_flipbook();
     // // acorn->setup_stamp_res_flipbook();
     // acorn->run(acorn->process(readFile("mixos-acorn/test.gld")));
     //print(ftime(t.end()));

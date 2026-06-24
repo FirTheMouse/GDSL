@@ -57,6 +57,7 @@ namespace Acorn {
         uint32_t node_block_id = reg_id("node_block");
         uint32_t invoke_stage_id = make_keyword("invoke_stage");
         uint32_t in_id = make_keyword("in");
+        uint32_t on_id = make_tokenized_keyword("on");
         uint32_t precompiling_id = reg_id("PRECOMPILING");
 
         uint32_t ctx_id = make_tokenized_keyword("ctx");
@@ -83,7 +84,13 @@ namespace Acorn {
         uint32_t ptr_take_id = reg_id("PTR_TAKE");
         uint32_t ptr_push_id = reg_id("PTR_PUSH");
         uint32_t ptr_length_id = reg_id("PTR_LENGTH");
-        uint32_t ptr_clear_id = reg_id("PTR_CLEAR");
+        uint32_t ptr_clear_id = overload_type(ptr_id,".\"clear\"","PTR_CLEAR",deadptr,[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node left = ctx.node().children()[0];
+            Node right = ctx.node().children()[1];
+            Col& col = resolve_to_col(*(Ptr*)left.value().get());
+            col.clear();
+        });
         // uint32_t string_append_id = reg_id("STRING_APPEND");
         uint32_t string_substr_id = reg_id("STRING_SUBSTR");
         uint32_t string_slice_id = reg_id("STRING_SLICE");
@@ -147,6 +154,27 @@ namespace Acorn {
             }
             col.qput(elv.get(),key,key_size,keyv.type());
         });
+        uint32_t ptr_has_id = overload_type(ptr_id,".\"has\"","PTR_HAS",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node left = ctx.node().children()[0];
+            Node right = ctx.node().children()[1];
+            DEBUG_ONLY(if(ERROR_FLAG) {return;})
+            void* lv = left.value().get();
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
+            Ptr ptr = *(Ptr*)lv;
+            Col& col = resolve_to_col(ptr);
+            Value keyv = right.children()[0].value();
+            
+            void* key = nullptr;
+            uint32_t key_size = 0;
+            if(keyv.type()==string_id||keyv.type()==ptr_id||keyv.type()==node_id) {
+                Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+                key = keycol.storage;
+                key_size = keycol.size;
+            }
+            bool has_thing = col.hasKey(key,key_size);
+            ctx.node().value().set((void*)&has_thing);
+        });
         uint32_t ptr_qset_id = overload_type(ptr_id,".\"qset\"","PTR_QSET",deadptr,[this](Context& ctx){
             standard_sub_process(ctx);
             Node left = ctx.node().children()[0];
@@ -169,9 +197,26 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
             Ptr ptr = *(Ptr*)lv;
             Col& col = resolve_to_col(ptr);
-            void* data = right.children()[0].value().get();
-            col.set(ptr.sidx,data);
+            void* data = right.children()[1].value().get();
+            uint32_t index = 0;
+            Value cv = right.children()[0].value();
+            if(cv.type()==int_id) {
+                index = *(int*)cv.get();
+                if(index>=col.length()) {
+                    print(red("ptr_set:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
+                }
+            }
+            else if(cv.type()==string_id||cv.type()==ptr_id||cv.type()==node_id) {
+                void* key = nullptr;
+                uint32_t key_size = 0;
+                Col& keycol = resolve_to_col(*(Ptr*)cv.get());
+                key = keycol.storage;
+                key_size = keycol.size;
+                index = col.getidx(key,key_size);
+            }
+            col.set(index,data);
         });
+
 
         uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
@@ -239,18 +284,41 @@ namespace Acorn {
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
+        uint32_t valueGetNode_id = overload_type(value_id,".\"getNode\"","VALUE_GETNODE",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Node v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
+            ctx.node().value(v);
+        });
         uint32_t valueGetInt_id = overload_type(value_id,".\"getInt\"","VALUE_GETINT",make_value(int_id,4),[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
-
         uint32_t value_set_id = overload_type(value_id,".\"set\"","VALUE_SET",deadptr,[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             void* d = ctx.node().children()[1].children()[0].value().get();
             v.set(d);
         });
+
+        uint32_t node_asid_id = overload_type(node_id,".\"asID\"","NODE_ASID",make_value(int_id,4),[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t id = (*(Ptr*)ctx.node().children()[0].value().get()).idx;
+            ctx.node().value().set((void*)&id);
+        });
+
+        uint32_t std_sub_proccess_id = add_function("subprocess",[this](Context& ctx){
+            standard_sub_process(ctx);
+            Context c = (Context&)*(Ptr*)ctx.node().children()[0].value().get();
+            standard_sub_process(c);
+        });
+
+        //Investigate why this isn't working later
+        // uint32_t context_doat = overload_type(context_id,".\"p\"","DOAT",deadptr,[this](Context& ctx){
+        //     standard_sub_process(ctx);
+        //     Context context = (Context&)*(Ptr*)ctx.node().children()[0].value().get();
+        //     print("Source ptr of ",Ptr_as_string(context),": ",Ptr_as_string(context.source_ptr()));
+        // });
 
 
         uint32_t string_equals_id = overload_type(string_id,"=string","STRING_EQUALS",deadptr,[this](Context& ctx){
@@ -290,6 +358,30 @@ namespace Acorn {
             ctx.node().value(ctx.node().children()[0].value());
         });
 
+        uint32_t split_str_id = add_function("split_str",[this](Context& ctx){
+            standard_sub_process(ctx);
+            std::string str = ((string&)(*(Ptr*)ctx.node().children()[0].value().get())).to_std();
+            std::string delimiter = ((string&)(*(Ptr*)ctx.node().children()[1].value().get())).to_std();
+            Ptr p = resolve_ticket(ctx.node(),sizeof(Ptr),string_id);
+            Col& data = resolve_to_col(p);
+            list<std::string> split = split_str(str, delimiter.at(0));
+            while(data.length() > split.length()) {
+                recycle_column(*(Ptr*)data.last());
+                data.removeAt(data.length()-1);
+            }
+            for(int i=0;i<split.length();i++) {
+                if(i<data.length()) {
+                    string s = (string&)*(Ptr*)data[i];
+                    s = split[i];
+                } else {
+                    string s = get_ticket(name_store_id,1,char_id);
+                    s = split[i];
+                    data.push((void*)&s);
+                }
+            }
+            ctx.node().value().set((void*)&p);
+        },sizeof(Ptr),ptr_id);
+
 
         uint32_t colsize_id = add_function("_colsize",[this](Context& ctx){
             Node left = ctx.node().children()[0];
@@ -325,6 +417,14 @@ namespace Acorn {
             int stoid = std::stoi(s.to_std());
             ctx.node().value().set((void*)&stoid);
         },4,int_id);
+
+        uint32_t string_to_Ptr_id = add_function("string_to_Ptr",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string s = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            Ptr p = string_to_Ptr(s.to_std());
+            ctx.node().value().set((void*)&p);
+        },sizeof(Ptr),ptr_id);
+
 
         uint32_t make_unit_id = add_function("make_unit",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -447,9 +547,6 @@ namespace Acorn {
         uint32_t precompile_brace = add_token_combo("precompile_brace",'#','#');
         uint32_t comment_brace = add_token_combo("comment_brace",'/','/');
 
-        uint32_t gloabl_qual = add_qual("global");
-        uint32_t static_qual = add_qual("static");
-
         void init() override {
             register_type("list",ptr_id,sizeof(Ptr));
 
@@ -502,13 +599,6 @@ namespace Acorn {
                 Col& col = resolve_to_col(*(Ptr*)left.value().get());
                 int len = col.length();
                 ctx.node().value().set((void*)&len);
-            };
-            x_handlers[ptr_clear_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                Node left = ctx.node().children()[0];
-                Node right = ctx.node().children()[1];
-                Col& col = resolve_to_col(*(Ptr*)left.value().get());
-                col.clear();
             };
             x_handlers[string_substr_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
@@ -593,6 +683,67 @@ namespace Acorn {
             };
             a_handlers[make_tokenized_keyword("newstage")] = [this](Context& ctx){
                 reg_stage(ctx.result().take(ctx.index()+1).name().to_std());
+            };
+
+            add_function("set_binding_powers",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t type = *(int*)ctx.node().children()[0].value().get();
+                int lbp = *(int*)ctx.node().children()[1].value().get();
+                int rbp = *(int*)ctx.node().children()[2].value().get();
+                set_binding_powers(type,lbp,rbp);
+                print("Set the bidning powers for ",labels[type]," to ",lbp," ",rbp);
+            });
+
+            //Revist this idea later once we have proper closures
+            add_function("add_function",[this](Context& ctx){
+                string label = resolve_string_ticket(ctx.node().children()[0]);
+                Node n = (Node&)*(Ptr*)ctx.node().children()[1].value().get();
+                add_function(label.to_std(),[this,n](Context& ctx) mutable {
+                    // g_ptr<Stage> old_stage = active_stage;
+
+                    // start_stage(x_handlers);
+                    // standard_travel_pass(this_node.scopes()[0],ctx);
+                    // start_stage(old_stage);
+                    
+                });
+            });
+
+            add_function("C0",[this](Context& ctx){
+                Node c0 = ctx.sub().node().children()[0];
+                ctx.node().value().set((void*)&c0);
+            },sizeof(Ptr),node_id);
+            add_function("C1",[this](Context& ctx){
+                Node c1 = ctx.sub().node().children()[1];
+                ctx.node().value().set((void*)&c1);
+            },sizeof(Ptr),node_id);
+    
+            overload_type(node_id,".\"c0\"","NODE_c0",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+                standard_sub_process(ctx);
+                Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
+                Node c0 = n.children()[0];
+                ctx.node().value().set((void*)&c0);
+            });
+            overload_type(node_id,".\"c1\"","NODE_c1",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+                standard_sub_process(ctx);
+                Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
+                Node c1 = n.children()[1];
+                ctx.node().value().set((void*)&c1);
+            });
+
+            r_handlers[qmark_id] = [this](Context& ctx){
+                standard_sub_process(ctx); //Because the second child is a : so  we just grab it's left value, so that other things know how to resolve against the qmark
+                Value lv = ctx.node().children()[1].children()[0].value();
+                ctx.node().value(lv); //Just the same for now, in the future we can be a bit fancier
+                resolve_overload(ctx);
+            };
+            x_handlers[qmark_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                if(*(bool*)ctx.node().children()[0].value().get()) {
+                    ctx.node().value(ctx.node().children()[1].children()[0].value());
+                }
+                else {
+                    ctx.node().value(ctx.node().children()[1].children()[1].value());
+                }
             };
 
 
@@ -859,6 +1010,31 @@ namespace Acorn {
                 types[handler_type_id][target_type].set(stage_id,(void*)&target_scope);
             };
 
+            n_handlers[on_id] = [this](Context& ctx){ //Add a proper n_take_right later, like we had in GDSL
+                ctx.index()++;
+                while(ctx.result().get(ctx.index()).type()!=lbrace_id) {
+                    ctx.node().children().push(ctx.result().take(ctx.index()));
+                }
+            };
+            x_handlers[on_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t target_type = ctx.node().in_scope().owner().sub_type();
+                string instr = resolve_string_ticket(ctx.node().children()[0]);
+
+                Value v = deadptr;
+                if(ctx.node().children().length()>1) {
+                    v = ctx.node().children()[1].value();
+                }
+
+                Node this_node = ctx.node();
+                overload_type(target_type, instr.to_std(), instr.to_std()+"_overload", v, [this, this_node](Context& ctx) mutable {
+                    g_ptr<Stage> old_stage = active_stage;
+                    start_stage(x_handlers);
+                    standard_travel_pass(this_node.scopes()[0], ctx);
+                    start_stage(old_stage);
+                });
+            };
+
 
             //This implicit scoping doesn't work yet, add it as a proper feature later
             //To work, the s handlers for rbrace need to properly descend scopes so they can work with implictly scoped nodes containing lbraces
@@ -895,13 +1071,25 @@ namespace Acorn {
             };
             t_handlers[else_id] = [this](Context& ctx) {
                 if(ctx.index()>0) {
+                    Node left_if = deadptr;      
                     if(ctx.left().type()==if_id) {
-                        ctx.node().scopes()[0].owner(ctx.left());
-                        ctx.left().scopes() << ctx.node().scopes()[0];
-                        ctx.left().quals() << turn_into_token(ctx.node());
+                        left_if = ctx.left();
+                        while(left_if.scopes().length()==2) { //To chain else ifs
+                            Node lscope = left_if.scopes()[1];
+                            if(!lscope.children().empty()) {
+                                if(lscope.children()[0].type()==if_id) {
+                                    left_if = lscope.children()[0];
+                                }
+                            }
+                        }
+                    }
+                    if(is_live(left_if)) {
+                        ctx.node().scopes()[0].owner(left_if);
+                        left_if.scopes() << ctx.node().scopes()[0];
+                        left_if.quals() << turn_into_token(ctx.node());
                         ctx.result().removeAt(ctx.index());
                         ctx.index()--;
-                    }
+                    } 
                 }
             };
             x_handlers[while_id] = [this](Context& ctx) {
@@ -1103,9 +1291,17 @@ namespace Acorn {
             r_handlers[prefix_ptr_id] = [this](Context& ctx){
                 if(is_live(ctx.value())) {
                     if(ctx.value().quals().length()>1) {
-                        Node left = ctx.value().quals()[1];
-                        ctx.value().sub_type(left.value().type());
-                        ctx.value().sub_size(left.value().size());
+                        int i = 0;
+                        while(i<ctx.value().quals().length()) {
+                            Node q = ctx.value().quals()[i];
+                            if(q.type()==ptr_id&&i<ctx.value().quals().length()-1) {
+                                Node left = ctx.value().quals()[i+1];
+                                ctx.value().sub_type(left.value().type());
+                                ctx.value().sub_size(left.value().size());
+                                break;
+                            }
+                            i++;
+                        }
                     } else {
                         //It's just a normal Ptr
                         // print(red("prefix_ptr_id::r_handler missing type it points to!"));
@@ -1158,7 +1354,7 @@ namespace Acorn {
                     float f = std::stof(name); ctx.node().value().set((void*)&f);
                 } else if(vtype==ptr_id) {
                     Ptr p = string_to_Ptr(name); 
-                    if(p.cachelevel==3) p.cache = &types; //Add fillins for other caches somehow later
+                    if(p.cachelevel==3) {p.cache = &types;} //Add fillins for other caches somehow later
                     ctx.node().value().set((void*)&p);
                 } else if(vtype==string_id) { //This is a race condition
                     Ptr p = get_ticket(name_store_id,1,char_id); string s(p); s = name; ctx.node().value().set((void*)&p);

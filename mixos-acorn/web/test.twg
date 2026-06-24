@@ -1,6 +1,4 @@
 ##
-    global int sheetpool;
-    sheetpool = 3;
     register root_path;
     "root_path" {
         in htmlemiting {
@@ -9,12 +7,37 @@
     }
 ##
 
+##
+    global string js(string s) {
+        print("Catching");
+        string str = "(()=>{"+s+"})()";
+        print(str);
+        return str;
+    }
+##
 
 root_path {
     script read_file("mixos-acorn/web/thistle/thistle.js");
-    print("Sheetpool: ",sheetpool);
+    div {
+        template div dropdown(string label, string behaviour) {
+            string open;
+            div display {
+                if(open=="yes") {
+                    text "I'm open";
+                } else {
+                    text "I'm closed";
+                }
+            }
+            div {
+                button {
+                    text label;
+                    "background-color" : "red";
+                    "onclick" : behaviour;
+                }
+            }
+        }   
 
-    text "testing" {
-        "onclick" : escape_str("run('print(\"Hello from Acorn_script\"); print(\"Sheetpool: \",sheetpool);')");
+        dropdown("A",capture{print("Hello world!");});
+        DEBUG_ROOT;
     }
 }

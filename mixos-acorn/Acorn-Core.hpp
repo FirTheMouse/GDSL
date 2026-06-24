@@ -193,7 +193,7 @@ namespace Acorn {
             case 0: case 3: {return resolve_to_unit(ptr)[ptr.pool];}
             case 2: return *(ColCol*)ptr.cache;
             default: 
-                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to pool because it's cachelevel ",ptr.cachelevel," is too low");
+                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to pool because it's cachelevel ",(uint32_t)ptr.cachelevel," is too low");
             return col2_ref;
         }
     }
@@ -203,7 +203,7 @@ namespace Acorn {
             case 0: case 3: case 2: {return resolve_to_pool(ptr)[ptr.idx];}
             case 1: return *(Col*)ptr.cache;
             default: 
-                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to col because it's cachelevel ",ptr.cachelevel," is too low");
+                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to col because it's cachelevel ",(uint32_t)ptr.cachelevel," is too low");
             return col1_ref;
         }
     }
@@ -214,7 +214,7 @@ namespace Acorn {
     inline Col& resolve_to_col(Ptr ptr, const uint32_t& idx) {ptr.idx = idx; return resolve_to_col(ptr);}
 
 
-    inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag);
+    inline Ptr get_ticket_from_unit(Ptr p, uint32_t type_id, uint32_t size, uint32_t tag);
 
     struct string : Ptr {
         string() {}
@@ -655,7 +655,7 @@ namespace Acorn {
         }
     
         inline Ptr init_data() {
-            Ptr dataptr = get_ticket_from_unit(unit,data_store_id,size(),type());
+            Ptr dataptr = get_ticket_from_unit(*this,data_store_id,size(),type());
             resolve_to_col(dataptr).push_default();
             resolve_to_col(*this).qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
             return dataptr;
@@ -697,24 +697,20 @@ namespace Acorn {
             Col& dst = resolve_to_col(*this);
             memcpy(dst.storage, src.storage, value_total_size);
             if(is_deep) {
-                if(is_live(o.data_ptr())) {
+                if(is_live(o.data_ptr())&&!resolve_to_col(o.data_ptr()).empty()) {
                     init_data();
                     set(o.get());
                 }
-
-                Ptr qualsptr = get_ticket_from_unit(unit, quals_store_id, sizeof(Ptr), ptr_id);
+                Ptr qualsptr = get_ticket_from_unit(*this, quals_store_id, sizeof(Ptr), ptr_id);
                 Col& new_quals = resolve_to_col(qualsptr);
                 Col& old_quals = o.quals_col();
-
                 new_quals.reserve(old_quals.size);
                 memcpy(new_quals.storage, old_quals.storage, old_quals.size);
                 new_quals.size = old_quals.size;
                 resolve_to_col(*this).qset(value_quals_offset,(void*)&qualsptr,sizeof(Ptr));
-        
-                Ptr subvalsptr = get_ticket_from_unit(unit, sub_value_store_id, sizeof(Ptr), ptr_id);
+                Ptr subvalsptr = get_ticket_from_unit(*this, sub_value_store_id, sizeof(Ptr), ptr_id);
                 Col& new_subvals = resolve_to_col(subvalsptr);
                 Col& old_subvals = o.sub_values_col();
-
                 new_subvals.reserve(old_subvals.size);
                 memcpy(new_subvals.storage, old_subvals.storage, old_subvals.size);
                 new_subvals.size = old_subvals.size;
@@ -728,6 +724,8 @@ namespace Acorn {
         bool has_qual(uint32_t q_id) {
             return find_qual(q_id)!=-1;
         }
+
+        uint32_t count_qual(uint32_t q_id);
     };
     
     struct QNode : public Col {
@@ -835,6 +833,17 @@ namespace Acorn {
             if(find_qual(q_id)!=-1) return true;
             return false;
         }
+
+        uint32_t count_qual(size_t q_id, bool check_value = true) {
+            uint32_t count = 0;
+            if(check_value&&is_live(value())) {
+                count += value().count_qual(q_id);
+            }
+            for(int i=0;i<quals().length();i++){ 
+                if(quals()[i].type()==q_id) count++;
+            }
+            return count;
+        }
     };
 
     inline Node Value::type_scope() {return Node(*(Ptr*) resolve_to_col(*this).qget(type_scope_offset));}
@@ -851,6 +860,13 @@ namespace Acorn {
         }
         return deadptr;
     } 
+    uint32_t Value::count_qual(uint32_t q_id) {
+        uint32_t count = 0;
+        for(int i=0;i<quals().length();i++){ 
+            if(quals()[i].type()==q_id) count++;
+        }
+        return count;
+    }
 
     struct Context : public Ptr {
         Context() {}
@@ -1035,27 +1051,6 @@ namespace Acorn {
         Context unit_ctx = deadptr;
 
         uint16_t derive_uid(bool init_layouts) {
-            DEBUG_ONLY(
-                Watcher def("core");
-                def.stagestart = [this](Context& ctx){
-                    if(active_stage) {
-                        newline(active_stage->label);
-                    }
-                };
-                def.prefix = [this](Context& ctx){
-                    newline(active_stage->label+": "+node_info(ctx.node()));
-                };
-                def.suffix = [this](Context& ctx){
-                    if(ERROR_FLAG) {log(red("Marked "+Ptr_as_string(ctx.node())+" as error")); mark_error(ctx.node());}
-                    log(green("After: "),node_info(ctx.node()));
-                    endline();
-                };
-                def.stagend = [this](Context& ctx){
-                    endline();
-                };
-                watchers << def;
-            )
-          
             uid = (uint16_t)units.length();
 
             if(init_layouts) {
@@ -1115,6 +1110,27 @@ namespace Acorn {
         Unit() : types(global), uid(derive_uid(true)) {init();}
         Unit(const ColColCol& starter) : types(starter), uid(derive_uid(false)) {init();}
         Unit(bool do_not_init) {}
+
+        void setup_standard_watchers() {
+            Watcher def("core");
+            def.stagestart = [this](Context& ctx){
+                if(active_stage) {
+                    newline(active_stage->label);
+                }
+            };
+            def.prefix = [this](Context& ctx){
+                newline(active_stage->label+": "+node_info(ctx.node()));
+            };
+            def.suffix = [this](Context& ctx){
+                if(ERROR_FLAG) {log(red("Marked "+Ptr_as_string(ctx.node())+" as error")); mark_error(ctx.node());}
+                log(green("After: "),node_info(ctx.node()));
+                endline();
+            };
+            def.stagend = [this](Context& ctx){
+                endline();
+            };
+            watchers << def;
+        }
         
 
         map<uint32_t, std::string> labels;
@@ -1996,67 +2012,7 @@ namespace Acorn {
             print(c.name().to_std());
         }
 
-        void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
-            n.type(o.type());
-            n.sub_type(o.sub_type());
-            n.name(o.name().to_std());
-            n.x(o.x());
-            n.y(o.y());
-            n.z(o.z());
-            n.mute(o.mute());
-            n.resolved(o.resolved());
-        
-            n.children().clear();
-            for(int i = 0; i < o.children().length(); i++) {
-                Node newc = make_node();
-                deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
-                n.children() << newc;
-            }
-        
-            n.quals().clear();
-            for(int i = 0; i < o.quals().length(); i++) {
-                Node newq = make_node();
-                deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
-                n.quals() << newq;
-            }
-        
-            n.scopes().clear();
-            for(int i = 0; i < o.scopes().length(); i++) {
-                Node news = make_node();
-                deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
-                n.scopes() << news;
-            }
-        
-            if(value_alias_table.hasKey(o.value().idx)) {
-                Value aliased = value_alias_table.get(o.value().idx);
-                n.value(aliased);
-                if(is_live(aliased.type_scope())) {
-                    if(!n.scopes().empty()) {
-                        Node ntyscope = aliased.type_scope();
-                        n.scopes().col().set(0,(void*)&ntyscope);
-                    }
-                    else
-                        n.scopes() << aliased.type_scope();
-                }
-            } else {
-                if(is_live(o.value())) {
-                    if(!is_live(n.value())) {
-                        n.value(make_value());
-                    }
-                    n.value().copy(o.value(),true);
-                }
-            }
-        
-            resolve_to_col(n).qset(node_value_table_offset,
-                resolve_to_col(o).qget(node_value_table_offset), sizeof(Ptr));
-            resolve_to_col(n).qset(node_node_table_offset,
-                resolve_to_col(o).qget(node_node_table_offset), sizeof(Ptr));
-        
-            n.parent(o.parent_ptr());
-            n.owner(o.owner_ptr());
-            n.in_scope(o.in_scope_ptr());
-            n.opt_str() = o.opt_str().to_std();
-        }
+      
 
         Node copy_as_token(Node node) {
             Node copy = make_node(node.type(),0,node.name().to_std(),node.x(),node.y(),node.z());
@@ -2173,11 +2129,28 @@ namespace Acorn {
     
         void process_node(Context& ctx, Node node) {
             Node saved_node = ctx.node();
+            Node saved_qual = ctx.qual();
             Context saved_sub = ctx.sub();
             ctx.node(node);
             standard_process(ctx);
             ctx.node(saved_node);
             ctx.sub(saved_sub);
+            ctx.qual(saved_qual);
+        }
+
+        //Sets the root as the previous ctx.node
+        void sub_process_node(Context& ctx, Node node) {
+            Node saved_node = ctx.node();
+            Node saved_qual = ctx.qual();
+            Context saved_sub = ctx.sub();
+            Node saved_root = ctx.root();
+            ctx.root(ctx.node());
+            ctx.node(node);
+            standard_process(ctx);
+            ctx.node(saved_node);
+            ctx.sub(saved_sub);
+            ctx.root(saved_root);
+            ctx.qual(saved_qual);
         }
     
         void process_node(Context& ctx, Node node, Node left) {
@@ -2253,27 +2226,30 @@ namespace Acorn {
 
         void fire_quals(Context& ctx, Value value) {
             Value saved_value = ctx.value();
+            Node saved_qual = ctx.qual();
             ctx.value(value);
             for(int q=0;q<value.quals().length();q++) {
                 Node qual = value.quals()[q];
                 if(qual.mute()) continue;
                 ctx.qual(qual);
-                if(active_stage->has(qual.type()+1))
-                    (*active_stage)[qual.type()+1](ctx);
+                //if(active_stage->has(qual.type()+1))
+                    active_stage->run(qual.type()+1)(ctx);
             }
             ctx.value(saved_value);
+            ctx.qual(saved_qual);
         }
         void fire_quals(Context& ctx, Node node) {
             Node saved_node = ctx.node();
+            Node saved_qual = ctx.qual();
             ctx.node(node);
             for(int q=0;q<node.quals().length();q++) {
                 Node qual = node.quals()[q];
                 if(qual.mute()) continue;
                 ctx.qual(qual);
-                if(active_stage->has(qual.type()+2))
-                    (*active_stage)[qual.type()+2](ctx);
+                active_stage->run(qual.type()+2)(ctx);
             }
             ctx.node(saved_node);
+            ctx.qual(saved_qual);
         }
 
         void standard_qual_process(Context& ctx) {
@@ -2321,6 +2297,20 @@ namespace Acorn {
             deep_recycle_context(ctx);
         }
 
+        void standard_resolve_child_scopes(Node node) {
+            for(int c = 0; c < node.children().length(); c++) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
+                    for(int s = 0; s < child.scopes().length(); s++) {
+                        if(child.scopes()[s].owner()==child) {
+                            standard_resolving_pass(child.scopes()[s]);
+                        }
+                    }
+                }
+                standard_resolve_child_scopes(child);
+            }
+        }
+
         void standard_resolving_pass(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a resolving pass while an error was flagged")); return;})
             node_col children = root.children();
@@ -2357,9 +2347,10 @@ namespace Acorn {
             }
             i = 0;
             while(i < ctx.result().length()) {    //Then finnaly the subscopes
+                standard_resolve_child_scopes(ctx.result()[i]); //Processing closures and such, any child containing it's own scopes
                 if(!ctx.result()[i].scopes().empty()) {
                     for(int s = 0;s<ctx.result()[i].scopes().length();s++) {
-                        if(ctx.result()[i].scopes()[s].owner().idx==ctx.result()[i].idx) {
+                        if(ctx.result()[i].scopes()[s].owner()==ctx.result()[i]) {
                             standard_resolving_pass(ctx.result()[i].scopes()[s]);
                             DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                         }
@@ -2369,6 +2360,20 @@ namespace Acorn {
             }
             endline();
             deep_recycle_context(ctx);
+        }
+
+        void standard_backwards_child_scopes(Node node) {
+            for(int c = 0; c < node.children().length(); c++) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
+                    for(int s = 0; s < child.scopes().length(); s++) {
+                        if(child.scopes()[s].owner()==child) {
+                            standard_backwards_pass(child.scopes()[s]);
+                        }
+                    }
+                }
+                standard_backwards_child_scopes(child);
+            }
         }
 
         void standard_backwards_pass(Node root) {
@@ -2384,6 +2389,7 @@ namespace Acorn {
                 standard_process(ctx);
                 DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                 node_col scopes = ctx.result().get(i).scopes();
+                standard_backwards_child_scopes(ctx.result().get(i));
                 for(int s = 0; s<scopes.length(); s++) {
                     if(is_live(scopes.get(s).owner())&&scopes.get(s).owner().idx==ctx.result().get(i).idx) {
                         memory_backwards_pass(scopes.get(s));
@@ -2397,6 +2403,20 @@ namespace Acorn {
             deep_recycle_context(ctx);
         }
 
+        void standard_memory_backwards_child_scopes(Node node) {
+            for(int c = 0; c < node.children().length(); c++) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
+                    for(int s = 0; s < child.scopes().length(); s++) {
+                        if(child.scopes()[s].owner()==child) {
+                            memory_backwards_pass(child.scopes()[s]);
+                        }
+                    }
+                }
+                standard_memory_backwards_child_scopes(child);
+            }
+        }
+
         void memory_backwards_pass(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a memory backwards pass while an error was flagged")); return;})
             node_col children = root.children();
@@ -2407,9 +2427,10 @@ namespace Acorn {
             i = ctx.result().length()-1;
             while(i >= 0) {
                 ctx.node(ctx.result().get(i));
+                standard_memory_backwards_child_scopes(ctx.result().get(i));
                 node_col scopes = ctx.result().get(i).scopes();
                 for(int s = 0; s<scopes.length(); s++) {
-                    if(is_live(scopes.get(s).owner())&&scopes.get(s).owner().idx==ctx.result().get(i).idx) {
+                    if(is_live(scopes.get(s).owner())&&scopes.get(s).owner()==ctx.result().get(i)) {
                         memory_backwards_pass(scopes.get(s));
                         DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
                     }
@@ -2454,7 +2475,7 @@ namespace Acorn {
             case 0: {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
             case 3: return *(ColColCol*)ptr.cache;
             default: 
-                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to unit because it's cachelevel ",ptr.cachelevel," is too low");
+                throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to unit because it's cachelevel ",(uint32_t)ptr.cachelevel," is too low");
             return col3_ref;
         }
     }
@@ -2468,9 +2489,15 @@ namespace Acorn {
     // inline ColColCol& resolve_to_unit(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
     // inline Col& to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
 
-    inline Ptr get_ticket_from_unit(uint16_t unit_id, uint32_t type_id, uint32_t size, uint32_t tag) {
-        std::lock_guard<std::mutex> lock(units_mutex);
-        return (*units[unit_id]).get_ticket(type_id,size,tag);
+    inline Ptr get_ticket_from_unit(Ptr p, uint32_t type_id, uint32_t size, uint32_t tag) {
+        if(p.cachelevel==3) {
+            Ptr ticket(p.cache,type_id,create_column(resolve_to_unit(p)[type_id],size,tag,true),0);
+            return ticket;
+        } else if(p.cachelevel==0) {
+            std::lock_guard<std::mutex> lock(units_mutex);
+            return (*units[p.unit]).get_ticket(type_id,size,tag);
+        }
+        return deadptr;
     }
 
     std::ostream& operator<<(std::ostream& os, Acorn::string& s) {

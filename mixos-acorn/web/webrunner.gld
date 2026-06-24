@@ -1,4 +1,25 @@
 ##
+    "node" {
+        on ".\"left\"" Node {
+            subprocess(ctx);
+            ctx.node.value.set(ctx.node.children().get(0).value.getNode.children.get(0));
+        }
+        on ".\"right\"" Node {
+            subprocess(ctx);
+            ctx.node.value.set(ctx.node.children().get(0).value.getNode.children.get(1));
+        }
+        on ".\"scope_owner\"" Node {
+            subprocess(ctx);
+            ctx.node.value.set(ctx.node.children().get(0).value.getNode.scopes.get(0).owner);
+        }
+        on ".\"climb\"" Node {
+            subprocess(ctx);
+            ctx.node.value.set(ctx.node.children().get(0).value.getNode.in_scope.owner);
+        }
+    }
+##
+
+##
     newstage posting;
     newstage fraging;
 
@@ -29,11 +50,7 @@
 
     register button;
     "button" {
-        in naming {
-            ctx.node.children.push(ctx.result.take(ctx.index+1));
-        }
         in htmlemiting {
-            execut(ctx.node.children.get(0));
             ctx.source.append("<button");
             emit_inline_html;
             ctx.source.append(">");
@@ -74,19 +91,27 @@
         }
     }
 
+    string node_str_id(Node n) {
+        string to_return = n.name+"_"+to_string(n.asID);
+        return to_return;
+    }
+
     "component" {
         in htmlemiting {
-            if(ctx.node.value.type==to_type("inlined")) {return;}
-            if(ctx.node.value.type==to_type("invisible")) {return;}
-            if(0<ctx.node.children.length) {return;}
             ctx.source.append("<div");
+            if(ctx.node.name=="div") {
+
+            } else {
+                ctx.source.append(" id=\"");
+                ctx.source.append(node_str_id(ctx.node));
+                ctx.source.append("\"");
+            }
             emit_inline_html;
             ctx.source.append(">");
             emit_contents;
             ctx.source.append("</div>");
         }
     }
-
    
     register emit_block;
     "emit_block" {
@@ -192,6 +217,23 @@
         }
     }
 
+    global string get_nsrc(string target) {
+        string nsrc = "FRAG "+target+" ";
+        return nsrc;
+    }
+    global string emit_reload(Context c, Node n) {
+        ctx.source.append(get_nsrc(node_str_id((n))));
+        htmlemit n;
+        c.source.append(ctx.source);
+        return ctx.source;
+    }
+
+    "component" {
+        on ".\"reload\"" {
+            emit_reload(ctx.sub,ctx.node.left.scope_owner);
+        }
+    }
+
     //save_sheet(create_sheet,"wip");
     //save_sheet(create_sheet,"redberry");
 ##
@@ -201,12 +243,13 @@ global Session session;
 print("Session ip: ",session.ip);
 
 print("Compiling");
-Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
+Node twig = compile(read_file("mixos-acorn/web/test.twg"));
 print("Compiled");
 Node page = twig.children.get(0);
 
+int cfd = 0;
 while(0<1) {
-    int cfd = unit_index;
+    cfd = unit_index;
     if(cfd!=0) {
         print("Unit ",unit_uid," recived request ",cfd);
         string req = unit_label;
@@ -260,13 +303,64 @@ while(0<1) {
             }
         }
 
+        if(method=="RUN_RAW") {
+            int body_start = req.find("\r\n\r\n");
+            if(body_start>=0) {
+                string src = req.slice(body_start+4,req.length);
+                print("Running raw:\n",src);
+
+                Node root = compile(src);
+                execut root;
+
+                src = ctx.source;
+                string target = src.slice(0,src.find(" "));
+                string instr = src.slice(" ",1,2);
+                string content = src.slice(src.find(" ",0,2)+1,src.length);
+                if(target.length!=0) {
+                    print("TARGET: ",target); 
+                    print("INSTR: ",instr); 
+                    print("CONTENT LEN: ",content.length);
+                    response_body = content;
+                }
+            }
+        }
+
         if(method=="RUN") {
             int body_start = req.find("\r\n\r\n");
             if(body_start>=0) {
                 string src = req.slice(body_start+4,req.length);
                 print("Running:\n",src);
-                Node root = compile(src);
+
+                Ptr string args = split_str(src,"@");
+                
+                print("Recived ",args.length," arg(s)");
+
+                ctx.source = "go";
+                Ptr pointer = string_to_Ptr(args.get(0));
+                print("Pointer: ",pointer);
+                Node root = cast_to_Node(pointer);
+
+                if(args.length>1) {
+                    for(int a=1;a<args.length;a++) {
+                        //print("Child ",a,": ",root.children.get(a-1));
+                        //print("Arg ",a,": ",args.get(a));
+                        if(args.get(a)=="[VAR]") {
+                            root.children.get(a-1).value.set(args.get(a+1));
+                        }
+                    }
+                }
                 execut root;
+
+                src = ctx.source;
+                string target = src.slice(0,src.find(" "));
+                string instr = src.slice(" ",1,2);
+                string content = src.slice(src.find(" ",0,2)+1,src.length);
+                if(target.length!=0) {
+                    print("TARGET: ",target); 
+                    print("INSTR: ",instr); 
+                    print("CONTENT LEN: ",content.length); 
+                    response_body = content;
+                }
             }
         }
 

@@ -1,6 +1,5 @@
 Ptr p = 3|1|2;
-print(p.pool);
-p.pool = 6;
+print(getpool(p));
+setpool(p,6);
 print(p);
-int i = 5; print(i);
 DEBUG_ROOT;

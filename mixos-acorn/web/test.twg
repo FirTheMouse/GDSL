@@ -20,13 +20,26 @@
 root_path {
     script read_file("mixos-acorn/web/thistle/thistle.js");
     div {
-        template div dropdown(string label) {
-            string open;
+        template div dropdown(string label, int depth) {
+
+            if(depth<2) {
+                dropdown(label+"-1",depth+1);
+            }
+
+            static string open;
             div display {
                 if(open=="yes") {
-                    text "I'm open";
+                    text "OPENED";
                 } else {
-                    text "I'm closed";
+                    text "CLOSED";
+                }
+                button  {
+                    text "reload" {
+                        "font-size" : "5px";
+                    }
+                    "onclick" : capture{ 
+                        display.reload;
+                    }
                 }
             }
             div {
@@ -34,13 +47,10 @@ root_path {
                     text label;
                     "background-color" : "red";
                     "onclick" : capture(
-                            string recive; "'my_id'", 
-                            string recivejs; js_do("console.log('hello'); return 'val';"), 
-                            string other; js_lit(label)) 
+                            js_do("this.style.backgroundColor=(this.style.backgroundColor==='red'?'green':'red');"),
+                            string other ; js_lit(label))
                         {
-                            print("Recived: ",recive);
-                            print("Other: ",other);
-                            print("JS: ",recivejs);
+                            print("Captured label: ",other);
                             print("Label: ",label);
                             if(open=="yes") {
                                 open = "no";
@@ -49,13 +59,23 @@ root_path {
                             }
                             display.reload;
                     }
+                    
                 }
             }
         }   
+        int cmax = randi(1,6);
+        int rmax = randi(1,6);
 
-        for(int i=0;i<3;i++) {
-            dropdown(to_string(i));
-                    DEBUG_ROOT;
+        table {
+            for(int c=0;c<cmax;c++) {
+                row {
+                    for(int r=0;r<rmax;r++) {
+                        column {
+                            dropdown(to_string(c)+"-"+to_string(r),0);
+                        }
+                    }
+                }
+            }
         }
     }
 }

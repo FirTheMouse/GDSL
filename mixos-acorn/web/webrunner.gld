@@ -217,6 +217,28 @@
         }
     }
 
+    register select;
+    "select" {
+        in htmlemiting {
+            ctx.source.append("<select");
+            emit_inline_html;
+            ctx.source.append(">");
+            emit_contents;
+            ctx.source.append("</select>");
+        }
+    }
+
+    register option;
+    "option" {
+        in htmlemiting {
+            ctx.source.append("<option");
+            emit_inline_html;
+            ctx.source.append(">");
+            emit_contents;
+            ctx.source.append("</option>");
+        }
+    }
+
     global string get_nsrc(string target) {
         string nsrc = "FRAG "+target+" ";
         return nsrc;
@@ -336,12 +358,8 @@ while(0<1) {
                 print("Running:\n",src);
 
                 Ptr string args = split_str(src,"@");
-                
-                print("Recived ",args.length," arg(s)");
-
                 ctx.source = "go";
                 Ptr pointer = string_to_Ptr(args.get(0));
-                print("Pointer: ",pointer);
                 Node root = cast_to_Node(pointer);
 
                 if(args.length>1) {
@@ -355,8 +373,12 @@ while(0<1) {
                 }
 
                 ures;
+                //ussw;
                 execut root;
+                //ursw;
+                //udump;
                 print("Time: ",ute);
+                //write_file("fire.svg",uspan_flame_chart);
 
                 src = ctx.source;
                 string target = src.slice(0,src.find(" "));

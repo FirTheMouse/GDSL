@@ -346,6 +346,7 @@ namespace Acorn {
             tag = o.tag;
             hash = o.hash;
             index = o.index;
+            cachelevel = o.cachelevel;
             live = o.live;
         }
         CCol(CCol&& o) : QCol(std::move(o)) {
@@ -353,6 +354,7 @@ namespace Acorn {
             tag = o.tag;
             hash = o.hash;
             index = o.index;
+            cachelevel = o.cachelevel;
             live = o.live;
         }
         CCol& operator=(CCol&& o) {
@@ -362,6 +364,7 @@ namespace Acorn {
             tag = o.tag;
             hash = o.hash;
             index = o.index;
+            cachelevel = o.cachelevel;
             live = o.live;
             return *this;
         }
@@ -369,6 +372,7 @@ namespace Acorn {
         uint32_t tag = 0;
         uint32_t hash = 0;
         uint32_t index = 0;
+        uint8_t cachelevel = 0;
         bool live = true;
 
         inline uint32_t length() const {if(element_size==0||size==0) {return 0;} else {return size / element_size;}}
@@ -556,16 +560,16 @@ namespace Acorn {
 
     //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
     uint32_t create_column(Col& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
-        if(use_pooling) {
-            for(int i=0;i<col.length();i++) {
-                Col& ncol = *(Col*)col.sget(i);
-                if(!ncol.live&&ncol.element_size==size&&(!tag_sensitive||ncol.tag==tag)) {
-                    ncol.clear();
-                    ncol.live = true;
-                    return i;
-                }
-            }
-        }
+        // if(use_pooling) {
+        //     for(int i=0;i<col.length();i++) {
+        //         Col& ncol = *(Col*)col.sget(i);
+        //         if(!ncol.live&&ncol.element_size==size&&(!tag_sensitive||ncol.tag==tag)) {
+        //             ncol.clear();
+        //             ncol.live = true;
+        //             return i;
+        //         }
+        //     }
+        // }
         add_column(col,size,tag);
         return col.length()-1;
     }

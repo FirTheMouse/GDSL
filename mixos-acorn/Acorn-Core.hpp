@@ -1150,7 +1150,7 @@ namespace Acorn {
                 if(is_live(ctx.qual())) {
                     uspan->newline(active_stage->label+": "+labels[ctx.qual().type()]+" in "+ctx.node().name().to_std());
                 } else {
-                    uspan->newline(active_stage->label+": "+node_info(ctx.node()));
+                    uspan->newline(active_stage->label+": "+node_basic_info(ctx.node()));
                 }
             };
             def.suffix = [this](Context& ctx){
@@ -1907,6 +1907,11 @@ namespace Acorn {
                 }
             }
             to_return += ")";
+            return to_return;
+        }
+
+        std::string node_basic_info(Node node) {
+            std::string to_return = labels[node.type()]+ (node.name().length()==0?"":" "+node.name().to_std()+" ");
             return to_return;
         }
         

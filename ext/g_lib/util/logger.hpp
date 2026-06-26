@@ -154,14 +154,14 @@ struct SeqLine : public q_object
     Log::Line timer;
     double start_ns = 0.0;
     std::string label = "";
-    SeqLine* parent = nullptr;
+    g_ptr<SeqLine> parent = nullptr;
     list<g_ptr<SeqLine>> children;
     bool is_log = true;
 
     std::string get_indent() {
         if(!parent) return "";
         int depth = 0;
-        SeqLine* cursor = this;
+        g_ptr<SeqLine> cursor = this;
         while(cursor->parent) { depth++; cursor = cursor->parent; }
         std::string indent(depth * 3, ' ');
         return indent;
@@ -225,7 +225,16 @@ public:
     g_ptr<SeqLine> line_root = nullptr;
     g_ptr<SeqLine> on_line = nullptr;
 
-    void restart() {line_root = make<SeqLine>("Root",false); line_root->timer.start();}
+    void restart() {
+        std::function<void(g_ptr<SeqLine>)> break_cycles = [&](g_ptr<SeqLine> node) {
+            for(auto& child : node->children) break_cycles(child);
+            node->parent = nullptr;
+        };
+        break_cycles(line_root);
+        line_root = make<SeqLine>("Root",false);
+        on_line = nullptr;
+        line_root->timer.start();
+    }
     void restart_root_time() {line_root->timer.start();}
     double get_root_time() {return line_root->timer.time_ns();}
     double end_root_time() {return line_root->timer.end();}
@@ -239,7 +248,7 @@ public:
         g_ptr<SeqLine> parent = get_last_line();
         parent->children << make<SeqLine>(label,false);
         SeqLine* child = parent->children.last().getPtr();
-        child->parent = parent.getPtr();
+        child->parent = parent;
         child->start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             child->timer.start_ - line_root->timer.start_
         ).count();

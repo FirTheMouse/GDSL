@@ -129,6 +129,7 @@ div side_bar {
         func_btn_temp("goTo('/new')","rgb(101, 157, 81)","New");
         func_btn_temp("goTo('/build')","rgb(73, 135, 177)","Build");
         func_btn_temp("goTo('/audit')","rgb(197, 148, 85)","Audit");
+        func_btn_temp(capture{dump_sheet(sheetpool);},"rgb(108, 103, 101)","Dump");
     }
     
     div {
@@ -554,6 +555,89 @@ login {
     }
 ##
 
+template div form_question(int spool, Ptr cellptr, bool editable) {
+    static Ptr formptr;
+    formptr = cellptr;
+    setpool(formptr,find_sheet(spool,to_type("formsheet")));
+    static Ptr cell_p = resolve_as_Ptr(cellptr);
+    static Ptr form_p = resolve_as_Ptr(formptr);
+    if(is_live(form_p)) {
+        div question_display {
+            for(int i=0;i<form_p.length;i++) {
+                setsidx(form_p,i);
+                if(editable) {
+                    string cell_label;
+                    if(form_p.celllabel.length!=0) {
+                        cell_label = form_p.celllabel;
+                    } else {
+                        cell_label = to_string(i);
+                    }
+
+                    input {
+                        "value" : form_p.celllabel;
+                        "onchange" : capture(
+                            string sptr ; js_lit(to_string(form_p)),
+                            string myval ; "this.value"
+                        ) {
+                            Ptr subp = string_to_Ptr(sptr);
+                            subp.celllabel(myval);
+                            question_display.reload;
+                        }
+                    }
+
+                    input {
+                        "value" : value_as_string(form_p) {text_theme;}
+                        "onchange" : capture(
+                            string iter ; js_lit(to_string(i)),
+                            string myval ; "this.value"
+                        ) {
+                            form_p.set(stoi(iter),stoi(myval));
+                            question_display.reload;
+                        }
+                    }   
+                } else {
+                    text to_string(i) {text_theme;}
+                    text to_string(form_p.get(i)) {text_theme;}
+                }
+            }
+
+            if(editable) {
+                button {
+                    text "+";
+                    "onclick" : capture {
+                        form_p.push(0);
+                        question_display.reload;
+                    }
+                }
+            }
+        }
+    }
+}
+
+stateless template div render_form(int spool, bool editable) {
+    div {
+        "display" : "flex";
+        "justify-content" : "center";
+        "flex-direction" : "column";
+        "gap" : "12px";
+        "width" : "100%";
+        int lenc = plen(spool); //Columns
+        int lenr = 0; //Rows
+        for(int co=0;co<lenc;co++) {
+            int lenco = clen(spool,co);
+            if(lenco>lenr) {
+                lenr = lenco;
+            }
+        }
+
+        for(int r=0;r<lenr;r++) {
+            for(int c=0;c<lenc;c++) {
+                form_question(spool,makePtr3(spool,c,r),editable);
+            }
+        }
+    }
+}
+
 
 stateless template div build_render_sheet(int spool) {
     div {
@@ -611,16 +695,16 @@ stateless template div build_render_sheet(int spool) {
                             "border-bottom" : "1px solid rgb(220,220,220)";
 
                                 template div makecell(int colum) {
-                                    string tostr = "";
-                                    Ptr cellptr = makePtr3(spool,colum,r);
-                                    Ptr p = resolve_as_Ptr(cellptr);
+                                    static string tostr = "";
+                                    static Ptr cellptr = makePtr3(spool,colum,r);
+                                    static Ptr p = resolve_as_Ptr(cellptr);
                                     if(is_live(p)) {
                                         tostr = value_as_string(p);
                                     }
 
-                                    print("Adding cell: ",cellptr);
+                                    //print("Adding cell: ",cellptr);
 
-                                    bool is_open = false;
+                                    static bool is_open;
                                     div cell_context_menu {
                                         "display" : (is_open ? "block" : "none");
                                         "position" : "absolute";
@@ -633,12 +717,69 @@ stateless template div build_render_sheet(int spool) {
                                         "box-shadow" : "0 4px 12px rgba(0,0,0,0.12)";
                                         "min-width" : "120px";
                                         "padding" : "4px";
+
                                         cellptr = makePtr3(spool,colum,r);
                                         p = resolve_as_Ptr(cellptr);
                                         if(is_live(p)) {
                                             tostr = value_as_string(p);
                                         }
-                                        text tostr;
+
+                                        text to_string(cellptr)+" : "+tostr {
+                                            text_theme; 
+                                        }
+
+                                        static Ptr noteptr = makePtr3(find_sheet(spool,to_type("notesheet")),colum,r);
+                                        static Ptr note_p = resolve_as_Ptr(noteptr);
+                                        static string note_tostr;
+                                        if(is_live(note_p)) {
+                                            note_tostr = value_as_string(note_p);
+                                        }
+
+                                        input {
+                                            "value" : note_tostr;
+                                            "onchange" : capture(
+                                                string myval ; "this.value"
+                                            ) {
+                                                string cellset = to_string(noteptr)+"="+myval;
+                                                print("Setting note cell: ",cellset);
+                                                setcell(cellset);
+                                            }
+                                        }
+
+                                        static bool has_question;
+                                        static Ptr formptr;
+                                        static Ptr form_p;
+                                        if(has_sheet(spool,to_type("formsheet"))) {
+                                            formptr = makePtr3(find_sheet(spool,to_type("formsheet")),colum,r);
+                                            form_p = resolve_as_Ptr(formptr);
+                                        }
+                                        if(is_live(form_p)) {
+                                            text "Label" {text_theme;}
+                                            input {
+                                                "value" : form_p.label;
+                                                "onchange" : capture (
+                                                    string myval ; "this.value"
+                                                ) {
+                                                    form_p.label(myval);
+                                                }
+                                                air_input_theme;
+                                            }
+                                            form_question(spool,cellptr,true);
+                                        } else {
+                                            button {
+                                                text "Add a question" {
+                                                    text_theme;
+                                                }
+                                                "onclick" : capture {
+                                                    if(is_live(formptr)) {} else {
+                                                        add_form(spool);
+                                                        formptr = makePtr3(find_sheet(spool,to_type("formsheet")),colum,r);
+                                                    }
+                                                    setcell(to_string(formptr)+"=0"); //To intilize the store column
+                                                    cell_context_menu.reload;
+                                                }
+                                            }
+                                        }
                                     }  
 
                                     input {

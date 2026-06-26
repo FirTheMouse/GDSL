@@ -537,9 +537,20 @@ namespace Acorn {
             }
             return carry;
         }
+ 
+        //Logging for the deep copy node
+        #define LOG_DCN 0
+        #if LOG_DCN
+            #define UDCN(x) x
+        #else
+            #define UDCN(x)
+        #endif
 
         //Make this cleaner later, probably when I do the normalization update and get more equipment
+        //Experiment with a version that doesn't copy *evrything*, this is the biggest performance problem  right now in TwigSnap
         void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
+            UDCN(uspan->newline("Deep copying "+node_info(o));)
+            UDCN(uspan->newline("Initial fields");)
             n.type(o.type());
             n.sub_type(o.sub_type());
             n.name(o.name().to_std());
@@ -548,7 +559,8 @@ namespace Acorn {
             n.z(o.z());
             n.mute(o.mute());
             n.resolved(o.resolved());
-        
+            UDCN(uspan->endline();)
+            UDCN(uspan->newline("Copy children");)
             n.children().clear();
             for(int i = 0; i < o.children().length(); i++) {
                 if(n.type()==equals_id&&i==0&&o.children()[0].in_scope()!=o.children()[1].in_scope()) {
@@ -561,34 +573,20 @@ namespace Acorn {
                     n.children() << newc;
                 }
             }
-        
+            UDCN(uspan->endline();)
+            UDCN(uspan->newline("Copy quals");)
             n.quals().clear();
             for(int i = 0; i < o.quals().length(); i++) {
-                Node newq = make_node();
-                deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
-                n.quals() << newq;
-            }
-            
-            n.scopes().clear();
-            for(int i = 0; i < o.scopes().length(); i++) {
-                //print("Deciding to alias scope ",o.scopes()[i].idx);
-                //print(node_to_string(o));
-                if(node_alias_table.hasKey(o.scopes()[i].idx)) {
-                    Node aliased = node_alias_table.get(o.scopes()[i].idx);
-                    //print("Aliasing as ",aliased.idx);
-                    n.scopes() << aliased;
-                } else if(o.scopes()[i].owner()==o) {
-                    Node news = make_node();
-                    //print("Deep copying as ",news.idx);
-                    deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
-                    news.owner(n);
-                    n.scopes() << news;
+                if(o.quals()[i].mute()) {
+                    n.quals() << o.quals()[i];
                 } else {
-                    //print("Leaving untouched");
-                    n.scopes() << o.scopes()[i];
+                    Node newq = make_node();
+                    deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
+                    n.quals() << newq;
                 }
             }
-        
+            UDCN(uspan->endline();)
+            UDCN(uspan->newline("Copy value");)
             if(value_alias_table.hasKey(o.value().idx)) {
                 Value aliased = value_alias_table.get(o.value().idx);
                 n.value(aliased);
@@ -604,7 +602,36 @@ namespace Acorn {
                     }
                 }
             }
-        
+            UDCN(uspan->endline();)
+            UDCN(uspan->newline("Copy scopes");)
+            n.scopes().clear();
+            for(int i = 0; i < o.scopes().length(); i++) {
+                //print("Deciding to alias scope ",o.scopes()[i].idx);
+                //print(node_to_string(o));
+                if(node_alias_table.hasKey(o.scopes()[i].idx)) {
+                    Node aliased = node_alias_table.get(o.scopes()[i].idx);
+                    //print("Aliasing as ",aliased.idx);
+                    n.scopes() << aliased;
+                } else if(o.scopes()[i].owner()==o) {
+                    Node news = make_node();
+                    n.scopes() << news;
+                    //print("Deep copying as ",news.idx);
+                    if(n.type()==func_decl_id) {
+                        n.value().type_scope(n.scopes()[i]);
+                        n.scopes()[i].owner(n);
+                        value_alias_table.put(o.value().idx, n.value());
+                        node_alias_table.put(o.scopes()[i].idx, n.scopes()[i]);
+                        //print("Put ",o.scopes()[i].idx," node alias for : ",node_info(n.scopes()[i]));
+                    }
+                    deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
+                    news.owner(n);
+                } else {
+                    //print("Leaving untouched");
+                    n.scopes() << o.scopes()[i];
+                }
+            }
+            UDCN(uspan->endline();)
+            UDCN(uspan->newline("Resolve tables");)
             resolve_to_col(n).qset(node_value_table_offset,
                 resolve_to_col(o).qget(node_value_table_offset), sizeof(Ptr));
             resolve_to_col(n).qset(node_node_table_offset,
@@ -617,13 +644,9 @@ namespace Acorn {
 
             if(n.type()==var_decl_id) {
                 value_alias_table.put(o.value().idx, n.value());
-            } else if(n.type()==func_decl_id) {
-                n.value().type_scope(n.scopes()[0]);
-                n.scopes()[0].owner(n);
-                value_alias_table.put(o.value().idx, n.value());
-                node_alias_table.put(o.scopes()[0].idx, n.scopes()[0]);
-                // print("Put ",o.scopes()[0].idx," node alias for : ",node_info(n.scopes()[0]));
-            }
+            } 
+            UDCN(uspan->endline();)
+            UDCN(uspan->endline();)
         }
         
 
@@ -1654,14 +1677,8 @@ namespace Acorn {
                 //instantiate_template(ctx.node(),ctx.node().value().type_scope().owner(),ctx);
             };
             x_handlers[func_call_id] = [this](Context& ctx) {
-                if(ctx.node().scopes().length()==1) {
-                    Node scope = ctx.node().scopes()[0];
-                    call_func(ctx,scope);
-                } else if(ctx.node().scopes().length()>1) {
-                    for(int i=1;i<ctx.node().scopes().length();i++) {
-                        standard_travel_pass(ctx.node().scopes()[i],ctx.sub());
-                    }
-                }
+                Node scope = ctx.node().scopes()[0];
+                call_func(ctx,scope);
             };
 
             t_handlers[return_id] = [this](Context& ctx){
@@ -1711,7 +1728,7 @@ namespace Acorn {
                     Ptr lp = left.value().data_ptr();
                     Ptr rp = right.value().data_ptr();
 
-                    DEBUG_ONLY(if(!is_live(lp)) {throw_error("left term of equals is invalid"); return;})
+                    if(!is_live(lp)) return; //Normally caused by something being delcared but never used, and thus missed by the m pass
                     DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
                     DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
                     

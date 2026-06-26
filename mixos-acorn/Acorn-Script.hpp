@@ -437,6 +437,14 @@ namespace Acorn {
             ctx.node().value().set((void*)&unitid);
         },4,int_id);
 
+        uint32_t randi_id = add_function("randi",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int min = *(int*)ctx.node().children()[0].value().get();
+            int max = *(int*)ctx.node().children()[1].value().get();
+            int rand = randi(min,max);
+            ctx.node().value().set((void*)&rand);
+        },4,int_id);
+
         void e_stage_assignment_handler(Context& ctx) {
             Node left = ctx.node().children()[0];
             Node right = ctx.node().children()[1];
@@ -750,6 +758,42 @@ namespace Acorn {
                     ctx.node().value(ctx.node().children()[1].children()[1].value());
                 }
             };
+
+
+            //Temporary kludge methods until Ptrs become proper heterogenous systems
+            add_function("getpool",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set((void*)&p.pool);
+            },4,int_id);
+            add_function("setpool",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.pool = val;
+            });
+            add_function("getidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set((void*)&p.idx);
+            },4,int_id);
+            add_function("setidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.idx = val;
+            });
+            add_function("getsidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set((void*)&p.sidx);
+            },4,int_id);
+            add_function("setsidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.sidx = val;
+            });
 
 
             add_function("newline",[this](Context& ctx){
@@ -1127,6 +1171,11 @@ namespace Acorn {
                     } 
                 }
             };
+
+            r_handlers[while_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
+                ctx.node().value(make_value());
+            };
             x_handlers[while_id] = [this](Context& ctx) {
                 while(true) {
                     DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute while while another error was flagged")); return;})
@@ -1147,13 +1196,21 @@ namespace Acorn {
                     }
                 }
             };         
+
+            r_handlers[for_id] = [this](Context& ctx) {
+                standard_sub_process(ctx);
+                ctx.node().scopes()[0].value(make_value());
+            };
             x_handlers[for_id] = [this](Context& ctx) {
                 process_node(ctx, ctx.node().children()[0]);
+                Node scope = ctx.node().scopes()[0];
+                scope.value().loc(0);
                 while(true) {
                     process_node(ctx, ctx.node().children()[1]);
                     DEBUG_ONLY(if(ERROR_FLAG) {return;})
                     if(!(*(bool*)ctx.node().children()[1].value().get()))break;
-                    uint32_t result = standard_travel_pass(ctx.node().scopes()[0], ctx.sub());
+                    scope.value().loc(scope.value().loc()+1); //This starts at 1 because function calls also start it at one
+                    uint32_t result = standard_travel_pass(scope, ctx.sub());
                     process_node(ctx, ctx.node().children()[2]);
                     if(result > 0) {
                         uint32_t kind = result % 4;
@@ -1513,7 +1570,7 @@ namespace Acorn {
             Node n = root.children()[0];
             if(root.children().length()>1) {
                 n.type(string_id);
-                for(int i=0;i<root.children().length();i++) {
+                for(int i=1;i<root.children().length();i++) {
                     n.name().push(" "+root.children()[i].name().to_std());
                 }
             } else {

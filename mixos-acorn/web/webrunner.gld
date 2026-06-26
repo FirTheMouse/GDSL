@@ -122,45 +122,6 @@
         }
     }
 
-    register sheet;
-    "sheet" {
-        in naming {
-            ctx.node.name = ctx.result.take(ctx.index+1).name;
-        }
-        in resolving {
-            ctx.node.value = make_value(to_type("int"),4);
-        }
-        in htmlemiting {
-            render_sheet(ctx.node.value.getInt,"sheet");
-        }
-    }
-
-    register form;
-    "form" {
-        in naming {
-            ctx.node.name = ctx.result.take(ctx.index+1).name;
-        }
-        in resolving {
-            ctx.node.value = make_value(to_type("int"),4);
-        }
-        in htmlemiting {
-            render_sheet(ctx.node.value.getInt,"form");
-        }
-    }
-
-    register debugsheet;
-    "debugsheet" {
-        in naming {
-            ctx.node.name = ctx.result.take(ctx.index+1).name;
-        }
-        in resolving {
-            ctx.node.value = make_value(to_type("int"),4);
-        }
-        in htmlemiting {
-            render_sheet(ctx.node.value.getInt,"debug");
-        }
-    }
-
     register html;
     "html" {
         in naming {

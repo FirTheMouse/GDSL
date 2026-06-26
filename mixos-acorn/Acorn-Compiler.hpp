@@ -262,7 +262,6 @@ namespace Acorn {
         size_t rbracket_id = add_token(']', "RBRACKET");
         size_t lbrace_id = add_token('{', "LBRACE");
         size_t rbrace_id = add_token('}', "RBRACE");
-        size_t hash_id = add_token('#',"HASH");
 
         size_t in_alpha_id = reg_id("IN_ALPHA");
         size_t in_digit_id = reg_id("IN_DIGIT");
@@ -383,7 +382,48 @@ namespace Acorn {
                 }  else {
                     print("tokenize:default_function missing handling for char: ",c);
                 }
+
+                int to_skip = find_token_combo(ctx);
+                if(to_skip!=0) {
+                    ctx.state(0);
+                    for(int i=0;i<to_skip;i++) {
+                        ctx.index()++;
+                        if(ctx.index()<ctx.source().length()) {
+                            at_x+=1.0f;
+                            ctx.node().name().push(ctx.source().at(ctx.index()));
+                        }
+                    }
+                }
             };
+
+            // tokenizer_default_function = [this](Context& ctx) {
+            //     char c = ctx.source().at(ctx.index());
+            //     int to_skip = find_token_combo(ctx);
+            //     if(to_skip!=0) {
+            //         ctx.node(make_node(0,0,"",at_x,at_y));
+            //         ctx.node().name().push(c);
+            //         for(int i=0;i<to_skip;i++) {
+            //             ctx.index()++;
+            //             if(ctx.index()<ctx.source().length()) {
+            //                 at_x+=1.0f;
+            //                 ctx.node().name().push(ctx.source().at(ctx.index()));
+            //             }
+            //         }
+            //         ctx.result().push(ctx.node());
+            //     } else {
+            //         if(std::isalpha(c)) {
+            //             ctx.state(in_alpha_id);
+            //             ctx.node(make_node(identifier_id,0,std::string(1,c),at_x,at_y));
+            //             ctx.result().push(ctx.node());
+            //         } else if(std::isdigit(c)) {
+            //             ctx.state(in_digit_id);
+            //             ctx.node(make_node(int_id,0,std::string(1,c),at_x,at_y));
+            //             ctx.result().push(ctx.node());
+            //         }  else {
+            //             print("tokenize:default_function missing handling for char: ",c);
+            //         }
+            //     }               
+            // };
         }
 
 
@@ -688,15 +728,19 @@ namespace Acorn {
 
                     ctx.node().name(type_term.name().to_std()+c+id_term.name().to_std());
                     //May need to commit the decls as tokens, check the stamp later when it isn't almost midnight
-                    if(type_term.type()==var_decl_id||(is_live(type_term.value())&&type_term.value().sub_type()==type_term.type())) {
+                    if(type_term.type()==var_decl_id||(is_live(type_term.value())&&type_term.value().type()==type_term.type())) {
                         ctx.node().type(decl_id);
                         ctx.node().value(make_value());
                         ctx.node().value().copy(type_term.value(),true);
                         ctx.node().value().quals().push(value_to_qual(type_term.value()));
                         ctx.node().name(id_term.name().to_std());
-                        ctx.node().value().sub_type(0);
-                        ctx.node().value(distribute_value(ctx.node().in_scope(), ctx.node().name().to_std(),ctx.node().value(),ctx.node().count_qual(hoisted_id)));
-                        ctx.node().children().clear();
+                        if(id_term.value().type()==0) { //If this is a decleration
+                            ctx.node().value().sub_type(0);
+                            ctx.node().value(distribute_value(ctx.node().in_scope(), ctx.node().name().to_std(),ctx.node().value(),ctx.node().count_qual(hoisted_id)));
+                            ctx.node().children().clear();
+                        } else { //If this is a reinterpret like for a cast
+                            ctx.node().children().removeAt(0);
+                        }
     
                         
                     }
@@ -734,6 +778,7 @@ namespace Acorn {
         size_t pipe_id = add_binary_operator('|', "PIPE", 9, 8);
         uint32_t qmark_id = add_binary_operator('?',"QMARK",1,3);
         uint32_t property_id = add_binary_operator(':',"COLON",5,6);
+        uint32_t hash_id = add_binary_operator('#',"HASH",5,6);
 
         uint32_t  add_binding_token_combo(const std::string& f, int lbp, int rbp, char a, char b, char c = '\0', char d = '\0') {
             uint32_t id = add_token_combo(f,a,b,c,d);
@@ -764,6 +809,7 @@ namespace Acorn {
             discard_types.push_if_absent(undefined_id);
             discard_types.push_if_absent(end_id);
             discard_types.push_if_absent(lparen_id);
+            discard_types.push_if_absent(rparen_id);
             discard_types.push_if_absent(lbrace_id);
             discard_types.push_if_absent(comma_id);
 
@@ -1194,7 +1240,11 @@ namespace Acorn {
                             }
                         }
                     } else {
-                        //No clue what this could be
+                        //No clue what this could be, duck type it
+                        if(ctx.root().type()==equals_id) {
+                            decl_value.type(duck_id);
+                            node.value(distribute_value(node.in_scope(), node.name().to_std(), decl_value, node.count_qual(hoisted_id)));
+                        }
                     }
                 }
             }
@@ -1724,22 +1774,122 @@ namespace Acorn {
                     DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute equals while another error was flagged")); return;})
                     Node left = ctx.node().children()[0];
                     Node right = ctx.node().children()[1];
-
+                    Value rv = right.value();
+                    Value lv = left.value();
                     Ptr lp = left.value().data_ptr();
                     Ptr rp = right.value().data_ptr();
 
+                    //print("Equals: ",node_to_string(ctx.node()));
+
                     if(!is_live(lp)) return; //Normally caused by something being delcared but never used, and thus missed by the m pass
                     DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
-                    DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
-                    
-                    //Col& lcol = resolve_to_col(lp);
-                    if(resolve_to_col(lp).heterogenous) {
-                        resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
-                    } else {
-                        resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
+
+                    Col& lcol = resolve_to_col(lp);
+
+                    uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
+
+                    Col& rcol = resolve_to_col(rp);
+                    if(rcol.tag==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
+                    else if(rv.sub_type()!=0) {subtype = rv.sub_type(); subsize = rv.sub_size(); alias = rv.type();}
+                    else if(rcol.tag==ptr_id&&!rcol.empty()) {
+                        //Alias through one of it's pointers to discern what's at that location
+                        print("(Implment later) Checking column through: ",Ptr_as_string(*(Ptr*)rcol[0]));
+                    }   
+
+                    Ptr subp = deadptr;
+                    if(lcol.tag==ptr_id||lcol.tag==string_id) {
+                        if(!lcol.empty()) {
+                            subp = *(Ptr*)lcol.get(lp.sidx); //The Ptr currently stored to the other collection
+                            if(subtype==0||subsize==0&&is_live(subp)) { //Free the subptr if we're realiasing to a scalar
+                                //print("Recycling subp");
+                                recycle_column(subp);
+                            } else {
+                                if(is_live(subp)) {
+                                    //print("Resetting subp");
+                                    Col& subcol = resolve_to_col(subp);
+                                    subcol.clear(); subcol.element_size = subsize; subcol.tag = subtype;
+                                } else {
+                                    //print("Regnerating subp");
+                                    subp = get_ticket(lp.pool,subsize,subtype);
+                                    resolve_to_col(lp).set(lp.sidx,(void*)&subp);
+                                }
+                            }
+                        } else if(subtype!=0&&subsize!=0) {
+                            //print("Replacing subp");
+                            subp = get_ticket(lp.pool,subsize,subtype);
+                            resolve_to_col(lp).push((void*)&subp);
+                        }
                     }
+                    Col& col = resolve_to_col(lp); //Realias because the push may have invalidated it earlier
+                    if(subtype!=0&&subsize!=0) { //If right is a pointer to a collection
+                        if(col.tag!=alias) {
+                            //print("Realiasing");
+                            col.element_size = sizeof(Ptr); col.tag=alias;
+                            lv.size(sizeof(Ptr)); lv.type(alias);
+                            col.clear();
+                            subp = get_ticket(lp.pool,subsize,subtype);
+                            resolve_to_col(lp).push((void*)&subp);
+                        } else {
+                            //print("Replacing");
+                        }
+                        Ptr dataptr  = *(Ptr*)rv.get();
+                        Col& datacol = resolve_to_col(dataptr); //Copy over the data to it's new position
+                        Col& subcol = resolve_to_col(subp);
+                        subcol.clear();
+                        for(int i=0;i<datacol.length();i++) {
+                            subcol.push(datacol[i]);
+                        }
+                    } else { //If we're the direct value in the store pool
+                        if(col.element_size!=rv.size()||col.tag!=rv.type()) {
+                            //print("Clearing and pushing");
+                            col.clear();
+                            col.element_size = rv.size(); col.tag=rv.type();
+                            lv.size(rv.size()); lv.type(rv.type());
+                            col.push(rv.get());
+                        } else if(col.empty()) {
+                            //print("Pushing");
+                            col.push(rv.get());
+                        } else {
+                            //print("Setting");
+                            col.set(lp.sidx,rv.get());
+                        }
+                    }
+                    // DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
+                    
+                    // //Col& lcol = resolve_to_col(lp);
+                    // if(resolve_to_col(lp).heterogenous) {
+                    //     resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
+                    // } else {
+                    //     resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
+                    // }
                 }
             };
+
+            //Stricter equals with no duck typing or reassignment
+                // x_handlers[equals_id] = [this](Context& ctx){
+                //     if(ctx.node().children().length()==2) {
+                //         backwards_sub_process(ctx);
+                //         DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute equals while another error was flagged")); return;})
+                //         Node left = ctx.node().children()[0];
+                //         Node right = ctx.node().children()[1];
+
+                //         Ptr lp = left.value().data_ptr();
+                //         Ptr rp = right.value().data_ptr();
+
+                        
+
+                //         if(!is_live(lp)) return; //Normally caused by something being delcared but never used, and thus missed by the m pass
+                //         DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
+                //         DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
+                        
+                //         //Col& lcol = resolve_to_col(lp);
+                //         if(resolve_to_col(lp).heterogenous) {
+                //             resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
+                //         } else {
+                //             resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
+                //         }
+                //     }
+                // };
 
             make_tokenized_keyword("any",any_id);
             make_tokenized_keyword("null",null_id);

@@ -378,6 +378,7 @@ namespace Acorn {
     uint32_t string_id = global_reg_id("string"); uint32_t prefix_string_id = global_reg_id("prefix_string"); uint32_t suffix_string_id = global_reg_id("suffix_string");
     uint32_t char_id = global_reg_id("char"); uint32_t prefix_char_id = global_reg_id("prefix_char"); uint32_t suffix_char_id = global_reg_id("suffix_char");
     uint32_t ptr4_id = global_reg_id("ptr4"); uint32_t prefix_ptr4_id = global_reg_id("prefix_ptr4"); uint32_t suffix_ptr4_id = global_reg_id("suffix_ptr4");
+    uint32_t duck_id = global_reg_id("duck"); uint32_t prefix_duck_id = global_reg_id("prefix_duck"); uint32_t suffix_duck_id = global_reg_id("suffix_duck");
     size_t list_id = global_reg_id("list");
     size_t map_id = global_reg_id("map");
     size_t weakptr_id = global_reg_id("weakptr");

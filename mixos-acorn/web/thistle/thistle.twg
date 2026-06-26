@@ -467,90 +467,11 @@ login {
     }
 }
 
-
-
-##
-    global int sheetid = 0;
-    global int sheet_frag_handler(Context c, string target, string instr, string content, Node to_edit) {
-        if(instr=="loadsheet") {
-            sheetid = load_sheet(content);
-            to_edit.opt_str = content;
-            to_edit.value.set(sheetid);
-            //print("LOADED: ",to_edit.value.getInt);
-        } 
-        if(instr=="add_column") {
-            add_column_to_sheet(to_edit.value.getInt);
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="add_row") {
-            add_row_to_sheet(to_edit.value.getInt);
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="add_row_col") {
-            add_row_to_col(to_edit.value.getInt,stoi(content));
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="remove_row_col") {
-            remove_row_from_col(to_edit.value.getInt,stoi(content));
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="add_form") {
-            add_form(to_edit.value.getInt);
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="setcell") {
-            setcell(content);
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="labelcell") {
-            labelcell(content);
-            save_sheet(to_edit.value.getInt,to_edit.opt_str);
-        } 
-        if(instr=="rendermode") {
-            if(content=="+") {
-                to_edit.value.set(to_edit.value.getInt+1);
-            } else {
-                if(content=="-") {
-                    to_edit.value.set(to_edit.value.getInt-1);
-                } else {
-                    to_edit.value.set(stoi(content));
-                }
-            }
-        }
-        if(instr=="to_debug") {
-            to_edit.type = to_type("debugsheet");
-        }
-        if(instr=="to_sheet") {
-            to_edit.type = to_type("sheet");
-        }
-        if(instr=="to_form") {
-            to_edit.type = to_type("form");
-        }
-    }   
-##
-
 ##
     register build;
     "build" {
         in htmlemiting {
             emit_contents;
-        }
-        in fraging {
-            string src = ctx.source;
-            string target = src.slice(0,src.find(" "));
-            string instr = src.slice(" ",1,2);
-            string content = src.slice(src.find(" ",0,2)+1,src.length);
-            print("TARGET: ",target); 
-            print("INSTR: ",instr); 
-            print("CONTENT: ",content); 
-            if(target.length!=0) {
-                Node to_edit = find_node(target,ctx.node);
-                ctx.source = "";
-                sheet_frag_handler(ctx,target,instr,content,to_edit);
-                htmlemit to_edit;
-            } else {
-                print("No target for frag request!");
-            }
         }
     }
 ##
@@ -565,14 +486,13 @@ template div form_question(int spool, Ptr cellptr, bool editable) {
         div question_display {
             for(int i=0;i<form_p.length;i++) {
                 setsidx(form_p,i);
+                string cell_label;
+                if(form_p.celllabel.length!=0) {
+                    cell_label = form_p.celllabel;
+                } else {
+                    cell_label = to_string(i);
+                }
                 if(editable) {
-                    string cell_label;
-                    if(form_p.celllabel.length!=0) {
-                        cell_label = form_p.celllabel;
-                    } else {
-                        cell_label = to_string(i);
-                    }
-
                     input {
                         "value" : form_p.celllabel;
                         "onchange" : capture(
@@ -596,8 +516,8 @@ template div form_question(int spool, Ptr cellptr, bool editable) {
                         }
                     }   
                 } else {
-                    text to_string(i) {text_theme;}
-                    text to_string(form_p.get(i)) {text_theme;}
+                    text cell_label {text_theme;}
+                    text value_as_string(form_p) {text_theme;}
                 }
             }
 
@@ -900,23 +820,6 @@ build {
         in htmlemiting {
             emit_contents;
         }
-        in fraging {
-            string src = ctx.source;
-            string target = src.slice(0,src.find(" "));
-            string instr = src.slice(" ",1,2);
-            string content = src.slice(src.find(" ",0,2)+1,src.length);
-            print("TARGET: ",target); 
-            print("INSTR: ",instr); 
-            print("CONTENT: ",content); 
-            if(target.length!=0) {
-                Node to_edit = find_node(target,ctx.node);
-                ctx.source = "";
-                sheet_frag_handler(ctx,target,instr,content,to_edit);
-                htmlemit to_edit;
-            } else {
-                print("No target for frag request!");
-            }
-        }
     }
 ##
 
@@ -968,82 +871,8 @@ new {
                                 "display" : "flex";
                                 "justify-content" : "center";
                                 "width" : "100%";
-                                form main_sheet {
-                                    "id" : "main_sheet";
-                                    invisible header_style {
-                                        "background-color" : "rgb(240, 240, 240)";
-                                        "padding" : "10px 12px";
-                                        "font-size" : "14px";
-                                        "color" : "rgb(26, 26, 26)";
-                                        text_theme;
-                                    }
-                                    invisible column_style {
-                                        "border-right" : "1px solid rgb(200,200,200)";
-                                    }
-                                    invisible row_style {
-                                        "border-bottom" : "1px solid rgb(220,220,220)";
-                                    }
-                                     invisible input_style {
-                                        "border" : "none";
-                                        "background-color" : "transparent";
-                                        "width" : "100%";
-                                        "padding" : "8px 4px";
-                                        "font-size" : "13px";
-                                        "font-family" : "system-ui, sans-serif";
-                                    }
-                                    invisible select_style {
-                                        input_theme;
-                                    }
-                                    invisible form_input_style {
-                                        "border" : "none";
-                                        "border-bottom" : "2px solid rgb(200,200,200)";
-                                        "border-radius" : "0px";
-                                        "background-color" : "transparent";
-                                        "padding" : "8px 0px";
-                                        input_theme;
-                                    }
-                                    invisible field_style {
-                                        "display" : "flex";
-                                        "flex-direction" : "column";
-                                        "gap" : "6px";
-                                        "margin-bottom" : "20px";
-                                    }
-                                    invisible label_style {
-                                        text_theme;
-                                    }
-                                    invisible header_label_style {
-                                        "font-size" : "16px";
-                                        text_theme;
-                                    }
-                                    invisible context_menu_style {
-                                        "display" : "none"
-                                        "background" : "white";
-                                        "border" : "1px solid rgb(200,200,200)";
-                                        "border-radius" : "4px";
-                                        "padding" : "8px";
-                                        "min-width" : "200px";
-                                        "box-shadow" : "0 4px 12px rgba(0,0,0,0.15)";
-                                    }
-                                    invisible context_menu_header_style {
-                                        "font-size" : "11px";
-                                        "color" : "rgb(150,150,150)";
-                                        text_theme;
-                                        "margin-bottom" : "6px";
-                                    }
-                                    invisible context_menu_body_style {
-                                        "display" : "flex";
-                                        "flex-direction" : "column";
-                                        "gap" : "4px";
-                                    }
-                                    invisible context_menu_label_style {
-                                        "font-size" : "12px";
-                                        text_theme;
-                                    }
-                                    invisible context_menu_input_style {
-                                        input_theme;
-                                    }
-                                }
-                            }                    
+                                render_form(sheetpool,false);
+                            }             
                         }
                 }
         }
@@ -1060,23 +889,6 @@ new {
     "audit" {
         in htmlemiting {
             emit_contents;
-        }
-        in fraging {
-            string src = ctx.source;
-            string target = src.slice(0,src.find(" "));
-            string instr = src.slice(" ",1,2);
-            string content = src.slice(src.find(" ",0,2)+1,src.length);
-            print("TARGET: ",target); 
-            print("INSTR: ",instr); 
-            print("CONTENT: ",content); 
-            if(target.length!=0) {
-                Node to_edit = find_node(target,ctx.node);
-                ctx.source = "";
-                sheet_frag_handler(ctx,target,instr,content,to_edit);
-                htmlemit to_edit;
-            } else {
-                print("No target for frag request!");
-            }
         }
     }
 ##
@@ -1129,81 +941,7 @@ audit {
                                 "display" : "flex";
                                 "justify-content" : "center";
                                 "width" : "100%";
-                                sheet main_sheet {
-                                    "id" : "main_sheet";
-                                    invisible header_style {
-                                        "background-color" : "rgb(240, 240, 240)";
-                                        "padding" : "10px 12px";
-                                        "font-size" : "14px";
-                                        "color" : "rgb(26, 26, 26)";
-                                        text_theme;
-                                    }
-                                    invisible column_style {
-                                        "border-right" : "1px solid rgb(200,200,200)";
-                                    }
-                                    invisible row_style {
-                                        "border-bottom" : "1px solid rgb(220,220,220)";
-                                    }
-                                     invisible input_style {
-                                        "border" : "none";
-                                        "background-color" : "transparent";
-                                        "width" : "100%";
-                                        "padding" : "8px 4px";
-                                        "font-size" : "13px";
-                                        "font-family" : "system-ui, sans-serif";
-                                    }
-                                    invisible select_style {
-                                        input_theme;
-                                    }
-                                    invisible form_input_style {
-                                        "border" : "none";
-                                        "border-bottom" : "2px solid rgb(200,200,200)";
-                                        "border-radius" : "0px";
-                                        "background-color" : "transparent";
-                                        "padding" : "8px 0px";
-                                        input_theme;
-                                    }
-                                    invisible field_style {
-                                        "display" : "flex";
-                                        "flex-direction" : "column";
-                                        "gap" : "6px";
-                                        "margin-bottom" : "20px";
-                                    }
-                                    invisible label_style {
-                                        text_theme;
-                                    }
-                                    invisible header_label_style {
-                                        "font-size" : "16px";
-                                        text_theme;
-                                    }
-                                    invisible context_menu_style {
-                                        "display" : "none"
-                                        "background" : "white";
-                                        "border" : "1px solid rgb(200,200,200)";
-                                        "border-radius" : "4px";
-                                        "padding" : "8px";
-                                        "min-width" : "200px";
-                                        "box-shadow" : "0 4px 12px rgba(0,0,0,0.15)";
-                                    }
-                                    invisible context_menu_header_style {
-                                        "font-size" : "11px";
-                                        "color" : "rgb(150,150,150)";
-                                        text_theme;
-                                        "margin-bottom" : "6px";
-                                    }
-                                    invisible context_menu_body_style {
-                                        "display" : "flex";
-                                        "flex-direction" : "column";
-                                        "gap" : "4px";
-                                    }
-                                    invisible context_menu_label_style {
-                                        "font-size" : "12px";
-                                        text_theme;
-                                    }
-                                    invisible context_menu_input_style {
-                                        input_theme;
-                                    }
-                                }  
+                                //SHEET RENDER GOES HERE
                             }
                             div {
                                 "display" : "flex";
@@ -1251,100 +989,13 @@ audit {
 
 
 ##
-    global string render_as_sheet(Node node) {
-        std::string out = "";
-        out += "</table>";
-        return out;
-    }
-
     register admin;
     "admin" {
         in htmlemiting {
             emit_contents;
         }
-        in fraging {
-            string src = ctx.source;
-            string target = src.slice(0,src.find(" "));
-            string instr = src.slice(" ",1,2);
-            string content = src.slice(src.find(" ",0,2)+1,src.length);
-            print("TARGET: ",target); 
-            print("INSTR: ",instr); 
-            print("CONTENT: ",content); 
-            
-            if(target.length!=0) {
-                Node to_edit = find_node(target,ctx.node);
-                ctx.source = "";
-                ctx.source = render_as_sheet(to_edit);
-            } else {
-                print("No target for frag request!");
-            }
-        }
     }
 ##
-
-template div std_render_sheet(int spool) {
-    div {
-        "display" : "flex";
-        "justify-content" : "center";
-        "width" : "100%";
-            table {
-                "border-collapse" : "collapse";
-                "width" : "100%";
-                    int lenc = plen(spool); //Columns
-                    int lenr = 0; //Rows
-
-                    //Headers
-                    row {
-                        for(int i=0;i<lenc;i++) {
-                            column {
-                                "background-color" : "rgb(240, 240, 240)";
-                                "padding" : "10px 12px";
-                                "font-size" : "14px";
-                                "color" : "rgb(26, 26, 26)";
-                                "font-size" : "13px";
-                                "font-weight" : "600";
-                                "color" : "rgb(80,80,80)";
-                                "font-family" : "system-ui, sans-serif";
-                                "border-right" : "1px solid rgb(200,200,200)";
-                                text clabel(spool,i);
-                            }
-                            int lenco = clen(spool,i);
-                            if(lenco>lenr) {
-                                lenr = lenco;
-                            }
-                        }
-                    }
-                    
-                    //Render each column
-                    for(int r=0;r<lenr;r++) {
-                        row {
-                            "border-bottom" : "1px solid rgb(220,220,220)";
-                                for(int c=0;c<lenc;c++) {
-                                    column {
-                                        "border-right" : "1px solid rgb(200,200,200)";
-                                            string tostr = "";
-                                            Ptr cellptr = makePtr3(spool,c,r);
-                                            Ptr p = resolve_as_Ptr(cellptr);
-                                            if(is_live(p)) {
-                                                tostr = value_as_string(p);
-                                            }
-                                            input {
-                                                "border" : "none";
-                                                "background-color" : "transparent";
-                                                "width" : "100%";
-                                                "padding" : "8px 4px";
-                                                "font-size" : "13px";
-                                                "font-family" : "system-ui, sans-serif";
-                                                "value" : tostr;                                                                    
-                                                "onchange" : escape_str("run_raw('setcell(\""+to_string(cellptr)+"=',this.value,'\")')");
-                                            }
-                                    }
-                                }
-                        }
-                    }
-            }
-    }
-}
 
 admin {
     div {
@@ -1370,41 +1021,5 @@ admin {
             side_bar;
             background_theme;
 
-
-            template div control_btns(string label, string behaviour) { 
-                button instance {
-                    "onclick" : behaviour; 
-                    "height" : "100%"; 
-                    "width" : "40px"; 
-                    text label { text_theme; }
-                } 
-            }
-
-            control_btns("S",escape_str("run_raw('save_sheet("+to_string(sheetpool)+",\"redberry\")')"));
-            control_btns("+C",escape_str("run_raw('add_column_to_sheet("+to_string(sheetpool)+")')"));
-            control_btns("+R",escape_str("run_raw('add_row_to_sheet("+to_string(sheetpool)+")')"));
-
-            div {
-                "flex" : "1";
-                "display" : "flex";
-                "flex-direction" : "column";
-                "justify-content" : "center";
-                "align-items" : "center";
-                    div {
-                        "display" : "flex";
-                        "justify-content" : "flex-start";
-                        "align-items" : "stretch";
-                        "flex-direction" : "column";
-                        "width" : "480px";
-                        "padding" : "40px";
-                        "gap" : "12px";
-                        card_theme;
-                        "border-radius" : "12px";
-                        "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
-                        if(sheetpool!=0) {
-                            std_render_sheet(sheetpool);
-                        }
-            }
-        }
     }
 }

@@ -214,4 +214,20 @@ n.print_list;
 m.print_list;
 
 
-Test 9
+Test 9 duck typing and type inspection
+
+for(int i=0;i<3;i++) {
+    if(i<2) {
+        a = i;
+    } else {
+        a = to_string(i);
+    }
+
+    int vofa = V#a;
+    if(vofa==(#int)) {
+        print("A is an int");
+    } else if(vofa==(#string)) {
+        print("A is a string");
+    }
+}
+

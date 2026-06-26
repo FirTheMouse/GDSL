@@ -223,6 +223,17 @@ namespace Acorn {
             col.set(index,data);
         });
 
+        uint32_t ptr_label_id = overload_type(ptr_id,".\"label\"","PTR_LABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+            Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+            if(!ctx.node().children()[1].children().empty()) {
+                string label = (string&)*(Ptr*)ctx.node().children()[1].children()[0].value().get();
+                resolve_to_col(p).label = label.to_std();
+            } else {
+                string output = resolve_string_ticket(ctx.node());
+                output = resolve_to_col(p).label.to_std();
+            }
+        });
+
         uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (*(int*)ctx.node().children()[0].value().get()==*(int*)ctx.node().children()[1].value().get());
@@ -678,6 +689,62 @@ namespace Acorn {
                 ctx.node().value().set((void*)&found_id);
             };
 
+            add_function("resolve_as_Ptr",[this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node().value().set(resolve_ptr(*(Ptr*)ctx.node().children()[0].value().get()));
+            },sizeof(Ptr),ptr_id);
+
+            add_function("resolve_as_Node",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr resolved = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set(resolve_ptr(resolved));
+            },sizeof(Ptr),node_id);
+
+            add_function("cast_to_Node",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
+                if(n.cachelevel==3) n.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
+                ctx.node().value().set((void*)&n);
+            },sizeof(Ptr),node_id);
+
+            add_function("makePtr3",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().value().get();
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t idx = *(int*)ctx.node().children()[1].value().get();
+                uint32_t sidx = *(int*)ctx.node().children()[2].value().get();
+                p.pool = pool; p.idx = idx; p.sidx = sidx;
+                p.cachelevel = 3; p.cache = &types;
+            },sizeof(Ptr),ptr_id);
+
+            add_function("value_as_string",[this](Context& ctx){
+                standard_sub_process(ctx);
+                string output = resolve_string_ticket(ctx.node());
+                output = value_as_string(*(Ptr*)ctx.node().children()[0].value().get());
+            },sizeof(Ptr),string_id);
+
+            add_function("is_live",[this](Context& ctx){
+                standard_sub_process(ctx);
+                bool b = is_live(*(Ptr*)ctx.node().children()[0].value().get());
+                ctx.node().value().set((void*)&b);
+            },1,bool_id);
+
+            add_function("call_owner_as_string",[this](Context& ctx){
+                //We *don't* standard sub process because we don't want to emit to source
+                Node n = ctx.node().children()[0];
+                Ptr ownerptr = n.scopes()[0].owner();
+                string output = resolve_string_ticket(ctx.node());
+                output = Ptr_to_string(ownerptr,ownerptr.cachelevel);
+            },sizeof(Ptr),string_id);
+
+            add_function("call_owner",[this](Context& ctx){
+                //We *don't* standard sub process because we don't want to emit to source
+                Node n = ctx.node().children()[0];
+                Node owner = n.scopes()[0].owner();
+                ctx.node().value().set((void*)&owner);
+            },sizeof(Ptr),node_id);
+            
+
             Handler discard = [this](Context& ctx){
                 if(ctx.index()>0) {
                     ctx.index()--;
@@ -795,6 +862,24 @@ namespace Acorn {
                 p.sidx = val;
             });
 
+            uint32_t ptr_setsidx_id = add_binding_token_combo("PTR_SETSIDX_OP",8,2,'|','S','=');
+            t_handlers[ptr_setsidx_id] = [this](Context& ctx){
+                standard_sub_process(ctx); 
+                ctx.node().value(make_value(ptr_id,sizeof(Ptr)));  
+            };
+            x_handlers[ptr_setsidx_id] = [this](Context& ctx){
+                standard_sub_process(ctx); 
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                if(!is_live(ctx.node().value().data_ptr())) {ctx.node().value().init_data();}
+                Ptr& output = *(Ptr*)ctx.node().value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.sidx = val;
+                output = p;
+            };
+
+
+
+
 
             add_function("newline",[this](Context& ctx){
                 uspan->newline(children_to_string(ctx,ctx.node().children()));
@@ -910,6 +995,7 @@ namespace Acorn {
             };
             r_handlers[to_unary_id(star_id)] = [this](Context& ctx){ //To get size data and such from the type
                 fire_quals(ctx,ctx.node().value());
+                resolve_overload(ctx);
             };
 
 
@@ -920,6 +1006,15 @@ namespace Acorn {
                     ctx.node().value().quals().insert(0,make_node(ptr_id,"Ptr",make_value(ptr_id,sizeof(Ptr)),ctx.node().in_scope()));
                     fire_quals(ctx,ctx.node().value());
                     standard_sub_process(ctx);
+                    resolve_overload(ctx);
+                }
+            };
+            x_handlers[to_decl_id(star_id)] = [this](Context& ctx){
+                if(!ctx.node().children().empty()) {
+                    standard_sub_process(ctx);
+                    Node child = ctx.node().children()[0];
+                    Ptr p = *(Ptr*)child.value().get();
+                    ctx.node().value().set((void*)&p);
                 }
             };
             r_handlers[to_unary_id(amp_id)] = [this](Context& ctx){
@@ -944,8 +1039,197 @@ namespace Acorn {
                 Node child = ctx.node().children()[0];
                 Ptr p = *(Ptr*)child.value().get();
                 ctx.node().value().data_ptr(p);
+                ctx.node().value().type(resolve_to_col(p).tag);
+                ctx.node().value().size(resolve_to_col(p).element_size);
             };
 
+
+            x_handlers[var_decl_id] = [this](Context& ctx){
+                fire_quals(ctx,ctx.node().value());
+            };
+            r_handlers[prefix_ptr_id] = [this](Context& ctx){
+                if(is_live(ctx.value())) {
+                    if(ctx.value().quals().length()>1) {
+                        int i = 0;
+                        while(i<ctx.value().quals().length()) {
+                            Node q = ctx.value().quals()[i];
+                            if(q.type()==ptr_id&&i<ctx.value().quals().length()-1) {
+                                Node left = ctx.value().quals()[i+1];
+                                ctx.value().sub_type(left.value().type());
+                                ctx.value().sub_size(left.value().size());
+                                break;
+                            }
+                            i++;
+                        }
+                    } else {
+                        //It's just a normal Ptr
+                        // print(red("prefix_ptr_id::r_handler missing type it points to!"));
+                        // print(node_to_string(ctx.node()));
+                    }
+                }
+            };
+            x_handlers[prefix_ptr_id] = [this](Context& ctx){
+                if(is_live(ctx.value())) {
+                    if(ctx.value().sub_type()!=0) {
+                        Ptr ticket = get_ticket(data_store_id,ctx.value().sub_size(),ctx.value().sub_type());
+                        ctx.value().set((void*)&ticket);
+                    }
+                }
+            };
+            x_handlers[prefix_string_id] = [this](Context& ctx){
+                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                    Ptr ticket = get_ticket(name_store_id,1,char_id);
+                    ctx.value().set((void*)&ticket);
+                }
+            };
+            x_handlers[prefix_node_id] = [this](Context& ctx){
+                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()&&!is_live(ctx.value().data_ptr())) {
+                    Node n = make_node();
+                    ctx.node().value().init_data();
+                    ctx.value().set((void*)&n);
+                }
+            };
+            x_handlers[prefix_value_id] = [this](Context& ctx){
+                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                    Value v = make_value();
+                    ctx.node().value().init_data();
+                    ctx.value().set((void*)&v);
+                }
+            };
+            x_handlers[prefix_context_id] = [this](Context& ctx){
+                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
+                    Context c = make_context();
+                    ctx.node().value().init_data();
+                    ctx.value().set((void*)&c);
+                }
+            };
+
+            x_handlers[literal_id] = [this](Context& ctx){
+                std::string name = ctx.node().name().to_std();
+                uint32_t vtype = ctx.node().value().type();
+                if(vtype==int_id) {
+                    int i = std::stoi(name); ctx.node().value().set((void*)&i);
+                } else if(vtype==float_id) {
+                    float f = std::stof(name); ctx.node().value().set((void*)&f);
+                } else if(vtype==ptr_id) {
+                    Ptr p = string_to_Ptr(name); 
+                    if(p.cachelevel==3) {p.cache = &types;} //Add fillins for other caches somehow later
+                    ctx.node().value().set((void*)&p);
+                } else if(vtype==string_id) { //This is a race condition
+                    Ptr p = get_ticket(name_store_id,1,char_id); string s(p); s = name; ctx.node().value().set((void*)&p);
+                } else if(vtype==bool_id) {
+                    bool b = (name=="true"||name=="1");
+                    ctx.node().value().set((void*)&b);
+                } else if(vtype==char_id) {
+                    char c = name.empty() ? '\0' : name[0];
+                    ctx.node().value().set((void*)&c);
+                } else if(vtype==null_id) { //For future use
+                    Ptr dead = deadptr;
+                    ctx.node().value().set((void*)&dead);
+                } else {
+                    throw_error("No way to handle value type ",labels[vtype],"!");
+                }
+            };
+
+            r_handlers[to_unary_id(hash_id)] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node().value(make_value(int_id,4));
+                resolve_overload(ctx);
+            };
+            x_handlers[to_unary_id(hash_id)] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node c = ctx.node().children()[0];
+                std::string search_for = c.name().to_std();
+                for(auto e : labels.entrySet()) {
+                    if(e.value == search_for) {
+                        ctx.node().value().set((void*)&e.key);
+                        return;
+                    }
+                }
+            };
+
+            int l_lbp = 5; int l_rbp = 3;
+            set_binding_powers(hash_id,l_lbp,l_rbp);
+            //Double check what the precedence for these should be later
+            uint32_t label_type_combo = add_binding_token_combo("LABEL_TYPE",l_lbp,l_rbp,'L','#');
+            r_handlers[label_type_combo] = [this](Context& ctx){
+                standard_sub_process(ctx); 
+                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                resolve_overload(ctx); 
+            };
+            x_handlers[label_type_combo] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node c = ctx.node().children()[0];
+                string output = resolve_string_ticket(ctx.node());
+                uint32_t type = *(int*)c.value().get();
+                output = labels[type];
+            };
+
+            uint32_t node_type_combo = add_binding_token_combo("NODE_TYPE",l_lbp,l_rbp,'N','#');
+            r_handlers[node_type_combo] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.node().value(make_value(int_id,4));
+                resolve_overload(ctx);
+            };
+            x_handlers[node_type_combo] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                Node c = ctx.node().children()[0];
+                uint32_t type = c.type();
+                ctx.node().value().set((void*)&type);
+            };
+            uint32_t label_node_type_combo = add_binding_token_combo("LABEL_NODE_TYPE",l_lbp,l_rbp,'S','N','#');
+            r_handlers[label_node_type_combo] = [this](Context& ctx){
+                standard_sub_process(ctx); 
+                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                resolve_overload(ctx); 
+            };
+            x_handlers[label_node_type_combo] = [this](Context& ctx){
+                Node c = ctx.node().children()[0];
+                string output = resolve_string_ticket(ctx.node());
+                uint32_t type = c.type();
+                output = labels[type];
+            };
+            uint32_t value_type_combo = add_binding_token_combo("VALUE_TYPE",l_lbp,l_rbp,'V','#');
+            r_handlers[value_type_combo] = [this](Context& ctx){                 
+                standard_sub_process(ctx);
+                ctx.node().value(make_value(int_id,4));
+                resolve_overload(ctx);
+            };
+            x_handlers[value_type_combo] = [this](Context& ctx){
+                Node c = ctx.node().children()[0];
+                uint32_t type = 0;
+                if(is_live(c.value())) {
+                    type = c.value().type();
+                }
+                ctx.node().value().set((void*)&type);
+            };
+            uint32_t label_value_type_combo = add_binding_token_combo("LABEL_VALUE_TYPE",l_lbp,l_rbp,'S','V','#');
+            r_handlers[label_value_type_combo] = [this](Context& ctx){
+                standard_sub_process(ctx); 
+                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                resolve_overload(ctx); 
+            };
+            x_handlers[label_value_type_combo] = [this](Context& ctx){
+                Node c = ctx.node().children()[0];
+                string output = resolve_string_ticket(ctx.node());
+                uint32_t type = 0;
+                if(is_live(c.value())) {
+                    type = c.value().type();
+                }
+                output = labels[type];
+            };
+
+            x_handlers[to_prefix_id(gloabl_qual)] = [this](Context& ctx){
+                if(ctx.node().type()==var_decl_id) {
+                    value_col vcol(uid,unitdata_col,global_value_table_idx);
+                    vcol.put(ctx.node().name().to_std(),ctx.value());
+                } else if(ctx.node().type()==func_decl_id) {
+                    node_col ncol(uid,unitdata_col,global_node_table_idx);
+                    ncol.put(ctx.node().name().to_std(),ctx.node().scopes()[0]);
+                    value_col vcol(uid,unitdata_col,global_value_table_idx);
+                    vcol.put(ctx.node().name().to_std(),ctx.value());
+                }
+            };
            
             r_handlers[ctx_id] = [this](Context& ctx){
                 ctx.node().value(make_value(context_id,sizeof(Ptr)));
@@ -1376,105 +1660,6 @@ namespace Acorn {
                 }
             };
 
-
-            x_handlers[var_decl_id] = [this](Context& ctx){
-                fire_quals(ctx,ctx.node().value());
-            };
-            r_handlers[prefix_ptr_id] = [this](Context& ctx){
-                if(is_live(ctx.value())) {
-                    if(ctx.value().quals().length()>1) {
-                        int i = 0;
-                        while(i<ctx.value().quals().length()) {
-                            Node q = ctx.value().quals()[i];
-                            if(q.type()==ptr_id&&i<ctx.value().quals().length()-1) {
-                                Node left = ctx.value().quals()[i+1];
-                                ctx.value().sub_type(left.value().type());
-                                ctx.value().sub_size(left.value().size());
-                                break;
-                            }
-                            i++;
-                        }
-                    } else {
-                        //It's just a normal Ptr
-                        // print(red("prefix_ptr_id::r_handler missing type it points to!"));
-                        // print(node_to_string(ctx.node()));
-                    }
-                }
-            };
-            x_handlers[prefix_ptr_id] = [this](Context& ctx){
-                if(is_live(ctx.value())) {
-                    if(ctx.value().sub_type()!=0) {
-                        Ptr ticket = get_ticket(data_store_id,ctx.value().sub_size(),ctx.value().sub_type());
-                        ctx.value().set((void*)&ticket);
-                    }
-                }
-            };
-            x_handlers[prefix_string_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
-                    Ptr ticket = get_ticket(name_store_id,1,char_id);
-                    ctx.value().set((void*)&ticket);
-                }
-            };
-            x_handlers[prefix_node_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()&&!is_live(ctx.value().data_ptr())) {
-                    Node n = make_node();
-                    ctx.node().value().init_data();
-                    ctx.value().set((void*)&n);
-                }
-            };
-            x_handlers[prefix_value_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
-                    Value v = make_value();
-                    ctx.node().value().init_data();
-                    ctx.value().set((void*)&v);
-                }
-            };
-            x_handlers[prefix_context_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
-                    Context c = make_context();
-                    ctx.node().value().init_data();
-                    ctx.value().set((void*)&c);
-                }
-            };
-
-            x_handlers[literal_id] = [this](Context& ctx){
-                std::string name = ctx.node().name().to_std();
-                uint32_t vtype = ctx.node().value().type();
-                if(vtype==int_id) {
-                    int i = std::stoi(name); ctx.node().value().set((void*)&i);
-                } else if(vtype==float_id) {
-                    float f = std::stof(name); ctx.node().value().set((void*)&f);
-                } else if(vtype==ptr_id) {
-                    Ptr p = string_to_Ptr(name); 
-                    if(p.cachelevel==3) {p.cache = &types;} //Add fillins for other caches somehow later
-                    ctx.node().value().set((void*)&p);
-                } else if(vtype==string_id) { //This is a race condition
-                    Ptr p = get_ticket(name_store_id,1,char_id); string s(p); s = name; ctx.node().value().set((void*)&p);
-                } else if(vtype==bool_id) {
-                    bool b = (name=="true"||name=="1");
-                    ctx.node().value().set((void*)&b);
-                } else if(vtype==char_id) {
-                    char c = name.empty() ? '\0' : name[0];
-                    ctx.node().value().set((void*)&c);
-                } else if(vtype==null_id) { //For future use
-                    Ptr dead = deadptr;
-                    ctx.node().value().set((void*)&dead);
-                } else {
-                    throw_error("No way to handle value type ",labels[vtype],"!");
-                }
-            };
-
-            x_handlers[to_prefix_id(gloabl_qual)] = [this](Context& ctx){
-                if(ctx.node().type()==var_decl_id) {
-                    value_col vcol(uid,unitdata_col,global_value_table_idx);
-                    vcol.put(ctx.node().name().to_std(),ctx.value());
-                } else if(ctx.node().type()==func_decl_id) {
-                    node_col ncol(uid,unitdata_col,global_node_table_idx);
-                    ncol.put(ctx.node().name().to_std(),ctx.node().scopes()[0]);
-                    value_col vcol(uid,unitdata_col,global_value_table_idx);
-                    vcol.put(ctx.node().name().to_std(),ctx.value());
-                }
-            };
 
 
             a_handlers[DEBUG_ROOT_id] = [this](Context& ctx){

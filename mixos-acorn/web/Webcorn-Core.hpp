@@ -243,6 +243,7 @@ namespace Acorn {
             write_raw<uint32_t>(out,sheetpool);
             list<ColCol*> sheet = gather_sheet_pools(sheetpool);
             write_ColColList(out,sheet);
+            write_normalize_trailer(out,{NORM_IDS});
             out.close();
         }
         uint32_t load_sheet(const std::string& path) {
@@ -260,6 +261,9 @@ namespace Acorn {
                 uint32_t saved_sheetpool = read_raw<uint32_t>(in);
                 list<ColCol> loadsheet = read_ColColList(in);
                 print("Loaded, adding to unit and normalizing");
+                list<void*> to_normalize; for(int i=0;i<loadsheet.length();i++) to_normalize << (void*)&loadsheet[i];
+                normalize(in,to_normalize,1);
+
                 sheetpool = types.length();
                 print("Sheetpool ",sheetpool," saved sheetpool ",saved_sheetpool);
                 for(int p=0;p<loadsheet.length();p++) {
@@ -1593,7 +1597,7 @@ namespace Acorn {
                 Ptr cptr(&types,pool,col,0);
                 resolve_to_col(cptr).label = label;
             });
-            
+
             uint32_t ptr_celllabel_id = overload_type(ptr_id,".\"celllabel\"","PTR_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                 Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
                 if(p.cachelevel==3) p.cache = &types;

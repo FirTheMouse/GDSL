@@ -1062,6 +1062,7 @@ namespace Acorn {
                     Col& handler_col = h[i];
         
                     labels.put(i,handler_col.label.to_std());
+                    labels_lookup.put(handler_col.label.to_std(),i);
         
                     if(handler_col.empty()) continue;
                     Ptr lptr = *(Ptr*)handler_col.sget(0);
@@ -1167,6 +1168,7 @@ namespace Acorn {
         
 
         map<uint32_t, std::string> labels;
+        map<std::string,uint32_t> labels_lookup;
         map<uint32_t,_layout> layouts;
         map<std::string, g_ptr<Stage>> stages;
         uint32_t next_id = 0;
@@ -1283,6 +1285,7 @@ namespace Acorn {
             note_value(types[handler_type_id],label,sizeof(Ptr),ptr_id);
             types[handler_type_id][at].push_default();
             labels[at] = label;
+            labels_lookup[label] = at;
             //print("Registered: ",label," LEN: ",types[handler_type_id].length()," GLOBAL LEN: ",global[handler_type_id].length());
             return at;
         }
@@ -2483,6 +2486,112 @@ namespace Acorn {
             endline();
             deep_recycle_context(ctx);
         }   
+
+
+        inline void normalize_Col_tags(Col& col, map<uint32_t,uint32_t>& fixup) {
+            if(fixup.hasKey(col.tag)) {
+                //print("Fixup ",col.tag," as ",fixup[col.tag]);
+                col.tag = fixup.get(col.tag);
+            }
+        }
+        inline void normalize_ColCol_tags(ColCol& col, map<uint32_t,uint32_t>& fixup) {
+            normalize_Col_tags(col,fixup);
+            for(int i=0;i<col.length();i++) {
+                normalize_Col_tags(col[i],fixup);
+            }
+        }
+        inline void normalize_ColColCol_tags(ColColCol& col, map<uint32_t,uint32_t>& fixup) {
+            normalize_Col_tags(col,fixup);
+            for(int i=0;i<col.length();i++) {
+                normalize_ColCol_tags(col[i],fixup);
+            }
+        }
+
+        map<uint32_t,uint32_t> remap_ids_by_label(map<uint32_t,std::string>& ids) {
+            map<uint32_t,uint32_t> fixup;
+            for(auto e : ids.entrySet()) {
+                uint32_t old_id = e.key;
+                std::string label = e.value;
+                if(labels_lookup.hasKey(label)) {
+                    uint32_t new_id = labels_lookup.get(label);
+                    if(old_id != new_id) {
+                        //print("Registered id fixup from ",old_id,"[",label,"] to ",new_id,"[",labels[new_id],"]");
+                        fixup.put(old_id, new_id);
+                    }
+                } else {
+                    //print("Label lookup does not have key ",label);
+                }
+            }
+            return fixup;
+        }
+
+        enum norm_ops {
+            NORM_IDS = 0
+        };
+    
+        void normalize(std::ifstream& in, list<void*> data, uint8_t level) {
+            uint32_t pass_count = read_raw<uint32_t>(in);
+            for(uint32_t p=0;p<pass_count;p++) {
+                uint32_t block_op = read_raw<uint32_t>(in);
+                switch(block_op) {
+                    case NORM_IDS: {
+                        uint32_t count = read_raw<uint32_t>(in);
+                        print("Normalizing ",count," ids");
+                        map<uint32_t,std::string> block_ids;
+                        for(uint32_t j=0;j<count;j++) {
+                            uint32_t id = read_raw<uint32_t>(in);
+                            std::string label = read_string(in);
+                            block_ids.put(id,label);
+                            //print(label,": ",id," [",labels[id],"]");
+                        }
+                        map<uint32_t,uint32_t> fixup = remap_ids_by_label(block_ids);
+                        if(level==0) { //Col
+                            for(int i=0;i<data.length();i++) {
+                                Col& col = *(Col*)data[i];
+                                normalize_Col_tags(col,fixup);
+                            }
+                        } else if(level==1) { //ColCol
+                            for(int i=0;i<data.length();i++) {
+                                ColCol& col = *(ColCol*)data[i];
+                                normalize_ColCol_tags(col,fixup);
+                            }
+                        } else if(level==2) { //ColColCol
+                            for(int i=0;i<data.length();i++) {
+                                ColColCol& col = *(ColColCol*)data[i];
+                                normalize_ColColCol_tags(col,fixup);
+                            }
+                        }
+                    }
+                    break;
+
+                    default:
+                    print(red("core:normalize unrecognized block opperation: "+std::to_string(block_op)));
+                    break;
+                }
+            }
+        }
+
+        void write_normalize_trailer(std::ostream& out,list<uint32_t> passes) {
+            uint32_t pass_count = passes.length();
+            write_raw(out, pass_count);
+            for(int p=0;p<pass_count;p++) {
+                switch(passes[p]) {
+                    case NORM_IDS: {
+                        write_raw<uint32_t>(out, NORM_IDS);
+                        write_raw<uint32_t>(out, labels.entrySet().length());
+                        for(auto e : labels.entrySet()) {
+                            write_raw<uint32_t>(out, e.key);
+                            write_string(out, e.value);
+                        }
+                    }
+                    break;
+
+                    default:
+                    print(red("core:write_normalize unrecognized pass: "+std::to_string(passes[p])));
+                    break;
+                }
+            }
+        }
 
 
         void save_acorn(const std::string& path) {

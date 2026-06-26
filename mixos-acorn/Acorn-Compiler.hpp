@@ -1791,10 +1791,21 @@ namespace Acorn {
                     Col& rcol = resolve_to_col(rp);
                     if(rcol.tag==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
                     else if(rv.sub_type()!=0) {subtype = rv.sub_type(); subsize = rv.sub_size(); alias = rv.type();}
-                    else if(rcol.tag==ptr_id&&!rcol.empty()) {
-                        //Alias through one of it's pointers to discern what's at that location
-                        print("(Implment later) Checking column through: ",Ptr_as_string(*(Ptr*)rcol[0]));
-                    }   
+                    // else if(rcol.tag==ptr_id&&!rcol.empty()) {
+                    //     //Alias through one of it's pointers to discern what's at that location
+                    //     print(node_to_string(ctx.node()));
+                    //     print("(Implment later) Checking column through: ",Ptr_as_string(*(Ptr*)rcol[0]));
+                    // }   
+
+                    if(lcol.tag==ptr_id&&rcol.tag==ptr_id) { //Figure out better proper Ptr assignment later
+                        //This is just a kludge for now because I'm testing normalization in TwigSnap 
+                        if(resolve_to_col(lp).heterogenous) {
+                            resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
+                        } else {
+                            resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
+                        }
+                        return;
+                    }
 
                     Ptr subp = deadptr;
                     if(lcol.tag==ptr_id||lcol.tag==string_id) {

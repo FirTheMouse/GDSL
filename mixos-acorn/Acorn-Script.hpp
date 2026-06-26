@@ -552,6 +552,8 @@ namespace Acorn {
             }
         };
 
+        uint32_t bumpid = add_function("BUMP",[](Context& ctx){});
+
         void m_stage_assignment_handler(Context& ctx) {
             standard_sub_process(ctx); //Not sure what to do with this yet
         };
@@ -1140,12 +1142,9 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 Node c = ctx.node().children()[0];
                 std::string search_for = c.name().to_std();
-                for(auto e : labels.entrySet()) {
-                    if(e.value == search_for) {
-                        ctx.node().value().set((void*)&e.key);
-                        return;
-                    }
-                }
+                uint32_t type = 0;
+                type = labels_lookup.getOrDefault(c.name().to_std(),type);
+                ctx.node().value().set((void*)&type);
             };
 
             int l_lbp = 5; int l_rbp = 3;

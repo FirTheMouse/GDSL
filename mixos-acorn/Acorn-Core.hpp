@@ -397,8 +397,9 @@ namespace Acorn {
 
     size_t var_decl_id = global_reg_id("VAR_DECL");
     size_t func_call_id = global_reg_id("FUNC_CALL");
+    size_t lambda_id = global_reg_id("LAMBDA");
+    size_t function_id = global_reg_id("function"); size_t prefix_function_id = global_reg_id("prefix_function"); size_t suffix_function_id = global_reg_id("suffix_function");
     size_t method_call_id = global_reg_id("METHOD_CALL");
-    size_t function_id = global_reg_id("FUNCTION");
     size_t method_id = global_reg_id("METHOD");
     size_t func_decl_id = global_reg_id("FUNC_DECL");
     size_t type_decl_id = global_reg_id("TYPE_DECL");
@@ -693,7 +694,7 @@ namespace Acorn {
             return resolve_to_col(dataptr).qget(dataptr.sidx);
         }
 
-        inline void copy(Value o, bool is_deep) {
+        inline void copy(Value o, bool is_deep) { //Do we make the deep copying happen here or in acorn-compiler?
             Col& src = resolve_to_col(o);
             Col& dst = resolve_to_col(*this);
             memcpy(dst.storage, src.storage, value_total_size);
@@ -1570,7 +1571,7 @@ namespace Acorn {
                 return Ptr_as_string(ptr)+"> \""+escape_string(content)+"\"";
             } else if(tag==ptr_id) {
                 return Ptr_to_string(*(Ptr*)data);
-            } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id) {
+            } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id||tag==function_id) {
                 return Ptr_as_string(*(Ptr*)data);
             } else if(tag==ptr4_id) {
                 Ptr4 p = *(Ptr4*)data;
@@ -1596,7 +1597,7 @@ namespace Acorn {
                 s+="]";
                 return s;
             } else {
-                return labels[tag]+"?";
+                return "(add tag_to_str for "+labels[tag]+")";
             }
         }
         
@@ -2097,7 +2098,7 @@ namespace Acorn {
             if(value_printers.hasKey(v.type())) {
                 value_printers[v.type()](ctx);
             } else {
-                return labels[v.type()]+"?";
+                return "(add value printer for "+labels[v.type()]+")";
             }
             std::string str = ctx.source().to_std();
             deep_recycle_context(ctx);
@@ -2344,6 +2345,7 @@ namespace Acorn {
             for(int c = 0; c < node.children().length(); c++) {
                 Node child = node.children()[c];
                 if(!child.scopes().empty()) {
+                    standard_sub_process_node(child);
                     for(int s = 0; s < child.scopes().length(); s++) {
                         if(child.scopes()[s].owner()==child) {
                             standard_resolving_pass(child.scopes()[s]);
@@ -2409,6 +2411,7 @@ namespace Acorn {
             for(int c = 0; c < node.children().length(); c++) {
                 Node child = node.children()[c];
                 if(!child.scopes().empty()) {
+                    standard_sub_process_node(child);
                     for(int s = 0; s < child.scopes().length(); s++) {
                         if(child.scopes()[s].owner()==child) {
                             standard_backwards_pass(child.scopes()[s]);
@@ -2450,6 +2453,7 @@ namespace Acorn {
             for(int c = 0; c < node.children().length(); c++) {
                 Node child = node.children()[c];
                 if(!child.scopes().empty()) {
+                    standard_sub_process_node(child);
                     for(int s = 0; s < child.scopes().length(); s++) {
                         if(child.scopes()[s].owner()==child) {
                             memory_backwards_pass(child.scopes()[s]);

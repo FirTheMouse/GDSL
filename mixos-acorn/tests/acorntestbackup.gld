@@ -231,3 +231,30 @@ for(int i=0;i<3;i++) {
     }
 }
 
+Test 10 inital version of closures
+
+int a = 5; int b = 6;
+
+func f = [a, b](string s, int v){
+    print("A: ",a," B: ",b);
+    print("S: ",s," V: ",v);
+    return 9;
+};
+
+print(f("wub",6));
+print(f);
+
+f = [a](string sh, int* vh) {
+    print("A2: ",a);
+    sh = "flumpf";
+    print("S2: ",sh," V2: ",*vh);
+    (*vh)++;
+    return 2;
+};
+
+string w = "wubs";
+int x = 0;
+for(int i=0;i<3;i++) {
+    print(f(w,&x));
+    print(w,": ",x);
+}

@@ -617,7 +617,7 @@ stateless template div build_render_sheet(int spool) {
                                 template div makecell(int colum) {
                                     static string tostr = "";
                                     static Ptr cellptr = makePtr3(spool,colum,r);
-                                    static Ptr p = resolve_as_Ptr(cellptr);
+                                    static Ptr p = *cellptr;
                                     if(is_live(p)) {
                                         tostr = value_as_string(p);
                                     }
@@ -639,7 +639,7 @@ stateless template div build_render_sheet(int spool) {
                                         "padding" : "4px";
 
                                         cellptr = makePtr3(spool,colum,r);
-                                        p = resolve_as_Ptr(cellptr);
+                                        p = *cellptr;
                                         if(is_live(p)) {
                                             tostr = value_as_string(p);
                                         }
@@ -649,7 +649,7 @@ stateless template div build_render_sheet(int spool) {
                                         }
 
                                         static Ptr noteptr = makePtr3(find_sheet(spool,to_type("notesheet")),colum,r);
-                                        static Ptr note_p = resolve_as_Ptr(noteptr);
+                                        static Ptr note_p = *noteptr;
                                         static string note_tostr;
                                         if(is_live(note_p)) {
                                             note_tostr = value_as_string(note_p);
@@ -669,9 +669,9 @@ stateless template div build_render_sheet(int spool) {
                                         static bool has_question;
                                         static Ptr formptr;
                                         static Ptr form_p;
-                                        if(has_sheet(spool,to_type("formsheet"))) {
-                                            formptr = makePtr3(find_sheet(spool,to_type("formsheet")),colum,r);
-                                            form_p = resolve_as_Ptr(formptr);
+                                        if(has_sheet(spool,#formsheet)) {
+                                            formptr = makePtr3(find_sheet(spool,#formsheet),colum,r);
+                                            form_p = *formptr;
                                         }
                                         if(is_live(form_p)) {
                                             text "Label" {text_theme;}
@@ -693,7 +693,7 @@ stateless template div build_render_sheet(int spool) {
                                                 "onclick" : capture {
                                                     if(is_live(formptr)) {} else {
                                                         add_form(spool);
-                                                        formptr = makePtr3(find_sheet(spool,to_type("formsheet")),colum,r);
+                                                        formptr = makePtr3(find_sheet(spool,#formsheet),colum,r);
                                                     }
                                                     setcell(to_string(formptr)+"=0"); //To intilize the store column
                                                     cell_context_menu.reload;
@@ -713,9 +713,12 @@ stateless template div build_render_sheet(int spool) {
                                         "onchange" : capture(
                                             string myval ; "this.value"
                                         ) {
-                                            string cellset = to_string(cellptr)+"="+myval;
-                                            print("Setting cell: ",cellset);
-                                            setcell(cellset);
+                                            val = from_string(myval);
+                                            if(is_live(*cellptr)) {
+                                                *(*cellptr) = val;
+                                            } else {
+                                                *cellptr = get_ticket(find_sheet(spool,#storesheet),val);
+                                            }
                                         }
 
                                         "oncontextmenu" : capture(

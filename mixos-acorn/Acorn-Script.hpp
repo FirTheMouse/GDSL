@@ -103,6 +103,13 @@ namespace Acorn {
             }
             ctx.node().value().set((void*)&ticket);
         },sizeof(Ptr),ptr_id);
+        uint32_t get_ticket_of_type_id = add_function("get_ticket_of_type",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t pool = *(uint32_t*)ctx.node().children()[0].value().get();
+            Value v = ctx.node().children()[1].value();
+            Ptr ticket = get_ticket(pool,v.size(),v.type());
+            ctx.node().value().set((void*)&ticket);
+        },sizeof(Ptr),ptr_id);
 
         uint32_t ptr_take_id = reg_id("PTR_TAKE");
         uint32_t ptr_push_id = reg_id("PTR_PUSH");
@@ -156,18 +163,15 @@ namespace Acorn {
                 ctx.node().value().data_ptr(ptr);
             }
         });
-        uint32_t ptr_gett_id = overload_type(ptr_id,"[int]","PTR_GETT",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
+        uint32_t ptr_idxget_id = overload_type(ptr_id,"[any]","PTR_IDXGET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
             standard_sub_process(ctx);
             Node left = ctx.node().children()[0];
             Node right = ctx.node().children()[1];
             Value cv = right.value();
             void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr get")); return;});
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptridx get")); return;});
             Ptr ptr = *(Ptr*)lv;
             Col& col = resolve_to_col(ptr);
-            if(!right.children().empty()) {
-                cv = right.children()[0].value();
-            }
             if(cv.type()==int_id) {
                 int index = *(int*)cv.get();
                 if(index<col.length()) {
@@ -175,7 +179,7 @@ namespace Acorn {
                     ptr.sidx = index;
                     value.data_ptr(ptr);
                 } else {
-                    print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
+                    print(red("ptr_idxget:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
                 }
             } else if(cv.type()==string_id||cv.type()==ptr_id||cv.type()==node_id) {
                 Col& ccol = resolve_to_col(*(Ptr*)cv.get());
@@ -780,7 +784,10 @@ namespace Acorn {
 
             add_function("is_live",[this](Context& ctx){
                 standard_sub_process(ctx);
-                bool b = is_live(*(Ptr*)ctx.node().children()[0].value().get());
+                bool b = false;
+                if(ctx.node().children()[0].value().type()==ptr_id) {
+                    b = is_live(*(Ptr*)ctx.node().children()[0].value().get());
+                }
                 ctx.node().value().set((void*)&b);
             },1,bool_id);
 
@@ -964,6 +971,18 @@ namespace Acorn {
             add_function("ute",[this](Context& ctx){ //uspan_time_end
                 string output = resolve_string_ticket(ctx.node());
                 output = ftime(uspan->end_root_time());
+            },sizeof(Ptr),string_id);
+
+            add_function("tstart",[this](Context& ctx){ //uspan_time_start
+                uspan->start_timer(children_to_string(ctx,ctx.node().children()));
+            });
+            add_function("ttime",[this](Context& ctx){ //uspan_time_end
+                string output = resolve_string_ticket(ctx.node());
+                output = ftime(uspan->get_time(children_to_string(ctx,ctx.node().children())));
+            },sizeof(Ptr),string_id);
+            add_function("tstop",[this](Context& ctx){ //uspan_time_end
+                string output = resolve_string_ticket(ctx.node());
+                output = ftime(uspan->end_timer(children_to_string(ctx,ctx.node().children())));
             },sizeof(Ptr),string_id);
 
             tokenizer_state_functions[comment_brace] = [this](Context& ctx) {
@@ -1277,7 +1296,7 @@ namespace Acorn {
                 output = labels[type];
             };
 
-            x_handlers[to_prefix_id(gloabl_qual)] = [this](Context& ctx){
+            x_handlers[to_prefix_id(global_qual)] = [this](Context& ctx){
                 if(ctx.node().type()==var_decl_id) {
                     value_col vcol(uid,unitdata_col,global_value_table_idx);
                     vcol.put(ctx.node().name().to_std(),ctx.value());
@@ -1898,7 +1917,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);
 
-            launch_blackfeather(root);
+            //launch_blackfeather(root);
         }
 
 

@@ -3,6 +3,7 @@ fs.push([](string sA) {
     print("I was passed ",sA);
     return 1;
 });
+DEBUG_ROOT;
 for(int i=0;i<4;i++) {
     if(i==1) {
         fs << [i](string sB) {

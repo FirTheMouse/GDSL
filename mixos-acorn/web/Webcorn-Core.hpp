@@ -832,36 +832,65 @@ namespace Acorn {
             return false;
         }
 
+        void gather_inline_props(
+            Context& ctx, Node c,
+            list<std::string>& structural_prop_labels, list<std::string>& structural_prop_values,
+            list<std::string>& style_prop_labels, list<std::string>& style_prop_values
+        ) {
+            std::string prop = "";
+            std::string val = "";
+
+            if(resolve_prop_names(ctx,c,prop,val)) {return;}
+
+            list<std::string>* prop_labels; list<std::string>* prop_values;
+            if(is_prop_structural(prop)) {
+                prop_labels = &structural_prop_labels; 
+                prop_values = &structural_prop_values;
+            } else {
+                prop_labels = &style_prop_labels; 
+                prop_values = &style_prop_values;
+            }
+
+            if(!prop_labels->has(prop)) {
+                prop_labels->push(prop);
+                prop_values->push(val);
+            }
+        }
+
+        void scan_for_inline_props(
+            Context& ctx, Node node,
+            list<std::string>& structural_prop_labels, list<std::string>& structural_prop_values,
+            list<std::string>& style_prop_labels, list<std::string>& style_prop_values
+        ) {
+            if(node.type()==property_id||node.type()==to_unary_id(property_id)) {
+                gather_inline_props(ctx,node,structural_prop_labels,structural_prop_values,style_prop_labels,style_prop_values);
+            } else if(node.type()==if_id) {
+                process_node(ctx,node.children()[0]);
+                if(*(bool*)node.children()[0].value().get())  {
+                    for(int j=0;j<node.scopes()[0].children().length();j++) {
+                        Node jc = node.scopes()[0].children()[j];
+                        scan_for_inline_props(ctx,jc,structural_prop_labels,structural_prop_values,style_prop_labels,style_prop_values);
+                    }
+                } else if(node.scopes().length()>1) {
+                    for(int j=0;j<node.scopes()[1].children().length();j++) {
+                        Node jc = node.scopes()[1].children()[j];
+                        scan_for_inline_props(ctx,jc,structural_prop_labels,structural_prop_values,style_prop_labels,style_prop_values);
+                    }
+                }
+            } else {
+                for(int i=0;i<node.children().length();i++) {
+                    Node c = node.children()[i];
+                    scan_for_inline_props(ctx,c,structural_prop_labels,structural_prop_values,style_prop_labels,style_prop_values);
+                }
+            }
+        }
+
         void emit_inline_html(Context& ctx) {
             if(ctx.node().mute()) return;
             std::string s = "";
             list<std::string> structural_prop_labels; list<std::string> structural_prop_values;
             list<std::string> style_prop_labels; list<std::string> style_prop_values;
-            for(int i=0;i<ctx.node().children().length();i++) {
-                Node c = ctx.node().children()[i];
-                if(c.type()==property_id||c.type()==to_unary_id(property_id)) {
-                    std::string prop = "";
-                    std::string val = "";
-
-                    if(resolve_prop_names(ctx,c,prop,val)) {
-                        continue;
-                    }
-
-                    list<std::string>* prop_labels; list<std::string>* prop_values;
-                    if(is_prop_structural(prop)) {
-                        prop_labels = &structural_prop_labels; 
-                        prop_values = &structural_prop_values;
-                    } else {
-                        prop_labels = &style_prop_labels; 
-                        prop_values = &style_prop_values;
-                    }
-
-                    if(!prop_labels->has(prop)) {
-                        prop_labels->push(prop);
-                        prop_values->push(val);
-                    }
-                }
-            }
+            scan_for_inline_props(ctx,ctx.node(),structural_prop_labels,structural_prop_values,style_prop_labels,style_prop_values);
             for(int i=0;i<structural_prop_labels.length();i++) {
                 s += " "+structural_prop_labels[i]+"=\""+structural_prop_values[i]+"\"";
             }   
@@ -1208,7 +1237,7 @@ namespace Acorn {
                 nrows = sheets[0]->get(0).length();
             }
         
-            auto insert_pool = [&](uint8_t tag) {
+            auto insert_pool = [&](uint32_t tag) {
                 ColCol pool; pool.tag = tag;
                 for(int c = 0; c < ncols; c++) {
                     Col col(sizeof(Ptr)); col.tag = ptr_id;
@@ -1510,6 +1539,57 @@ namespace Acorn {
                 }
             };
             x_handlers[property_id] = x_handlers[to_unary_id(property_id)];
+
+            //Potential idea, experiment with later
+            //The idea is having the prop emission be driven by the props, making control flows and such more first class
+            //But this would have performance issues and introduce extra compleixty in the current state (not to mention it doesn't work like this, source passing breaks it)
+            // html_handlers[property_id] = [this](Context& ctx){
+            //     std::string prop = ""; std::string val = "";
+            //     resolve_prop_names(ctx,ctx.node(),prop,val);
+            //     ctx.source().push(prop+"\0"+val+"\1");
+            // };
+
+             // void emit_inline_html(Context& ctx) {
+            //     if(ctx.node().mute()) return;
+            //     std::string s = "";
+            //     list<std::string> structural_prop_labels; list<std::string> structural_prop_values;
+            //     list<std::string> style_prop_labels; list<std::string> style_prop_values;
+            //     std::string old_source = ctx.source().to_std();
+            //     ctx.source().col().clear();
+            //     standard_sub_process(ctx);
+            //     list<std::string> prop_groups  = split_str(ctx.source().to_std(),'\1');
+            //     for(int i=0;i<prop_groups.length();i++) {
+            //         std::string property = prop_groups[i];
+            //         list<std::string> props  = split_str(property,'\0');
+            //         std::string prop = ""; if(props.length()>0) prop = props[0];
+            //         std::string val = ""; if(props.length()>1) val = props[1];
+            //         list<std::string>* prop_labels; list<std::string>* prop_values;
+            //         if(is_prop_structural(prop)) {
+            //             prop_labels = &structural_prop_labels; 
+            //             prop_values = &structural_prop_values;
+            //         } else {
+            //             prop_labels = &style_prop_labels; 
+            //             prop_values = &style_prop_values;
+            //         }
+        
+            //         if(!prop_labels->has(prop)) {
+            //             prop_labels->push(prop);
+            //             prop_values->push(val);
+            //         }
+            //     }
+            //     for(int i=0;i<structural_prop_labels.length();i++) {
+            //         s += " "+structural_prop_labels[i]+"=\""+structural_prop_values[i]+"\"";
+            //     }   
+            //     if(!style_prop_labels.empty()) {
+            //         s += " style=\"";
+            //         for(int i=0;i<style_prop_labels.length();i++) {
+            //             s += style_prop_labels[i]+":"+style_prop_values[i]+";";
+            //         }  
+            //         s += "\""; 
+            //     }
+            //     ctx.sub().source().push(s);
+            // }
+
             //M is just the stage when this is most viable, any earlier and we get some issues
             m_handlers[property_id] = [this](Context& ctx){
                 standard_sub_process(ctx);

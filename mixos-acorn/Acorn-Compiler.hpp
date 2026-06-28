@@ -481,7 +481,7 @@ namespace Acorn {
         // }
 
         uint32_t hoisted_id = add_qual("hoisted");
-        uint32_t gloabl_qual = add_qual("global");
+        uint32_t global_qual = add_qual("global");
 
         Value distribute_value_children(Node node, const std::string& label, Value val) {
             for(int c = 0;c<node.children().length();c++) {
@@ -632,7 +632,7 @@ namespace Acorn {
                 n.value(aliased);
             } else {
                 if(is_live(o.value())) {
-                    if(!o.has_qual(gloabl_qual)) {
+                    if(!o.has_qual(global_qual)) {
                         if(!is_live(n.value())) {
                             n.value(make_value());
                         }
@@ -953,17 +953,19 @@ namespace Acorn {
                         if(on.type()==close_id) {
                             gathered.reverse();
 
-                            if(is_live(on_left)&&on_left.type()==lbracket_id) { //For lambda arguments and lambda calls from indexed lists like arr[i](args)
-                                for(auto g : gathered) on.children() << g;
-                                if(close_id==lparen_id) {
-                                    on.type(arguments_id);
-                                    on_left.children().push(on_from==ctx.result()?ctx.result().take(i):on_from.pop());
-                                    ctx.index(i+(on_from==ctx.result()?1:0)); //I'm not sure if this is the right index or not, it should be noticble if it causes issues though
-                                } else if(close_id==lbracket_id) { //For nested arrays like arr[0][1][2]
-                                    on.children().insert(0, left_from==ctx.result()?ctx.result().take(i-1):left_from.pop());
-                                    ctx.index(i-1);
+                            if(close_id!=lparen_id||(ctx.result().length()<i+1&&ctx.result().get(i+1).type()!=rbracket_id)) { //So we can call functions inside brackets like arr[stoi(s)];
+                                if(is_live(on_left)&&on_left.type()==lbracket_id) { //For lambda arguments and lambda calls from indexed lists like arr[i](args)
+                                    for(auto g : gathered) on.children() << g;
+                                    if(close_id==lparen_id) {
+                                        on.type(arguments_id);
+                                        on_left.children().push(on_from==ctx.result()?ctx.result().take(i):on_from.pop());
+                                        ctx.index(i+(on_from==ctx.result()?1:0)); //I'm not sure if this is the right index or not, it should be noticble if it causes issues though
+                                    } else if(close_id==lbracket_id) { //For nested arrays like arr[0][1][2]
+                                        on.children().insert(0, left_from==ctx.result()?ctx.result().take(i-1):left_from.pop());
+                                        ctx.index(i-1);
+                                    }
+                                    break;
                                 }
-                                break;
                             }
 
 
@@ -1623,6 +1625,8 @@ namespace Acorn {
         }
 
         void assign(Value lv, Value rv) {
+            if(rv.data_col().empty()) return; //No data to copy
+
             Ptr lp = lv.data_ptr();
             Ptr rp = rv.data_ptr();
 
@@ -1709,14 +1713,18 @@ namespace Acorn {
                     col.push(rv.get());
                 } else {
                     //print("Setting");
-                    col.set(lp.sidx,rv.get());
+                    if(rv.data_ptr().sidx>=rv.data_col().length()) {
+                        print(yellow("core:assign right value data pointer sub index is out of bounds: "),Ptr_as_string(rv.data_ptr()));
+                    } else {
+                        col.set(lp.sidx,rv.get());
+                    }
                 }
             }
         }
 
         void deep_copy_value(Value v, Value o) {
             v.copy(o,true); //This already does 90% of the work, all we're really doign here is marshaling ptr reallocation
-            assign(v,o);
+            //assign(v,o); //This was causing problems, come back later and revise this.
         }
 
 
@@ -1961,6 +1969,7 @@ namespace Acorn {
             register_type("Context",context_id,sizeof(Ptr));
             register_type("Ptr",ptr_id,sizeof(Ptr));
             register_type("func",function_id,sizeof(Ptr));
+            register_type("duck",duck_id,0);
             value_printers[function_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
 
             set_binding_powers(random_combo_id,8,9);
@@ -2136,6 +2145,7 @@ namespace Acorn {
                 resolve_overload(ctx);
             };
             x_handlers[to_unary_id(bang_id)] = [this](Context& ctx){
+                standard_sub_process(ctx);
                 bool b = *(bool*)ctx.node().children()[0].value().get();
                 b = !b;
                 ctx.node().value().set((void*)&b);

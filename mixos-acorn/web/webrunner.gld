@@ -191,12 +191,17 @@
 
     register option;
     "option" {
+        in naming {
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
+        }
         in htmlemiting {
+            execut(ctx.node.children.get(0));
             ctx.source.append("<option");
             emit_inline_html;
             ctx.source.append(">");
-            emit_contents;
+            ctx.source.append(ctx.node.children.get(0).value.getStr);
             ctx.source.append("</option>");
+            emit_contents;
         }
     }
 
@@ -226,15 +231,17 @@ global Session session;
 print("Session ip: ",session.ip);
 
 print("Compiling");
+    tstart("twig_compile");
 Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
 //Node twig = compile(read_file("mixos-acorn/web/test.twg"));
-print("Compiled");
+print("Compiled in: ",tstop("twig_compile"));
 Node page = twig.children.get(0);
 
 int cfd = 0;
 while(0<1) {
     cfd = unit_index;
     if(cfd!=0) {
+        tstart("request_timer");
         print("Unit ",unit_uid," recived request ",cfd);
         string req = unit_label;
         //print("Req:\n",req);
@@ -333,12 +340,11 @@ while(0<1) {
                     }
                 }
 
-                ures;
-                //ussw;
+                    tstart("executing_run_root");
                 execut root;
                 //ursw;
                 //udump;
-                print("Time: ",ute);
+                print("Time: ",tstop("executing_run_root"));
                 //write_file("fire.svg",uspan_flame_chart);
 
                 src = ctx.source;
@@ -368,7 +374,7 @@ while(0<1) {
         write(cfd,response); 
         close(cfd);
 
-        print("Unit ",unit_uid," completed request ",cfd);
+        print("Unit ",unit_uid," completed request ",cfd," in ",tstop("request_timer"));
         unit_setindex(0);
     } else {
         thread_sleep;

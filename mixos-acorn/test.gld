@@ -1,40 +1,13 @@
-Ptr func fs;
-fs.push([](string sA) {
-    print("I was passed ",sA);
-    return 1;
-});
-DEBUG_ROOT;
-for(int i=0;i<4;i++) {
-    if(i==1) {
-        fs << [i](string sB) {
-            print("I'm the ",i,"st function and I was passed ",sB);
-            return i*2;
-        };
-    } else if(i==2) {
-        fs << [i](string sB) {
-            print("I'm the ",i,"nd function and I was passed ",sB);
-            return i*2;
-        };
-    } else if(i==3) {
-        fs << [i](string sB) {
-            print("I'm the ",i,"rd function and I was passed ",sB);
-            return i*2;
-        };
-    } else {
-        fs << [&](string sB) {
-            print("There wasn't a function setup for me, so I captured i by refrence, it's: ",i);
-            return i*2;
-        };
-    }   
-}
 
-func f = fs.get(0);
-print(f("One"));
-f = fs.get(1);
-print(f("Zero"));
-f = fs.get(2);
-print(f("One"));
-f = fs.get(3);
-print(f("Two"));
-f = fs.get(4);
-print(f("Three"));
+##
+    global string reload(Context c, Node n) {
+        print("SRC: ",c.source);
+        execut n;
+        print("AFTER: ",c.source);
+        return ctx.source;
+    }  
+    
+     
+
+##
+

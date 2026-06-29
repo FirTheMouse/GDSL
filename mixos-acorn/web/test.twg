@@ -8,74 +8,54 @@
     }
 ##
 
-##
-    global string js(string s) {
-        print("Catching");
-        string str = "(()=>{"+s+"})()";
-        print(str);
-        return str;
+
+stateless template div iterbtn(int i) {
+    div iterpanel {
+        print("Redering iterpanel with i: ",IV#i);
+        button {
+            int riter = i-randi(1,3);
+            text to_string(riter);
+            "onclick" : capture(
+                string toreload ; js_lit(to_string(cast_to_Ptr(call_owner(iterpanel)))),
+                string iter ; js_lit(to_string(riter))
+            ) {
+                print("Button ",i," clicked, value ",riter);
+                print("As iter ",iter);
+                print("To reload: ",toreload);
+                Ptr p = from_string(toreload);
+                print("P: ",p);
+                Node fp = cast_to_Node(p);
+                emit_reload(ctx,fp);
+            }
+        }
     }
-##
+}
+
+stateless template div frombtn(int from) {
+    div panel {
+        "display" : "flex";
+        "flex-direction" : "column";
+        text to_string(from) {
+            "onclick" : capture {
+                print("Reloading panel");
+                panel.reload;
+            }
+        }   
+        for(int i=0;i<3;i++) {
+            print("Btn ",i," in ",from);
+            iterbtn(from+randi(0,6));
+        }
+    }
+}
+
 
 root_path {
     script read_file("mixos-acorn/web/thistle/thistle.js");
     div {
-        template div dropdown(string label, int depth) {
-
-            if(depth<2) {
-                dropdown(label+"-1",depth+1);
-            }
-
-            static string open;
-            div display {
-                if(open=="yes") {
-                    text "OPENED";
-                } else {
-                    text "CLOSED";
-                }
-                button  {
-                    text "reload" {
-                        "font-size" : "5px";
-                    }
-                    "onclick" : capture{ 
-                        display.reload;
-                    }
-                }
-            }
-            div {
-                button {
-                    text label;
-                    "background-color" : "red";
-                    "onclick" : capture(
-                            js_do("this.style.backgroundColor=(this.style.backgroundColor==='red'?'green':'red');"),
-                            string other ; js_lit(label))
-                        {
-                            print("Captured label: ",other);
-                            print("Label: ",label);
-                            if(open=="yes") {
-                                open = "no";
-                            } else {
-                                open = "yes";
-                            }
-                            display.reload;
-                    }
-                    
-                }
-            }
-        }   
-        int cmax = randi(1,6);
-        int rmax = randi(1,6);
-
-        table {
-            for(int c=0;c<cmax;c++) {
-                row {
-                    for(int r=0;r<rmax;r++) {
-                        column {
-                            dropdown(to_string(c)+"-"+to_string(r),0);
-                        }
-                    }
-                }
-            }
+        for(int i=0;i<3;i++) {
+            int r = randi(0,10);
+            print("From ",i," has ",r);
+            frombtn(r);
         }
     }
 }

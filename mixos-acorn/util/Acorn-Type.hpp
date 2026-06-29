@@ -457,11 +457,13 @@ namespace Acorn {
             heterogenous = o.heterogenous;
             label = std::move(o.label);
             cells = std::move(o.cells);
+            free = std::move(o.free);
             return *this;
         }
         bool heterogenous = false;
         QString label;
         QCellCol cells;
+        list<uint32_t> free;
         
         inline void* get(uint32_t index) {
             if(heterogenous) {
@@ -558,38 +560,7 @@ namespace Acorn {
         return at;
     }
 
-    //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
-    uint32_t create_column(Col& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
-        // if(use_pooling) {
-        //     for(int i=0;i<col.length();i++) {
-        //         Col& ncol = *(Col*)col.sget(i);
-        //         if(!ncol.live&&ncol.element_size==size&&(!tag_sensitive||ncol.tag==tag)) {
-        //             ncol.clear();
-        //             ncol.live = true;
-        //             return i;
-        //         }
-        //     }
-        // }
-        add_column(col,size,tag);
-        return col.length()-1;
-    }
-    //Creates a column from pool and intilizes it's memory if empty
-    uint32_t push_column(Col& col, uint32_t size, uint32_t tag) {
-        uint32_t at = create_column(col,size,tag);
-        Col& ncol = *(Col*)col.sget(at);
-        if(ncol.size<size) {
-            ncol.resize(size);
-        }
-        return at;
-    }
-    static void recycle_column(Col& col, uint32_t id) {
-       Col* c = ((Col*)col.sget(id));
-       if(c) {
-        c->live = false;
-       } else {
-        print(red("UNABLE TO RECYLE COL AT "+std::to_string(id)));
-       }
-    }
+   
 
 
 
@@ -651,6 +622,10 @@ namespace Acorn {
         write_raw<bool>(out, col.heterogenous);
         write_qcellcol(out, col.cells);
         write_qcol(out,col.label);
+        write_raw<uint32_t>(out,col.free.length());
+        for(int i=0;i<col.free.length();i++) {
+            write_raw<uint32_t>(out,col.free[i]);
+        }
     }
 
     static Col read_col(std::istream& in) {
@@ -658,6 +633,10 @@ namespace Acorn {
         col.heterogenous = read_raw<bool>(in);
         col.cells = read_qcellcol(in);
         col.label = read_qcol(in);
+        uint32_t freelen = read_raw<uint32_t>(in);
+        for(int i=0;i<freelen;i++) {
+            col.free << read_raw<uint32_t>(in);
+        }
         return col;
     }
 
@@ -670,6 +649,10 @@ namespace Acorn {
         write_raw<bool>(out, col.heterogenous);
         write_qcellcol(out, col.cells);
         write_qcol(out,col.label);
+        write_raw<uint32_t>(out,col.free.length());
+        for(int i=0;i<col.free.length();i++) {
+            write_raw<uint32_t>(out,col.free[i]);
+        }
     }
 
     static Col read_col_header(std::istream& in) {
@@ -683,6 +666,10 @@ namespace Acorn {
         col.heterogenous = read_raw<bool>(in);
         col.cells = read_qcellcol(in);
         col.label = read_qcol(in);
+        uint32_t freelen = read_raw<uint32_t>(in);
+        for(int i=0;i<freelen;i++) {
+            col.free << read_raw<uint32_t>(in);
+        }
         return col;
     }
 }

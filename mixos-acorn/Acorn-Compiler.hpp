@@ -94,6 +94,13 @@ namespace Acorn {
                         ctx.value().type_scope(ctx.qual().value().type_scope());
                 }
             };
+            x_handlers[type] = [this](Context& ctx){ //For casting
+                standard_sub_process(ctx);
+                if(!ctx.node().children().empty()) {
+                    ctx.node().value().copy(ctx.node().children()[0].value(),false);
+                    ctx.node().value().type(ctx.node().type());
+                }
+            };
             // r_handlers[to_prefix_id(type)] = [](Context& ctx){
             //     if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
             //         ctx.value().type(ctx.qual().value().type());
@@ -1486,6 +1493,7 @@ namespace Acorn {
         }
 
         uint32_t static_qual = add_qual("static");
+        uint32_t capture_id = make_tokenized_keyword("capture");
 
         void sync_args(Context& ctx) {
             if(!ctx.node().scopes().empty()) {
@@ -1505,6 +1513,7 @@ namespace Acorn {
         void gather_all_values_in_scope(value_col& subvals, Node scope) {
             for(int i=0;i<scope.children().length();i++) {
                 Node c = scope.children()[i];
+                if(c.type()==capture_id||c.type()==lambda_id) continue;
                 if(is_live(c.value())) {
                     for(int n=0;n<subvals.length();n++) {
                         if(subvals.get(n).idx==c.value().idx) goto skipatom;
@@ -1702,8 +1711,8 @@ namespace Acorn {
                     subcol.push(datacol[i]);
                 }
             } else { //If we're the direct value in the store pool
-                if(col.element_size!=rv.size()||col.tag!=rv.type()) {
-                    //print("Clearing and pushing");
+                if(col.element_size!=rv.size()||col.tag!=rv.type()||lv.type()!=rv.type()) {
+                    // print("Clearing and pushing");
                     col.clear();
                     col.element_size = rv.size(); col.tag=rv.type();
                     lv.size(rv.size()); lv.type(rv.type());
@@ -1969,8 +1978,9 @@ namespace Acorn {
             register_type("Context",context_id,sizeof(Ptr));
             register_type("Ptr",ptr_id,sizeof(Ptr));
             register_type("func",function_id,sizeof(Ptr));
-            register_type("duck",duck_id,0);
             value_printers[function_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
+            register_type("duck",duck_id,0);
+            value_printers[duck_id] = [this](Context& ctx){ctx.source()="QUACK!";};
 
             set_binding_powers(random_combo_id,8,9);
 

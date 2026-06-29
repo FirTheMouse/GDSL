@@ -91,7 +91,7 @@
         }
     }
 
-    string node_str_id(Node n) {
+   global string node_str_id(Node n) {
         string to_return = n.name+"_"+to_string(n.asID);
         return to_return;
     }
@@ -237,10 +237,12 @@ Node twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
 print("Compiled in: ",tstop("twig_compile"));
 Node page = twig.children.get(0);
 
+print(unit_info);
+
 int cfd = 0;
 while(0<1) {
-    cfd = unit_index;
-    if(cfd!=0) {
+    if(unit_index!=0) {
+        cfd = unit_index;
         tstart("request_timer");
         print("Unit ",unit_uid," recived request ",cfd);
         string req = unit_label;
@@ -346,6 +348,8 @@ while(0<1) {
                 //udump;
                 print("Time: ",tstop("executing_run_root"));
                 //write_file("fire.svg",uspan_flame_chart);
+
+                print("Finished root execution");
 
                 src = ctx.source;
                 string target = src.slice(0,src.find(" "));

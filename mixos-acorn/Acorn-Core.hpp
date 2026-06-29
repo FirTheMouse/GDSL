@@ -21,6 +21,7 @@ namespace Acorn {
             tag = o.tag;
             heterogenous = o.heterogenous;
             label = QCol(o.label);
+            free = o.free;
             for(uint32_t i = 0; i < o.length(); i++) {
                 Col copy(*(Col*)o.sget(i));
                 push(copy);
@@ -66,6 +67,47 @@ namespace Acorn {
             t.cells.storage = nullptr;
         }
     };
+
+     //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
+     uint32_t create_column(ColCol& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
+        if(use_pooling&&!col.free.empty()) {
+            //Lazy version
+            uint32_t idx = col.free.pop();
+            Col& ncol = col[idx];
+            ncol.clear(); ncol.element_size = size; ncol.tag = tag;
+            ncol.live = true;
+            return idx; 
+            
+            // for(int i=0;i<col.free.length();i++) {
+            //     Col& ncol = col[col.free[i]];
+            //     if(!ncol.live&&ncol.element_size==size&&(!tag_sensitive||ncol.tag==tag)) {
+            //         ncol.clear();
+            //         ncol.live = true;
+            //         return col.free[i];
+            //     }
+            // }
+        }
+        add_column(col,size,tag);
+        return col.length()-1;
+    }
+    //Creates a column from pool and intilizes it's memory if empty
+    uint32_t push_column(ColCol& col, uint32_t size, uint32_t tag) {
+        uint32_t at = create_column(col,size,tag);
+        Col& ncol = *(Col*)col.sget(at);
+        if(ncol.size<size) {
+            ncol.resize(size);
+        }
+        return at;
+    }
+    static void recycle_column(ColCol& col, uint32_t id) {
+       Col* c = ((Col*)col.sget(id));
+       if(c) {
+        c->live = false;
+        col.free.push(id);
+       } else {
+        print(red("UNABLE TO RECYLE COL AT "+std::to_string(id)));
+       }
+    }
     
     struct ColColCol : Col {
         ColColCol() : Col(sizeof(ColCol)) {}
@@ -993,6 +1035,29 @@ namespace Acorn {
         Handler passstart = nullptr;
     };  
 
+
+    uint64_t get_real_size_of_col(Col& col) {
+        uint64_t result = col.size;
+        return result;
+    }
+    uint64_t get_real_size_of_colcol(ColCol& col) {
+        uint64_t result = 0;
+        for(int i=0;i<col.length();i++) {
+            result += get_real_size_of_col(col[i]);
+        }
+        return result;
+    }
+    uint64_t get_real_size_of_colcolcol(ColColCol& col) {
+        uint64_t result = 0;
+        for(int i=0;i<col.length();i++) {
+            result += get_real_size_of_colcol(col[i]);
+        }
+        return result;
+    }
+
+
+
+
     static void write_TypeCol(std::ostream& out, ColCol& type) {
         write_raw<uint32_t>(out, type.length());
         write_col_header(out, type);
@@ -1851,6 +1916,33 @@ namespace Acorn {
             }
         }
 
+        std::string pool_info(uint32_t poolid) {
+            Ptr pptr(&types,poolid,0,0);
+            ColCol& pool = resolve_to_pool(pptr);
+            uint32_t plen = pool.length();
+            std::string to_return = "";
+            if(!pool.label.empty()) {
+                to_return+=pool.label.to_std();
+            } else {
+                to_return+="Type "+std::to_string(poolid);
+            }
+            if(pool.tag!=0) {
+                to_return+="["+labels[pool.tag]+"]";
+            }
+
+            to_return+=" : ";
+            to_return+="Mem: "+fmem(get_real_size_of_colcol(pool));
+            to_return+=", Len: "+add_commas(plen);
+            return to_return;
+        }
+        std::string unit_info() {
+            std::string to_return = "Unit "+std::to_string(uid)+" Mem: "+fmem(get_real_size_of_colcolcol(types))+"\n---------------\n";
+            for(int i=0;i<types.length();i++) {
+                to_return+=pool_info(i)+"\n";
+            }
+            return to_return;
+        }
+
         void dump_pool(ColCol& pool, uint32_t index, bool clear_dump) {
             if(clear_dump) writeFile("mixos-acorn/tests/printout.txt","");
             std::string to_print = "";
@@ -1879,7 +1971,9 @@ namespace Acorn {
             }
         }
 
-        std::string value_info(Value value) {
+        #define ACORN_DISPLAY_SUB_VALUES 0
+
+        std::string value_info(Value value, std::string indent = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" while another error was active")); return "";})
 
             std::string to_return = "";
@@ -1903,8 +1997,18 @@ namespace Acorn {
             + (value.sub_size()!=0?", sub_size: "+std::to_string(value.sub_size()):"")
             + (value.address()!=0?", address: "+std::to_string(value.address()):"")
             + (value.loc()!=-1?", loc: "+std::to_string(value.loc()):"")
-            + (is_live(value.store_ptr())?", store: "+Ptr_as_string(value.store_ptr()):"")
-            + (!value.sub_values().empty()?", sub: "+std::to_string(value.sub_values().length()):"");
+            + (is_live(value.store_ptr())?", store: "+Ptr_as_string(value.store_ptr()):"");
+
+            #if ACORN_DISPLAY_SUB_VALUES 
+                if(!value.sub_values().empty()) {
+                    to_return += "\n" + indent + "   Sub values:";
+                    for(int i=0;i<value.sub_values().length();i++) {
+                        to_return += "\n"+indent+"     "+std::to_string(i)+": "+value_info(value.sub_values()[i],indent);
+                    }
+                }
+            #else
+                to_return+=(!value.sub_values().empty()?", sub: "+std::to_string(value.sub_values().length()):"");
+            #endif
             if(!value.quals().empty()) {
                 to_return += ", Quals: ";
                 for(int i=0;i<value.quals().length();i++) {
@@ -1920,7 +2024,7 @@ namespace Acorn {
             return to_return;
         }
         
-        std::string node_info(Node node) {
+        std::string node_info(Node node, std::string indent = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
 
             std::string to_return = "";
@@ -1928,7 +2032,7 @@ namespace Acorn {
             + labels[node.type()]
             + (node.sub_type()==0?"":":"+labels[node.sub_type()])
             + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()))+" ") 
-            + (is_live(node.value())?value_info(node.value()):"")
+            + (is_live(node.value())?value_info(node.value(),indent):"")
             + (node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"")
             + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
             + (!node.scopes().empty()?"[S:"+std::to_string(node.scopes().length())+"]":"")
@@ -1949,28 +2053,28 @@ namespace Acorn {
             return to_return;
         }
 
-        #define ACORN_MUTE_TABLES 1
+        #define ACORN_DISPLAY_TABLES 0
 
         std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
             std::string indent(depth * 2, ' ');
             std::string to_return = "";
             
-            to_return += indent + sigil + std::to_string(index) + ": " + node_info(node);
+            to_return += indent + sigil + std::to_string(index) + ": " + node_info(node,indent);
         
-            #if !ACORN_MUTE_TABLES 
+            #if ACORN_DISPLAY_TABLES 
             if(node.value_table().length()>0) {
                 to_return += "\n" + indent + "   Value table:";
                 QCellCol cells = node.value_table().col().cells;
                 for(int i=0;i<cells.length();i++) {
-                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+value_info(node.value_table().get(cells.get(i).index));
+                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+value_info(node.value_table().get(cells.get(i).index),indent+"     ");
                 }
             }
             if(node.node_table().length()>0) {
                 to_return += "\n" + indent + "   Node table:";
                 QCellCol cells = node.node_table().col().cells;
                 for(int i=0;i<cells.length();i++) {
-                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+node_info(node.node_table().get(cells.get(i).index));
+                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+node_info(node.node_table().get(cells.get(i).index),indent+"     ");
                 }
             }
             #endif
@@ -1991,7 +2095,7 @@ namespace Acorn {
                         }
                     }
                     else {
-                        to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i]);
+                        to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i],indent);
                     }
                 }
             }
@@ -2005,7 +2109,7 @@ namespace Acorn {
                         to_return += "\n " + node_to_string(scope, depth + 1, s, print_sub_scopes,"s");
                     }
                     else {
-                        to_return += "\n"+indent+"  s"+std::to_string(s)+": "+node_info(scope);
+                        to_return += "\n"+indent+"  s"+std::to_string(s)+": "+node_info(scope,indent);
                     }
                 }
             }

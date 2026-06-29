@@ -480,11 +480,14 @@ stateless template div selectable_option(string question_type_string, string opt
     if(question_type_string==optlabel) {option optlabel {"selected" : "true";}} else {option optlabel {}}
 }
 
-template div multi_select_question(int spool, Ptr cellptr, Ptr formptr, bool editable, bool is_radio) {
-    static Ptr cell_p;
-    cell_p = *cellptr;
-    static Ptr form_p;
-    form_p = *formptr;
+##
+    static global Node cell_context_menu_reload_target;
+##
+
+
+stateless template div multi_select_question(int spool, Ptr cellptr, Ptr formptr, bool editable, bool is_radio) {
+    Ptr cell_p = *cellptr;
+    Ptr form_p = *formptr;
      if(editable) {
         text "Options" {
             text_theme;
@@ -502,36 +505,42 @@ template div multi_select_question(int spool, Ptr cellptr, Ptr formptr, bool edi
                 input {
                     "value" : form_p.celllabel;
                     "onchange" : capture(
-                        string sptr ; js_lit(to_string(form_p)),
+                        string pstr ; js_lit(to_string(form_p)),
                         string myval ; "this.value"
                     ) {
-                        Ptr subp = from_string(sptr);
-                        subp.celllabel(myval);
+                        Ptr fp = from_string(pstr);
+                        fp.celllabel(myval);
                     }
                 }
-
                 input {
                     "value" : value_as_string(form_p) {text_theme;}
                     "onchange" : capture(
                         string iter ; js_lit(to_string(i)),
+                        string pstr ; js_lit(to_string(form_p)),
                         string myval ; "this.value"
                     ) {
-                        form_p.get(stoi(iter)) = from_string(myval);
+                        Ptr fp = from_string(pstr);
+                        fp.get(stoi(iter)) = from_string(myval);
                     }
-                }   
+                }  
             }
             button {
                 text "+";
-                "onclick" : capture {
-                    duck val = *form_p;
-                    //print("MSQ-B form_p: ",form_p," T: ",SV#val);
+                "onclick" : capture(
+                    string pstr ; js_lit(to_string(form_p))
+                 ) {
+                    Ptr fp = from_string(pstr);
+                    duck val = *fp;
+                    //print("MSQ-B form_p: ",fp," T: ",SV#val);
                     int vofa = V#val;
                     if(vofa==(#string)) {
-                        form_p.push(get_ticket(find_sheet(spool,#storesheet),32));
+                        fp.push(get_ticket(find_sheet(spool,#storesheet),32));
                     } else {
-                        form_p.push(0);
+                        fp.push(0);
                     }
-                    options_display.reload;
+                    if(is_live(cell_context_menu_reload_target)) {
+                        emit_reload(ctx,cell_context_menu_reload_target);
+                    }
                 }
             }
         }
@@ -556,14 +565,16 @@ template div multi_select_question(int spool, Ptr cellptr, Ptr formptr, bool edi
                             "checked" : "true";
                         }
                         "onchange" : capture(
+                            string lcellstr ; js_lit(to_string(cellptr)),
                             string myval ; "this.value"
                         ) {
+                            Ptr lcellptr = from_string(lcellstr);
                             duck val = from_string(myval);
-                            if(is_live(*cellptr)) {
-                                *(*cellptr) = val;
+                            if(is_live(*lcellptr)) {
+                                *(*lcellptr) = val;
                             } else {
-                                *cellptr = get_ticket(find_sheet(spool,#storesheet),0);
-                                *(*cellptr) = val;
+                                *lcellptr = get_ticket(find_sheet(spool,#storesheet),0);
+                                *(*lcellptr) = val;
                             }
                         }
                     }
@@ -588,15 +599,17 @@ template div multi_select_question(int spool, Ptr cellptr, Ptr formptr, bool edi
                     }
                 }
                 "onchange" : capture(
+                    string cellstr ; js_lit(to_string(cellptr)),
                     string myval ; "this.value"
                 ) {
+                    Ptr lcellptr = from_string(cellstr);
                     duck val = from_string(myval);
                     print("MS Val: ",val," ",SV#val);
-                    if(is_live(*cellptr)) {
-                        *(*cellptr) = val;
+                    if(is_live(*lcellptr)) {
+                        *(*lcellptr) = val;
                     } else {
-                        *cellptr = get_ticket(find_sheet(spool,#storesheet),0);
-                        *(*cellptr) = val;
+                        *lcellptr = get_ticket(find_sheet(spool,#storesheet),0);
+                        *(*lcellptr) = val;
                     }
                 }
             }
@@ -604,17 +617,16 @@ template div multi_select_question(int spool, Ptr cellptr, Ptr formptr, bool edi
     }
 }
 
-template div form_question(int spool, Ptr cellptr, bool editable) {
-    static Ptr formptr;
-    formptr = cellptr;
+stateless template div form_question(int spool, Ptr cellptr, bool editable) {
+    Ptr formptr = cellptr;
     setpool(formptr,find_sheet(spool,to_type("formsheet")));
+    print("Rendering ",formptr," for ",cellptr);
 
-    static Ptr formmetaptr;
-    formmetaptr = cellptr;
+    Ptr formmetaptr = cellptr;
     setpool(formmetaptr,find_sheet(spool,#metadatasheet,1));
 
-    static Ptr cell_p = resolve_as_Ptr(cellptr);
-    static Ptr form_p = resolve_as_Ptr(formptr);
+    Ptr cell_p = resolve_as_Ptr(cellptr);
+    Ptr form_p = resolve_as_Ptr(formptr);
 
     if(is_live(form_p)) {
         if(!editable) {
@@ -645,15 +657,18 @@ template div form_question(int spool, Ptr cellptr, bool editable) {
                     selectable_option(question_type,"Checkbox");
                     selectable_option(question_type,"Date");
                     "onchange" : capture(
+                        string cellstr ; js_lit(to_string(cellptr)),
                         string myval ; "this.value"
                     ) {
+                        formmetaptr = from_string(cellstr);
+                        setpool(formmetaptr,find_sheet(spool,#metadatasheet,1));
                         if(is_live(*formmetaptr)) {
                             *(*formmetaptr) = myval;
                         } else {
                             *formmetaptr = get_ticket(find_sheet(spool,#storesheet),0);
                             *(*formmetaptr) = myval;
                         }
-                        question_display.reload;
+                        emit_reload(ctx,cell_context_menu_reload_target); //MAKE MORE GENERIC LATER IF FROMS GET EDITED OUTSIDE OF THE SHEET
                     }
                 }
             }
@@ -666,16 +681,21 @@ template div form_question(int spool, Ptr cellptr, bool editable) {
                 if(!editable) {
                     input {
                         "type" : "text";
+                        if(is_live(*cellptr)) {
+                            "value" : to_string(*(*cellptr));
+                        }
                         air_input_theme;
                         "onchange" : capture(
+                            string cellstr ; js_lit(to_string(cellptr)),
                             string myval ; "this.value"
                         ) {
+                            Ptr cellp = from_string(cellstr);
                             duck val = from_string(myval);
-                            if(is_live(*cellptr)) {
-                                *(*cellptr) = val;
+                            if(is_live(*cellp)) {
+                                *(*cellp) = val;
                             } else {
-                                *cellptr = get_ticket(find_sheet(spool,#storesheet),0);
-                                *(*cellptr) = val;
+                                *cellp = get_ticket(find_sheet(spool,#storesheet),0);
+                                *(*cellp) = val;
                             }
                         }
                     }
@@ -689,16 +709,18 @@ template div form_question(int spool, Ptr cellptr, bool editable) {
                             if(to_string(1) == to_string(*cell_p)) { "checked" : "true"; }
                         }
                         "onchange" : capture(
+                            string cellstr ; js_lit(to_string(cellptr)),
                             string myval ; "this.value"
+                            //ADD JS TO CHANGE CHECKBOX STATE NOW THAT ITS STATELSS
                         ) {
+                            Ptr cellp = from_string(cellstr);
                             int val = (myval=="0"?1:0);
-                            if(is_live(*cellptr)) {
-                                *(*cellptr) = val;
+                            if(is_live(*cellp)) {
+                                *(*cellp) = val;
                             } else {
-                                *cellptr = get_ticket(find_sheet(spool,#storesheet),0);
-                                *(*cellptr) = val;
+                                *cellp = get_ticket(find_sheet(spool,#storesheet),0);
+                                *(*cellp) = val;
                             }
-                            question_display.reload;
                         }
                     }
                 }
@@ -708,14 +730,16 @@ template div form_question(int spool, Ptr cellptr, bool editable) {
                         "type" : "date";
                         "value" : value_as_string(*cell_p);
                         "onchange" : capture(
+                            string cellstr ; js_lit(to_string(cellptr)),
                             string myval ; "this.value"
                         ) {
+                            Ptr cellp = from_string(cellstr);
                             duck val = from_string(myval);
-                            if(is_live(*cellptr)) {
-                                *(*cellptr) = val;
+                            if(is_live(*cellp)) {
+                                *(*cellp) = val;
                             } else {
-                                *cellptr = get_ticket(find_sheet(spool,#storesheet),0);
-                                *(*cellptr) = val;
+                                *cellp = get_ticket(find_sheet(spool,#storesheet),0);
+                                *(*cellp) = val;
                             }
                         }
                     }
@@ -748,6 +772,86 @@ stateless template div render_form(int spool, bool editable) {
             }
         }
     }
+}
+
+stateless template div render_cell_context_menu(int spool, int colum, int rowe) {
+    div cell_context_menu {
+        "position" : "absolute";
+        "z-index" : "100";
+        "top" : "0";
+        "left" : "100%";
+        "background" : "white";
+        "border" : "1px solid rgb(200,200,200)";
+        "border-radius" : "6px";
+        "box-shadow" : "0 4px 12px rgba(0,0,0,0.12)";
+        "min-width" : "120px";
+        "padding" : "4px";
+
+        Ptr cellptr = makePtr3(spool,colum,rowe);
+        Ptr p = *cellptr;
+        string tostr;
+        if(is_live(p)) {
+            tostr = value_as_string(p);
+        }
+        text to_string(cellptr)+" : "+tostr {
+            text_theme; 
+        }
+
+
+
+        Ptr noteptr = makePtr3(find_sheet(spool,to_type("notesheet")),colum,rowe);
+        Ptr note_p = *noteptr;
+        string note_tostr;
+        if(is_live(note_p)) {
+            note_tostr = value_as_string(note_p);
+        }
+
+        input {
+            "value" : note_tostr;
+            "onchange" : capture(
+                string myval ; "this.value"
+            ) {
+                string cellset = to_string(noteptr)+"="+myval;
+                print("Setting note cell: ",cellset);
+                setcell(cellset);
+            }
+        }
+
+        static Ptr formptr;
+        static Ptr form_p;
+        if(has_sheet(spool,#formsheet)) {
+            formptr = makePtr3(find_sheet(spool,#formsheet),colum,rowe);
+            form_p = *formptr;
+        }
+        if(is_live(form_p)) {
+            text "Label" {text_theme;}
+            input {
+                "value" : form_p.label;
+                "onchange" : capture (
+                    string myval ; "this.value"
+                ) {
+                    form_p.label(myval);
+                }
+                air_input_theme;
+            }
+            print("Form question for ",cellptr);
+            form_question(spool,cellptr,true);
+        } else {
+            button {
+                text "Add a question" {
+                    text_theme;
+                }
+                "onclick" : capture {
+                    if(!is_live(formptr)) {
+                        add_form(spool);
+                        formptr = makePtr3(find_sheet(spool,#formsheet),colum,rowe);
+                    }
+                    *formptr = get_ticket(find_sheet(spool,#storesheet),0);
+                    cell_context_menu.reload;
+                }
+            }
+        }
+    }  
 }
 
 
@@ -805,7 +909,6 @@ stateless template div build_render_sheet(int spool) {
                     for(int r=0;r<lenr;r++) {
                         row {
                             "border-bottom" : "1px solid rgb(220,220,220)";
-
                                 template div makecell(int colum, int rowe) {
                                     static string tostr = "";
                                     static Ptr cellptr = makePtr3(spool,colum,rowe);
@@ -814,86 +917,17 @@ stateless template div build_render_sheet(int spool) {
                                         tostr = value_as_string(p);
                                     }
 
-                                    //print("Adding cell: ",cellptr);
-
                                     static bool is_open;
-                                    div cell_context_menu {
-                                        "display" : (is_open ? "block" : "none");
-                                        "position" : "absolute";
-                                        "z-index" : "100";
-                                        "top" : "0";
-                                        "left" : "100%";
-                                        "background" : "white";
-                                        "border" : "1px solid rgb(200,200,200)";
-                                        "border-radius" : "6px";
-                                        "box-shadow" : "0 4px 12px rgba(0,0,0,0.12)";
-                                        "min-width" : "120px";
-                                        "padding" : "4px";
-
-                                        cellptr = makePtr3(spool,colum,rowe);
-                                        p = *cellptr;
-                                        if(is_live(p)) {
-                                            tostr = value_as_string(p);
-                                        }
-
-                                        text to_string(cellptr)+" : "+tostr {
-                                            text_theme; 
-                                        }
-
-                                        static Ptr noteptr = makePtr3(find_sheet(spool,to_type("notesheet")),colum,rowe);
-                                        static Ptr note_p = *noteptr;
-                                        static string note_tostr;
-                                        if(is_live(note_p)) {
-                                            note_tostr = value_as_string(note_p);
-                                        }
-
-                                        input {
-                                            "value" : note_tostr;
-                                            "onchange" : capture(
-                                                string myval ; "this.value"
-                                            ) {
-                                                string cellset = to_string(noteptr)+"="+myval;
-                                                print("Setting note cell: ",cellset);
-                                                setcell(cellset);
-                                            }
-                                        }
-
-                                        static bool has_question;
-                                        static Ptr formptr;
-                                        static Ptr form_p;
-                                        if(has_sheet(spool,#formsheet)) {
-                                            formptr = makePtr3(find_sheet(spool,#formsheet),colum,rowe);
-                                            form_p = *formptr;
-                                        }
-                                        if(is_live(form_p)) {
-                                            text "Label" {text_theme;}
-                                            input {
-                                                "value" : form_p.label;
-                                                "onchange" : capture (
-                                                    string myval ; "this.value"
-                                                ) {
-                                                    form_p.label(myval);
-                                                }
-                                                air_input_theme;
-                                            }
-                                            form_question(spool,cellptr,true);
+                                    div context_menu_display {
+                                        if(is_open) {
+                                            cell_context_menu_reload_target = call_owner(context_menu_display);
+                                            render_cell_context_menu(spool,colum,rowe);
+                                            //print("Live context menu ",colum," ",rowe);
                                         } else {
-                                            button {
-                                                text "Add a question" {
-                                                    text_theme;
-                                                }
-                                                "onclick" : capture {
-                                                    if(!is_live(formptr)) {
-                                                        add_form(spool);
-                                                        formptr = makePtr3(find_sheet(spool,#formsheet),colum,rowe);
-                                                    }
-                                                    *formptr = get_ticket(find_sheet(spool,#storesheet),0);
-                                                    cell_context_menu.reload;
-                                                }
-                                            }
+                                            cell_context_menu_reload_target = deadnode;
+                                            //print("Dead context menu ",colum," ",rowe);
                                         }
-                                    }  
-
+                                    }
                                     input {
                                         "border" : "none";
                                         "background-color" : "transparent";
@@ -918,11 +952,17 @@ stateless template div build_render_sheet(int spool) {
                                         "oncontextmenu" : capture(
                                             js_do("event.preventDefault();")
                                         ) {
-                                            is_open = (is_open ? false : true);
-                                            cell_context_menu.reload;
+                                            if(is_live(cell_context_menu_reload_target)) {
+                                                is_open = false;
+                                                emit_reload(ctx,cell_context_menu_reload_target);
+                                            } else {
+                                                is_open = true;
+                                                context_menu_display.reload;
+                                            }
                                         }
                                     }
                                 }
+                                
 
                                 for(int c=0;c<lenc;c++) {
                                     column {
@@ -1081,6 +1121,7 @@ new {
 
 
 
+
 ##
     register audit;
     "audit" {
@@ -1089,6 +1130,78 @@ new {
         }
     }
 ##
+
+
+stateless template div audit_render_sheet(int spool) {
+    div {
+        "display" : "flex";
+        "justify-content" : "center";
+        "width" : "100%";
+            table {
+                "border-collapse" : "collapse";
+                "width" : "100%";
+                    int lenc = plen(spool); //Columns
+                    int lenr = 0; //Rows
+
+                    //Headers
+                    row {
+                        for(int c=0;c<lenc;c++) {
+                            column {
+                                "background-color" : "rgb(240, 240, 240)";
+                                "padding" : "10px 12px";
+                                "font-size" : "14px";
+                                "color" : "rgb(26, 26, 26)";
+                                "font-size" : "13px";
+                                "font-weight" : "600";
+                                "color" : "rgb(80,80,80)";
+                                "font-family" : "system-ui, sans-serif";
+                                "border-right" : "1px solid rgb(200,200,200)";
+                                text clabel(spool,c) {
+                                    "border" : "none";
+                                    "background-color" : "transparent";
+                                    "width" : "100%";
+                                    "padding" : "8px 4px";
+                                    "font-size" : "13px";
+                                    "font-family" : "system-ui, sans-serif";
+                                }
+                            }
+                            int lenco = clen(spool,c);
+                            if(lenco>lenr) {
+                                lenr = lenco;
+                            }
+                        }
+                    }
+                    
+                    //Render each column
+                    for(int r=0;r<lenr;r++) {
+                        row {
+                            "border-bottom" : "1px solid rgb(220,220,220)";
+                                for(int c=0;c<lenc;c++) {
+                                    column {
+                                        "position" : "relative";
+                                        "border-right" : "1px solid rgb(200,200,200)";
+                                        makecell(c,r);
+                                        string tostr = "";
+                                        Ptr cellptr = makePtr3(spool,c,r);
+                                        Ptr p = *cellptr;
+                                        if(is_live(p)) {
+                                            tostr = value_as_string(p);
+                                        }
+                                        text tostr {
+                                            "border" : "none";
+                                            "background-color" : "transparent";
+                                            "width" : "100%";
+                                            "padding" : "8px 4px";
+                                            "font-size" : "13px";
+                                            "font-family" : "system-ui, sans-serif";                                                                  
+                                        }
+                                    }
+                                }
+                        }
+                    }
+            }
+    }
+}
 
 audit {
     div {
@@ -1137,12 +1250,6 @@ audit {
                             div {
                                 "display" : "flex";
                                 "justify-content" : "center";
-                                "width" : "100%";
-                                //SHEET RENDER GOES HERE
-                            }
-                            div {
-                                "display" : "flex";
-                                "justify-content" : "center";
                                 "align-items" : "center";
                                 "gap" : "12px";
                                 "margin-top" : "auto";
@@ -1162,8 +1269,7 @@ audit {
                                             text_theme;
                                         }
                                     }
-                                    button deny {
-                                        "id" : "deny";
+                                    button {
                                         "display" : "flex";
                                         "justify-content" : "center";
                                         "align-items" : "center";
@@ -1172,11 +1278,37 @@ audit {
                                         "border" : "none";
                                         "border-radius" : "6px";
                                         "cursor" : "pointer";
-                                        text "Deny" {
+                                        text "CSV" {
                                             "font-size" : "14px";
                                             text_theme;
                                         }
+                                        "onclick" : capture {
+                                            write_file("mixos-acorn/tests/test.txt",sheets_to_CSV(sheetpool));
+                                        }
                                     }
+                                    button {
+                                        "display" : "flex";
+                                        "justify-content" : "center";
+                                        "align-items" : "center";
+                                        "height" : "36px";
+                                        "width" : "120px";
+                                        "border" : "none";
+                                        "border-radius" : "6px";
+                                        "cursor" : "pointer";
+                                        text "JSON" {
+                                            "font-size" : "14px";
+                                            text_theme;
+                                        }
+                                        "onclick" : capture {
+                                            write_file("mixos-acorn/tests/test.txt",sheets_to_JSON(sheetpool));
+                                        }
+                                    }
+                            }
+                            div {
+                                "display" : "flex";
+                                "justify-content" : "center";
+                                "width" : "100%";
+                                audit_render_sheet(sheetpool);
                             }                            
                         }
                 }

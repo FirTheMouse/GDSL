@@ -14,11 +14,23 @@ function run(ptr, ...captures) {
         if(!html) return;
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
-        const newEl = doc.body.firstChild;
-        if(newEl && newEl.id) {
-            document.getElementById(newEl.id).outerHTML = newEl.outerHTML;
-        }
+        Array.from(doc.body.children).forEach(newEl => {
+            if(newEl.id) {
+                const targets = Array.from(document.querySelectorAll('#'+newEl.id));
+                targets.forEach(el => el.outerHTML = newEl.outerHTML);
+            }
+        });
     });
+    //Single id version
+    // }).then(r => r.text()).then(html => {
+    //     if(!html) return;
+    //     const parser = new DOMParser();
+    //     const doc = parser.parseFromString(html, 'text/html');
+    //     const newEl = doc.body.firstChild;
+    //     if(newEl && newEl.id) {
+    //         document.getElementById(newEl.id).outerHTML = newEl.outerHTML;
+    //     }
+    // });
 }
 
 function run_raw(...args) {

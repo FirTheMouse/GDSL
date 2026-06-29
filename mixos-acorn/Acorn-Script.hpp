@@ -765,6 +765,12 @@ namespace Acorn {
                 if(n.cachelevel==3) n.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
                 ctx.node().value().set((void*)&n);
             },sizeof(Ptr),node_id);
+            add_function("cast_to_Ptr",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                if(p.cachelevel==3) p.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
+                ctx.node().value().set((void*)&p);
+            },sizeof(Ptr),ptr_id);
 
             add_function("makePtr3",[this](Context& ctx){
                 standard_sub_process(ctx);
@@ -785,7 +791,7 @@ namespace Acorn {
             add_function("is_live",[this](Context& ctx){
                 standard_sub_process(ctx);
                 bool b = false;
-                if(ctx.node().children()[0].value().type()==ptr_id) {
+                if(ctx.node().children()[0].value().type()==ptr_id||ctx.node().children()[0].value().type()==node_id) {
                     b = is_live(*(Ptr*)ctx.node().children()[0].value().get());
                 }
                 ctx.node().value().set((void*)&b);
@@ -1295,6 +1301,36 @@ namespace Acorn {
                 }
                 output = labels[type];
             };
+
+            uint32_t info_value_combo = add_binding_token_combo("INFO_VALUE",l_lbp,l_rbp,'I','V','#');
+            r_handlers[info_value_combo] = [this](Context& ctx){
+                standard_sub_process(ctx); 
+                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                resolve_overload(ctx); 
+            };
+            x_handlers[info_value_combo] = [this](Context& ctx){
+                Node c = ctx.node().children()[0];
+                string output = resolve_string_ticket(ctx.node());
+                output = value_info(c.value());
+            };
+
+            add_function("deadptr",[this](Context& ctx){
+                ctx.node().value().set((void*)&deadptr);
+            },sizeof(Ptr),ptr_id);
+            add_function("deadnode",[this](Context& ctx){
+                ctx.node().value().set((void*)&deadptr);
+            },sizeof(Ptr),node_id);
+            add_function("pool_info",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t poolid = *(int*)ctx.node().children()[0].value().get();
+                string output = resolve_string_ticket(ctx.node());
+                output = pool_info(poolid);
+            },sizeof(Ptr),string_id);
+            add_function("unit_info",[this](Context& ctx){
+                standard_sub_process(ctx);
+                string output = resolve_string_ticket(ctx.node());
+                output = unit_info();
+            },sizeof(Ptr),string_id);
 
             x_handlers[to_prefix_id(global_qual)] = [this](Context& ctx){
                 if(ctx.node().type()==var_decl_id) {

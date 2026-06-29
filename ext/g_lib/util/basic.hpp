@@ -96,6 +96,22 @@ static std::string ftime(double t)
   } 
 }
 
+static std::string fmem(uint64_t m) 
+{
+    auto trim = [](double d) {
+        int whole = (int)d;
+        int frac = (int)((d - whole) * 100);
+        return std::to_string(whole) + "." + (frac < 10 ? "0" : "") + std::to_string(frac);
+    };
+    if(m >= 10 * 1024 * 1024) {
+        return red(trim(m / (1024.0 * 1024.0)) + "mb");
+    } else if(m >= 10 * 1024) {
+        return yellow(trim(m / 1024.0) + "kb");
+    } else { 
+        return green(std::to_string(m) + "b");
+    } 
+}
+
 namespace Log {
   class Line {
       public:

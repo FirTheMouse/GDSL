@@ -176,7 +176,7 @@ namespace Acorn {
             types.live = false;
             print(red("Cried for help"));
             while(!types.live) {
-                std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             print(green("Cries answered"));
         }
@@ -414,7 +414,7 @@ namespace Acorn {
                     server->setfd(queued.fd);
                 } 
                 else {
-                    std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
             }
         }
@@ -643,7 +643,7 @@ namespace Acorn {
             WRITE_SOCKET(fd, frame.data(), frame.size());
         }
 
-        uint32_t thread_sleep_id = add_function("thread_sleep",[this](Context& ctx){std::this_thread::sleep_for(std::chrono::nanoseconds(100));});
+        uint32_t thread_sleep_id = add_function("thread_sleep",[this](Context& ctx){std::this_thread::sleep_for(std::chrono::milliseconds(100));});
         uint32_t unit_sleep_id = add_function("unit_sleep",[this](Context& ctx){types.live = false;});
         uint32_t unit_wake_id = add_function("unit_wake",[this](Context& ctx){types.live = true;});
         uint32_t unit_index_id = add_function("unit_index",[this](Context& ctx){ctx.node().value().set((void*)&types.index);},4,int_id);
@@ -719,7 +719,7 @@ namespace Acorn {
         //     }
         // },sizeof(Ptr),string_id);
 
-        uint32_t capture_id = make_tokenized_keyword("capture");
+
         
         std::string to_js_expr(std::string s) {
             std::string str = "(()=>{"+s+"})()";
@@ -809,7 +809,13 @@ namespace Acorn {
                 if(c.children()[1].type()==literal_id) {
                     val = c.children()[1].name().to_std();
                 } else if(c.children()[1].value().type()==string_id) {
+                    // if(c.children()[1].name().to_std()=="capture"&&c.children()[1].children().length()==4) {
+                    //     print(yellow("BEFORE:\n"),node_to_string(c));
+                    // }
                     process_node(ctx,c.children()[1]);
+                    // if(c.children()[1].name().to_std()=="capture"&&c.children()[1].children().length()==4) {
+                    //     print(magenta("AFTER:\n"),node_to_string(c));
+                    // }
                     if(!is_live(c.children()[1].value().data_ptr())) {
                         ctx.root(saved_root);
                         ctx.source() = old_source;
@@ -1197,6 +1203,62 @@ namespace Acorn {
             uint32_t baseoffset = find_sheet_pools_start(sheetpool);
             dump_sheet(gather_sheet_pools(sheetpool),baseoffset);
         });
+
+        uint32_t sheets_to_CSV_id = add_function("sheets_to_CSV",[this](Context& ctx){
+            std::string to_return = "";
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            ColCol* datasheet = find_sheet(sheets, datasheet_id);
+            for(int c = 0; c < datasheet->length(); c++) {
+                if(c > 0) to_return += ",";
+                to_return += "\"" + datasheet->get(c).label.to_std() + "\"";
+            }
+            to_return += "\n";
+            int lenr = datasheet->empty() ? 0 : datasheet->get(0).length();
+            for(int r = 0; r < lenr; r++) {
+                for(int c = 0; c < datasheet->length(); c++) {
+                    if(c > 0) to_return += ",";
+                    Ptr cellptr(&types, sheetpool, c, r);
+                    Ptr p = *(Ptr*)resolve_ptr(cellptr);
+                    if(is_live(p)) {
+                        to_return += "\"" + value_as_string(p) + "\"";
+                    }
+                }
+                to_return += "\n";
+            }
+
+            string output = resolve_string_ticket(ctx.node());
+            output = to_return;
+        },sizeof(Ptr),string_id);
+        uint32_t sheets_to_JSON_id = add_function("sheets_to_JSON",[this](Context& ctx){
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            ColCol* datasheet = find_sheet(sheets, datasheet_id);
+            std::string to_return = "[\n";
+            int lenr = datasheet->empty() ? 0 : datasheet->get(0).length();
+            for(int r = 0; r < lenr; r++) {
+                to_return += "  {";
+                bool first = true;
+                for(int c = 0; c < datasheet->length(); c++) {
+                    if(!first) to_return += ",";
+                    first = false;
+                    std::string label = datasheet->get(c).label.to_std();
+                    Ptr cellptr(&types, sheetpool, c, r);
+                    Ptr p = *(Ptr*)resolve_ptr(cellptr);
+                    std::string val = "";
+                    if(is_live(p)) {
+                        val = value_as_string(p);
+                    }
+                    to_return += "\"" + label + "\":\"" + val + "\"";
+                }
+                to_return += "}";
+                if(r < lenr - 1) to_return += ",";
+                to_return += "\n";
+            }
+            to_return += "]";
+            string output = resolve_string_ticket(ctx.node());
+            output = to_return;
+        },sizeof(Ptr),string_id);
         
         //Moved to TwigSnap
         uint32_t render_sheet_id = add_function("render_sheet",[this](Context& ctx){});
@@ -1803,6 +1865,16 @@ namespace Acorn {
                             active_instance = instantiate_template_scope(ctx.node(),ctx.node().scopes()[1].owner(),ctx,true);
                             ctx.node().scopes().put(path,active_instance);
                         }
+
+                        //We need a puppet for each instnatiation to bind the arguments to, figure out how to do this.
+
+                        // Node decl = active_instance.owner(); //Rebind the arguments
+                        // for(int i=0;i<ctx.node().children().length();i++) {
+                        //     Node c = ctx.node().children()[i];
+                        //     Node arg = decl.children()[i];
+                        //     c.children().col().set(0,(void*)&arg);
+                        // }
+
                         ctx.node().scopes().col().set(0,(void*)&active_instance);
                     } else {
                         Node scope_owner = ctx.node().scopes()[0].owner();

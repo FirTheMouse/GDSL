@@ -1,5 +1,2 @@
-[
-  {"Words":"5","Phrases":"6","Things":"66","Stuff":"Wub","More":"2"},
-  {"Words":"12","Phrases":"4","Things":"3","Stuff":"Frub","More":"3"},
-  {"Words":"Twub","Phrases":"3","Things":"6","Stuff":"","More":"19"}
-]
+"Words","Phrases","More","Data"
+"10","Words","3","June 7th"

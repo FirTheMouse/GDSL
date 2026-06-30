@@ -43,13 +43,16 @@ inlined basic_button {
     global int sheetpool;
     global string sheetname;
     global Node sidebar_reload_target;
-    sheetpool = load_sheet("redberry");
+    sheetpool = load_sheet("mixos-acorn/web/thistle/users/fir/sheets/redberry");
     sheetname = "redberry";
+    global bool sidebar_open;
+    global string sidebar_open_form;
+    sidebar_open_form = " ";
 ##
 
-div side_bar {
+div side_bar(string in_route) {
     "id" : "side_bar";
-    "width" : "60px";
+    "width" : (sidebar_open ? "220px" : "60px");
     "min-height" : "100vh";
     "display" : "flex";
     "flex-direction" : "column";
@@ -80,7 +83,7 @@ div side_bar {
                 "onclick" : "goTo('/')";
                 "cursor" : "pointer";
                 "class" : "label";
-                "opacity" : "0";
+                "opacity" : (sidebar_open ? "1" : "0");
                 "transition" : "opacity 0.15s ease";
                 "font-size" : "18px";
                 "flex" : "1";
@@ -88,7 +91,9 @@ div side_bar {
             }
 
             div {
-                "onclick" : "toggleSidebar()";
+                "onclick" : capture(js_do("toggleSidebar();")){
+                    sidebar_open = (sidebar_open?false:true);
+                };
                 "width" : "30px";
                 "height" : "30px";
                 "background-color" : "rgb(172, 57, 147)";
@@ -96,7 +101,58 @@ div side_bar {
             }
         }
 
-        template div func_btn_temp(string function, string color, string label) {
+        if(session.userpath.length==99) { //Normally 0, just disabled for convience
+            text "Please log in" {
+                "class" : "label";
+                "opacity" : (sidebar_open ? "1" : "0");
+                "transition" : "opacity 0.15s ease";
+                "font-size" : "14px";
+                text_theme;
+            }
+        } else {
+            Ptr string files = list_files_in_directory("mixos-acorn/web/thistle/users/fir/inbox");
+            div {
+                "onclick" : "goTo('/inbox')";
+                "cursor" : "pointer";
+                "padding" : "8px";
+                "display" : "flex";
+                "align-items" : "center";
+                "gap" : "10px";
+                "width" : "30px";
+                "height" : "30px";
+                "white-space" : "nowrap";
+                "background-color" : "transparent";
+
+                div {
+                    "width" : "30px";
+                    "height" : "30px";
+                    "border-radius" : "50%";
+                    "background-color" : (files.length==0?"gray":"rgb(200, 60, 60)");
+                    "flex-shrink" : "0";
+                    "display" : "flex";
+                    "align-items" : "center";
+                    "justify-content" : "center";
+
+                    text to_string(files.length) {
+                        "color" : "white";
+                        "font-size" : "13px";
+                        "font-weight" : "700";
+                        "font-family" : "system-ui, sans-serif";
+                    }
+                }
+
+                text "Inbox" {
+                    "class" : "label";
+                    "opacity" : (sidebar_open ? "1" : "0");
+                    "transition" : "opacity 0.15s ease";
+                    "font-size" : "16px";
+                    text_theme;
+                }
+            }
+        }
+        
+
+        stateless template div func_btn_temp(string function, string color, string label) {
             div {
                 "onclick" : function;
                 "cursor" : "pointer";
@@ -118,7 +174,7 @@ div side_bar {
                 
                 text label {
                     "class" : "label";
-                    "opacity" : "0";
+                    "opacity" : (sidebar_open ? "1" : "0");
                     "transition" : "opacity 0.15s ease";
                     "font-size" : "16px";
                     text_theme;
@@ -148,10 +204,11 @@ div side_bar {
             }
         ";
 
-        template div form_temp(string words, string id) {
+        stateless template div form_temp(string path, string id, string bar_in_route) {
             div {
                 "class" : "form_box";
-                "id" : id;
+                string sbid = id+"_sidebar_form";
+                "id" : sbid;
                 "cursor" : "pointer";
                 "padding" : "8px";
                 "display" : "flex";
@@ -176,23 +233,29 @@ div side_bar {
                         });
                         this.style.backgroundColor = 'rgba(130, 43, 111, 0.12)';
                     "),
-                    string recive_sheetname ; js_lit(id)
+                    string recive_sheetname ; js_lit(id),
+                    string recive_path ; js_lit(path)
                 ) {          
+                    print("Loading sheet ",recive_sheetname);
                     sheetname = recive_sheetname;
+                    sheetpool = load_sheet(recive_path+"/"+sheetname);
+                    print("Loaded as ",sheetpool);
                     emit_reload(ctx,sidebar_reload_target);
                 }
 
-                text words {
+                text id {
                     "class" : "label";
-                    "opacity" : "0";
+                    "opacity" : (sidebar_open ? "1" : "0");
                     "transition" : "opacity 0.15s ease";
                     "font-size" : "14px";
                     text_theme;
                 }
-                
-                bool context_open;
-                div context_panel {
-                    "display" : (context_open ? "block" : "none");
+
+                string sf_cm_id = id+"_sidebar_form_context_menu";
+                div {
+                    "id" : sf_cm_id;
+                    "class" : "sidebar_form_context_menu";
+                    "display" : (sidebar_open_form==id?"block":"none");
                     "position" : "absolute";
                     "top" : "100%";
                     "right" : "0";
@@ -203,32 +266,73 @@ div side_bar {
                     "box-shadow" : "0 4px 12px rgba(0,0,0,0.12)";
                     "min-width" : "120px";
                     "padding" : "4px";
-
-                    hoisted string context_panel_input;
-                    input {
-                        "value" : context_panel_input;
-                         "onchange" : capture(string reciver ; "this.value") { 
-                            context_panel_input = reciver;
+                    text id {
+                        text_theme;
+                    }
+                    div {
+                        "padding" : "6px";
+                        "background-color" : "red";
+                        "onclick" : capture(
+                            js_do("event.stopPropagation();"),
+                            string fidt ; js_lit(id)
+                        ) {
+                            print("Saving ",fidt);
+                            int to_save = create_sheet;
+                            print("Saved as index ",to_save);
+                            save_sheet(to_save,fidt);
                         }
                     }
                 }
 
-                text "..." {
-                    "onclick" : capture(
-                            string recive_id ; js_do("event.stopPropagation(); return '"+id+"';")
-                    ) {
-                        context_open = (context_open ? false : true);
-                        print(recive_id," opened their context menu");
-                        if(context_panel_input.length!=0) {
-                            print("Consuming: ",context_panel_input);
+                if(bar_in_route=="inbox") {
+                     text ">" {
+                        "onclick" : capture(
+                            string fid ; js_lit(id),
+                            string fpath ; js_lit(path),
+                            js_do("event.stopPropagation();")
+                        ) {
+                            move_file(fpath+"/"+fid,"mixos-acorn/web/thistle/users/fir/inbox");
+                            print("Moved ",fid," to inbox");
+                            if(is_live(sidebar_reload_target)) {
+                                emit_reload(ctx,sidebar_reload_target);
+                            } else {
+                                print("No reload target for sidebar");
+                            }
                         }
-                        context_panel.reload;
+                        "class" : "label";
+                        "opacity" : (sidebar_open ? "1" : "0");
+                        "transition" : "opacity 0.15s ease";
+                        "font-size" : "16px";
+                        text_theme;
                     }
-                    "class" : "label";
-                    "opacity" : "0";
-                    "transition" : "opacity 0.15s ease";
-                    "font-size" : "16px";
-                    text_theme;
+                } else {
+                    text "..." {
+                        "onclick" : capture(
+                           js_do("
+                                event.stopPropagation(); 
+                                const context_menu = document.getElementById('"+sf_cm_id+"');
+                                if(context_menu.style.display==='block') {
+                                    context_menu.style.display='none';
+                                } else {
+                                    context_menu.style.display='block';
+                                }
+                                document.querySelectorAll('.sidebar_form_context_menu').forEach(el => {
+                                    if(el!=context_menu) {
+                                        el.style.display = 'none';
+                                    }
+                                });
+                            "),
+                            string fid ; js_lit(id)
+                        ) {
+                            print("Toggled sidebar");
+                            sidebar_open_form = (sidebar_open_form==fid ? "" : fid);
+                        }
+                        "class" : "label";
+                        "opacity" : (sidebar_open ? "1" : "0");
+                        "transition" : "opacity 0.15s ease";
+                        "font-size" : "16px";
+                        text_theme;
+                    }
                 }
             }
         }
@@ -236,7 +340,7 @@ div side_bar {
         if(session.userpath.length==99) { //Normally 0, just disabled for convience
             text "Please log in" {
                 "class" : "label";
-                "opacity" : "0";
+                "opacity" : (sidebar_open ? "1" : "0");
                 "transition" : "opacity 0.15s ease";
                 "font-size" : "14px";
                 text_theme;
@@ -244,7 +348,7 @@ div side_bar {
         } else {
             Ptr string files = list_files_in_directory("mixos-acorn/web/thistle/users/fir/sheets");
             for(int i=0;i<files.length;i++) {
-                form_temp(files.get(i),files.get(i));
+                form_temp("mixos-acorn/web/thistle/users/fir/sheets",files.get(i),in_route);
             }
         }
     }
@@ -467,14 +571,7 @@ login {
     }
 }
 
-##
-    register build;
-    "build" {
-        in htmlemiting {
-            emit_contents;
-        }
-    }
-##
+
 
 stateless template div selectable_option(string question_type_string, string optlabel) {
     if(question_type_string==optlabel) {option optlabel {"selected" : "true";}} else {option optlabel {}}
@@ -527,17 +624,22 @@ stateless template div multi_select_question(int spool, Ptr cellptr, Ptr formptr
             button {
                 text "+";
                 "onclick" : capture(
+                    string ctspool ; js_lit(to_string(spool)),
                     string pstr ; js_lit(to_string(form_p))
                  ) {
+                    int fspool = from_string(ctspool);
                     Ptr fp = from_string(pstr);
                     duck val = *fp;
-                    //print("MSQ-B form_p: ",fp," T: ",SV#val);
+                    print("MSQ-B form_p: ",fp," T: ",IV#val);
                     int vofa = V#val;
+                    print("B");
                     if(vofa==(#string)) {
-                        fp.push(get_ticket(find_sheet(spool,#storesheet),32));
+                        fp.push(get_ticket(find_sheet(fspool,#storesheet),32));
+                        fspool;
                     } else {
                         fp.push(0);
                     }
+                    print("C");
                     if(is_live(cell_context_menu_reload_target)) {
                         emit_reload(ctx,cell_context_menu_reload_target);
                     }
@@ -566,14 +668,16 @@ stateless template div multi_select_question(int spool, Ptr cellptr, Ptr formptr
                         }
                         "onchange" : capture(
                             string lcellstr ; js_lit(to_string(cellptr)),
+                            string cspool ; js_lit(to_string(spool)),
                             string myval ; "this.value"
                         ) {
+                            int fspool = from_string(cspool);
                             Ptr lcellptr = from_string(lcellstr);
                             duck val = from_string(myval);
                             if(is_live(*lcellptr)) {
                                 *(*lcellptr) = val;
                             } else {
-                                *lcellptr = get_ticket(find_sheet(spool,#storesheet),0);
+                                *lcellptr = get_ticket(find_sheet(fspool,#storesheet),0);
                                 *(*lcellptr) = val;
                             }
                         }
@@ -608,7 +712,7 @@ stateless template div multi_select_question(int spool, Ptr cellptr, Ptr formptr
                     if(is_live(*lcellptr)) {
                         *(*lcellptr) = val;
                     } else {
-                        *lcellptr = get_ticket(find_sheet(spool,#storesheet),0);
+                        *lcellptr = get_ticket(find_sheet(getpool(lcellptr),#storesheet),0);
                         *(*lcellptr) = val;
                     }
                 }
@@ -658,14 +762,16 @@ stateless template div form_question(int spool, Ptr cellptr, bool editable) {
                     selectable_option(question_type,"Date");
                     "onchange" : capture(
                         string cellstr ; js_lit(to_string(cellptr)),
+                        string cspool ; js_lit(to_string(spool)),
                         string myval ; "this.value"
                     ) {
+                        string fspool = from_string(cspool);
                         formmetaptr = from_string(cellstr);
-                        setpool(formmetaptr,find_sheet(spool,#metadatasheet,1));
+                        setpool(formmetaptr,find_sheet(fspool,#metadatasheet,1));
                         if(is_live(*formmetaptr)) {
                             *(*formmetaptr) = myval;
                         } else {
-                            *formmetaptr = get_ticket(find_sheet(spool,#storesheet),0);
+                            *formmetaptr = get_ticket(find_sheet(fspool,#storesheet),0);
                             *(*formmetaptr) = myval;
                         }
                         emit_reload(ctx,cell_context_menu_reload_target); //MAKE MORE GENERIC LATER IF FROMS GET EDITED OUTSIDE OF THE SHEET
@@ -694,7 +800,7 @@ stateless template div form_question(int spool, Ptr cellptr, bool editable) {
                             if(is_live(*cellp)) {
                                 *(*cellp) = val;
                             } else {
-                                *cellp = get_ticket(find_sheet(spool,#storesheet),0);
+                                *cellp = get_ticket(find_sheet(getpool(cellp),#storesheet),0);
                                 *(*cellp) = val;
                             }
                         }
@@ -718,7 +824,7 @@ stateless template div form_question(int spool, Ptr cellptr, bool editable) {
                             if(is_live(*cellp)) {
                                 *(*cellp) = val;
                             } else {
-                                *cellp = get_ticket(find_sheet(spool,#storesheet),0);
+                                *cellp = get_ticket(find_sheet(getpool(cellp),#storesheet),0);
                                 *(*cellp) = val;
                             }
                         }
@@ -738,7 +844,7 @@ stateless template div form_question(int spool, Ptr cellptr, bool editable) {
                             if(is_live(*cellp)) {
                                 *(*cellp) = val;
                             } else {
-                                *cellp = get_ticket(find_sheet(spool,#storesheet),0);
+                                *cellp = get_ticket(find_sheet(getpool(cellp),#storesheet),0);
                                 *(*cellp) = val;
                             }
                         }
@@ -822,6 +928,9 @@ stateless template div render_cell_context_menu(int spool, int colum, int rowe) 
         if(has_sheet(spool,#formsheet)) {
             formptr = makePtr3(find_sheet(spool,#formsheet),colum,rowe);
             form_p = *formptr;
+        } else {
+            formptr = deadptr;
+            form_p = deadptr;
         }
         if(is_live(form_p)) {
             text "Label" {text_theme;}
@@ -841,12 +950,15 @@ stateless template div render_cell_context_menu(int spool, int colum, int rowe) 
                 text "Add a question" {
                     text_theme;
                 }
-                "onclick" : capture {
+                "onclick" : capture(
+                    string cspool ; js_lit(to_string(spool))
+                ) {
+                    int fspool = from_string(cspool);
                     if(!is_live(formptr)) {
-                        add_form(spool);
-                        formptr = makePtr3(find_sheet(spool,#formsheet),colum,rowe);
+                        add_form(fspool);
+                        formptr = makePtr3(find_sheet(fspool,#formsheet),colum,rowe);
                     }
-                    *formptr = get_ticket(find_sheet(spool,#storesheet),0);
+                    *formptr = get_ticket(find_sheet(fspool,#storesheet),0);
                     cell_context_menu.reload;
                 }
             }
@@ -856,6 +968,7 @@ stateless template div render_cell_context_menu(int spool, int colum, int rowe) 
 
 
 stateless template div build_render_sheet(int spool) {
+    print("Rendering: ",spool);
     div {
         "display" : "flex";
         "justify-content" : "center";
@@ -868,7 +981,7 @@ stateless template div build_render_sheet(int spool) {
 
                     //Headers
                     row {
-                        template div makeheader(int colum) {
+                        template div makeheader(int cspool, int colum) {
                             input {
                                 "border" : "none";
                                 "background-color" : "transparent";
@@ -876,11 +989,16 @@ stateless template div build_render_sheet(int spool) {
                                 "padding" : "8px 4px";
                                 "font-size" : "13px";
                                 "font-family" : "system-ui, sans-serif";
-                                "value" : clabel(spool,colum);
+                                "value" : clabel(cspool,colum);
                                 "onchange" : capture(
+                                    string spoolstr ; js_lit(to_string(cspool)),
+                                    string colstr ; js_lit(to_string(colum)),
                                     string myval ; "this.value"
                                 ) {
-                                    csetlabel(spool,colum,myval);
+                                    int fspool = from_string(spoolstr);
+                                    int fcol = from_string(colstr);
+                                    print("Labeling ",fspool,"|",fcol," as ",myval);
+                                    csetlabel(fspool,fcol,myval);
                                 }
                             }
                         }
@@ -896,7 +1014,7 @@ stateless template div build_render_sheet(int spool) {
                                 "color" : "rgb(80,80,80)";
                                 "font-family" : "system-ui, sans-serif";
                                 "border-right" : "1px solid rgb(200,200,200)";
-                                makeheader(c);
+                                makeheader(spool,c);
                             }
                             int lenco = clen(spool,c);
                             if(lenco>lenr) {
@@ -909,9 +1027,11 @@ stateless template div build_render_sheet(int spool) {
                     for(int r=0;r<lenr;r++) {
                         row {
                             "border-bottom" : "1px solid rgb(220,220,220)";
-                                template div makecell(int colum, int rowe) {
+                                template div makecell(int cspool, int colum, int rowe) {
                                     static string tostr = "";
-                                    static Ptr cellptr = makePtr3(spool,colum,rowe);
+                                    static Ptr cellptr = makePtr3(cspool,colum,rowe);
+                                    print("Cell ",cspool," : ",cellptr);
+                                    print("Cspool: ",IV#cspool);
                                     static Ptr p = *cellptr;
                                     if(is_live(p)) {
                                         tostr = value_as_string(p);
@@ -921,7 +1041,7 @@ stateless template div build_render_sheet(int spool) {
                                     div context_menu_display {
                                         if(is_open) {
                                             cell_context_menu_reload_target = call_owner(context_menu_display);
-                                            render_cell_context_menu(spool,colum,rowe);
+                                            render_cell_context_menu(getpool(cellptr),getidx(cellptr),getsidx(cellptr));
                                             //print("Live context menu ",colum," ",rowe);
                                         } else {
                                             cell_context_menu_reload_target = deadnode;
@@ -937,15 +1057,17 @@ stateless template div build_render_sheet(int spool) {
                                         "font-family" : "system-ui, sans-serif";
                                         "value" : tostr;                                                                    
                                         "onchange" : capture(
+                                            string cellstr ; js_lit(to_string(cellptr)),
                                             string myval ; "this.value"
                                         ) {
+                                            Ptr lcellptr = from_string(cellstr);
                                             duck val = from_string(myval);
                                             print("SH Val: ",val," ",SV#val);
-                                            if(is_live(*cellptr)) {
-                                                *(*cellptr) = val;
+                                            if(is_live(*lcellptr)) {
+                                                *(*lcellptr) = val;
                                             } else {
-                                                *cellptr = get_ticket(find_sheet(spool,#storesheet),0);
-                                                *(*cellptr) = val;
+                                                *lcellptr = get_ticket(find_sheet(getpool(lcellptr),#storesheet),0);
+                                                *(*lcellptr) = val;
                                             }
                                         }
 
@@ -968,7 +1090,7 @@ stateless template div build_render_sheet(int spool) {
                                     column {
                                         "position" : "relative";
                                         "border-right" : "1px solid rgb(200,200,200)";
-                                        makecell(c,r);
+                                        makecell(spool,c,r);
                                     }
                                 }
                         }
@@ -976,6 +1098,138 @@ stateless template div build_render_sheet(int spool) {
             }
     }
 }
+
+##
+    register inbox;
+    "inbox" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+
+    global int inbox_sheetpool; inbox_sheetpool = 0;
+    global string inbox_sheetname; inbox_sheetname = "";
+##
+
+inbox {
+    div inbox_root {
+        sidebar_reload_target = call_owner(inbox_root);
+        style "
+            td:hover {
+                background-color:rgb(234, 234, 234);
+            }
+            input:focus {
+                outline: none;
+            }
+            textarea:focus {
+                outline: none;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+        ";
+
+        script read_file("mixos-acorn/web/thistle/thistle.js");
+
+        background_theme;
+        div {
+            "display" : "flex";
+            "min-height" : "100vh";
+                side_bar("inbox");
+                if(session.userpath.length==99) { 
+                    div {
+                        "justify-content" : "center";
+                        "align-items" : "center";
+                        text "Log in to see inbox" {
+                            "font-size" : "24px";
+                            text_theme;
+                        }
+                    }
+                } else {
+                    div inbox_display {
+                        "width" : "100%";
+                        Ptr string files = list_files_in_directory("mixos-acorn/web/thistle/users/fir/inbox");
+                        stateless template div file_temp(string path, string id, bool is_sent) {
+                            div {
+                                "display" : "flex";
+                                "flex-direction" : "row";
+                                "gap" : "4px";
+                                "padding" : "6px";
+                                "border-radius" : "4px";
+                                "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                                card_theme;
+                                "onclick" : capture(
+                                    string fid ; js_lit(id),
+                                    string fpath ; js_lit(path),
+                                    js_do("event.stopPropagation();")
+                                ) {
+                                    inbox_sheetpool = load_sheet(fpath+"/"+fid);
+                                    inbox_sheetname = fid;
+                                    print("Loaded ",fid," as ",inbox_sheetpool);
+                                    inbox_root.reload;
+                                }
+                                "oncontextmenu" : capture(
+                                    string fidt ; js_lit(id),
+                                    string fpatht ; js_lit(path),
+                                    js_do("event.preventDefault();"),
+                                    js_do("event.stopPropagation();"),
+                                ) {
+                                    move_file(fpatht+"/"+fidt,"mixos-acorn/web/thistle/users/fir/sheets");
+                                    print("Moved ",fidt," to sheets");
+                                    inbox_root.reload;
+                                }
+                                text id {
+                                    "font-size" : "14px";
+                                    text_theme;
+                                }
+                            }
+                        }
+
+                        "display" : "flex";
+                        "gap" : "8px";
+                        "padding" : "8px";
+
+                        div {
+                            "display" : "flex";
+                            "flex" : "1";
+                            "width" : "30%";
+                            "flex-direction" : "column";
+                            "gap" : "4px";
+                            for(int i=0;i<files.length;i++) {
+                                file_temp("mixos-acorn/web/thistle/users/fir/inbox",files.get(i),false);
+                            }
+                        }
+
+                        div {
+                            "display" : "flex";
+                            "flex" : "2";
+                            "width" : "70%";
+                            "flex-direction" : "column";
+                            "gap" : "4px";
+                            "padding" : "8px";
+                            "border-radius" : "12px";
+                            "box-shadow" : "0 4px 24px rgba(0,0,0,0.08)";
+                            card_theme;
+                            if(inbox_sheetpool!=0) {
+                                render_form(inbox_sheetpool,false);
+                            }
+                        }
+                    }
+                }
+        }
+    }
+}
+
+##
+    register build;
+    "build" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
 
 build {
     div build_root {
@@ -1001,7 +1255,7 @@ build {
         div {
             "display" : "flex";
             "min-height" : "100vh";
-                side_bar;
+                side_bar("build");
                 div build_sheet_panel {
                     sidebar_reload_target = call_owner(build_sheet_panel);
                     "flex" : "1";
@@ -1061,7 +1315,7 @@ build {
 ##
 
 new {
-    div {
+    div new_root {
         style "
             td:hover {
                 background-color:rgb(234, 234, 234);
@@ -1084,9 +1338,10 @@ new {
         div {
             "display" : "flex";
             "min-height" : "100vh";
-                side_bar;
+                side_bar("new");
 
-                div {
+                div new_display_panel {
+                    sidebar_reload_target = call_owner(new_display_panel);
                     "flex" : "1";
                     "display" : "flex";
                     "flex-direction" : "column";
@@ -1227,9 +1482,10 @@ audit {
         div {
             "display" : "flex";
             "min-height" : "100vh";
-                side_bar;
+                side_bar("audit");
 
-                div {
+                div audit_display_panel {
+                    sidebar_reload_target = call_owner(audit_display_panel);
                     "flex" : "1";
                     "display" : "flex";
                     "flex-direction" : "column";
@@ -1316,7 +1572,6 @@ audit {
     }
 }
 
-
 ##
     register admin;
     "admin" {
@@ -1347,7 +1602,7 @@ admin {
 
         "display" : "flex";
         "min-height" : "100vh";
-            side_bar;
+            side_bar("admin");
             background_theme;
 
     }

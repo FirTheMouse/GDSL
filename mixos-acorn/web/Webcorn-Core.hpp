@@ -294,6 +294,28 @@ namespace Acorn {
             }
             return sheetpool;
         };
+        void move_file(const std::string& from, const std::string& to) {
+            std::error_code ec;
+            std::filesystem::path from_path(from);
+            std::filesystem::path to_path(to);
+        
+            if(std::filesystem::is_directory(to_path)) {
+                to_path /= from_path.filename();
+            }
+        
+            std::filesystem::create_directories(to_path.parent_path(), ec);
+            std::filesystem::rename(from_path, to_path, ec);
+            if(ec) {
+                print(red("webcorn:move_file failed to move "+from+" to "+to_path.string()+": "+ec.message()));
+            }
+        }
+        uint32_t move_file_id = add_function("move_file",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string from = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            string to = (string&)*(Ptr*)ctx.node().children()[1].value().get();
+            move_file(from.to_std(),to.to_std());
+        });
+
 
         void manage_sessions(const std::string& unitcode) {
             while(true) {
@@ -1351,7 +1373,7 @@ namespace Acorn {
         uint32_t load_sheet_id = add_function("load_sheet",[this](Context& ctx){
             standard_sub_process(ctx);
             string s(*(Ptr*)ctx.node().children()[0].value().get());
-            uint32_t sheetpool = load_sheet("mixos-acorn/web/thistle/users/fir/sheets/"+s.to_std());
+            uint32_t sheetpool = load_sheet(s.to_std());
             ctx.node().value().set((void*)&sheetpool);
             // dump_sheet(sheetpool);
             // cry("FILE:LOAD:sheets/"+s.to_std());
@@ -1866,16 +1888,14 @@ namespace Acorn {
                             ctx.node().scopes().put(path,active_instance);
                         }
 
-                        //We need a puppet for each instnatiation to bind the arguments to, figure out how to do this.
-
-                        // Node decl = active_instance.owner(); //Rebind the arguments
-                        // for(int i=0;i<ctx.node().children().length();i++) {
-                        //     Node c = ctx.node().children()[i];
-                        //     Node arg = decl.children()[i];
-                        //     c.children().col().set(0,(void*)&arg);
-                        // }
-
+                        Node decl = active_instance.owner(); //Rebind the arguments
+                        for(int i=0;i<ctx.node().children().length();i++) {
+                            Node c = ctx.node().children()[i];
+                            Node arg = decl.children()[i];
+                            c.children().col().set(0,(void*)&arg);
+                        }
                         ctx.node().scopes().col().set(0,(void*)&active_instance);
+                        //print("Instance ",path,":\n",node_to_string(ctx.node()));
                     } else {
                         Node scope_owner = ctx.node().scopes()[0].owner();
                         if(scope_owner!=ctx.node()) { //If we haven't been instantiated yet

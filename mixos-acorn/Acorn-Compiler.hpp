@@ -1744,7 +1744,7 @@ namespace Acorn {
                 new_scope.value(make_value());
                 new_scope.value().copy(decl.scopes()[0].value(), true);
             }
-            new_scope.owner(call);
+            //new_scope.owner(call);
         
             for(int i = 0; i < decl.scopes()[0].quals().length(); i++) {
                 new_scope.quals() << decl.scopes()[0].quals()[i];
@@ -1752,18 +1752,26 @@ namespace Acorn {
         
             map<uint32_t, Value> value_alias_table;
             map<uint32_t, Node> node_alias_table;
+
+            Node puppet = make_node(func_decl_id);
+            puppet.value(decl.scopes()[0].value());
+            puppet.scopes() << new_scope;
+            new_scope.owner(puppet);
         
             Stage* oldstage = active_stage;
             start_stage(x_handlers); //Because we're trying to derive the value, this may not be the right long term solution though
             //This was a bit of an accident born from how things were working in Webcorn's standard_gather_from_scope
             //And an anomaly with FUNC_DECLs revelead when trying to make templating work
             if(args_already_synced) { //Because they've already been turned into the assignment form by sync_args
-                for(int i = 0; i < call.children().length(); i++) {
-                    Node c = call.children()[i];
-                    process_node(ctx, c.children()[1]);
-                    Value newv = make_value();
-                    deep_copy_value(newv,c.children()[1].value());
-                    value_alias_table.put(c.children()[0].value().idx, newv);
+                for(int i = 0; i < decl.children().length(); i++) {
+                    Node c = decl.children()[i];
+                    //The puppet gets a copy of c[0], the variable decleration
+                    Node puppet_arg = make_node();
+                    deep_copy_node(puppet_arg, c, value_alias_table, node_alias_table);
+                    puppet.children() << puppet_arg;
+                    //print("Aliasing values|",c.value().idx," as values|",puppet.children()[i].value().idx);
+                    //Alias c[0] to the puppet's copy, so we can re-call this instnatiation in the future with fresh args
+                    value_alias_table.put(c.value().idx, puppet.children()[i].value());
                 }
             } else {
                 node_col decl_args = decl.children();
@@ -1787,6 +1795,7 @@ namespace Acorn {
                     }
                 }
             }
+
             active_stage = oldstage;
         
             for(int i = 0; i < decl.scopes()[0].children().length(); i++) {

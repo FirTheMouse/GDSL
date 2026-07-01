@@ -10,8 +10,8 @@
 // #include "mixos-acorn/Acorn-Kernel.hpp"
 // #include "mixos-acorn/Acorn-Dirt.hpp"
 // #include "mixos-acorn/Acorn-JIT.hpp"
-//#include "mixos-acorn/Acorn-Script.hpp"
-#include "mixos-acorn/web/Webcorn-Core.hpp"
+#include "mixos-acorn/Acorn-Script.hpp"
+//#include "mixos-acorn/web/Webcorn-Core.hpp"
 // #include "mixos-acorn/Acorn-Core.hpp"
 
 // using namespace GDSL;
@@ -141,9 +141,9 @@ int main(int argc, char* argv[]) {
     // acorn->run(acorn->process(readFile("mixos-acorn/test.gld")));
     //print(ftime(t.end()));
 
-    g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
-    //webcorn->setup_trace_res_flipbook();
-    webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
+    // g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
+    // //webcorn->setup_trace_res_flipbook();
+    // webcorn->run(webcorn->process(readFile("mixos-acorn/web/webtest.gld")));
 
     // g_ptr<Acorn::Webcorn_Core> webcorn =  Acorn::make_unit<Acorn::Webcorn_Core>();
     // //webcorn->setup_trace_res_flipbook();

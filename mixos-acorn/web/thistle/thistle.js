@@ -5,6 +5,16 @@ function post(body) {
     })
 }
 
+function resetWebrunner() {
+    fetch(window.location.pathname, {
+        method: "RESET",
+        body: ""
+    }).then(r => r.text()).then(html => {
+        window.location.reload();
+    });
+}
+
+
 function run(ptr, ...captures) {
     const body = [ptr, ...captures].join('@'); //@ is the delmiter we use for runs
     fetch(window.location.pathname, {

@@ -2432,3 +2432,244 @@ twig = compile(read_file("mixos-acorn/web/thistle/thistle.twg"));
     print("Handlers: ",plen(0)," Layouts: ",plen(1)," Names: ",plen(2)," Nodes: ",plen(3)," Values: ",plen(4));
     counter++;
 }
+
+[:]CARD TEST
+
+inlined banner_theme {
+    "background-color" : "rgb(65, 74, 205)";
+}
+inlined card_theme {
+    "border-radius" : "8px";
+    "background-color" : "rgb(67, 67, 67)";
+}
+inlined pill_theme {
+    "border-radius" : "10px";
+    "background-color" : "rgb(205, 253, 255)";
+    "display" : "flex";
+    "align-items" : "center";
+    "justify-content" : "center";
+}
+inlined main_font {
+    "font-family" : "system-ui, sans-serif";
+}
+inlined text_one_theme {
+    "font-size" : "15px";
+    "font-weight" : "600";
+    "color" : " rgb(251, 251, 251)";
+    main_font;
+}
+inlined text_two_theme {
+    "font-size" : "12px";
+    "font-weight" : "400";
+    "color" : " rgb(207, 207, 207)";
+    main_font;
+}
+inlined text_three_theme {
+    "font-size" : "10px";
+    "font-weight" : "400";
+    "color" : " rgb(30, 42, 87)";
+    main_font;
+}
+
+##
+    register root_path;
+    "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+root_path {
+    script read_file("mixos-acorn/web/thistle/thistle.js");
+    button {
+        text "RESET";
+        "onclick" : "resetWebrunner();";
+    }
+
+    div {
+        "display" : "flex";
+        "width" : "100%";
+        "height" : "100%";
+        "align-items" : "center";
+        "justify-content" : "center";
+        div {
+            "display" : "flex";
+            "width" : "30%";
+            "height" : "40%";
+            "flex-direction" : "column";
+            "overflow" : "hidden";
+            card_theme;
+            div {
+                "flex" : "1";
+                banner_theme;
+            }
+            div {
+                "padding" : "12px";
+                "flex" : "2";
+                div {
+                    "width" : "56px";
+                    "height" : "56px";
+                    "border-radius" : "50%";
+                    "margin-top" : "-40px";
+                    "margin-bottom" : "12px";
+                    "border" : "3px solid white";
+                    "display" : "flex";
+                    "align-items" : "center";
+                    "justify-content" : "center";
+                    "background-color" : "rgb(86, 176, 255)";
+                }
+
+
+                div {
+                    text "Jane Doe" {text_one_theme;}
+                    text "Frontend Developer" {text_two_theme;}
+                    text "Passionate about building clean, accessible interfaces. Open to new opportunities." {
+                        "font-size" : "11px";
+                        text_two_theme;
+                    };
+                }
+
+                div {
+                    "display" : "flex";
+                    "gap" : "8px";
+                    "flex-direction" : "row";
+                    "width" : "100%";
+                    Ptr string pills;
+                    pills << "CSS"; pills << "HTML"; pills << "React";
+                    int pills_len = pills.length;
+                    int pill_width = 100/pills_len;
+                    string pw_as_percent = to_string(pill_width)+"%";
+                    for(int i=0;i<pills_len;i++) {
+                        div {
+                            "width" : pw_as_percent;
+                            pill_theme;
+                            text pills[i] {
+                                text_three_theme;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+[:]PAGE BAR TEST
+
+inlined banner_theme {
+    "background-color" : "rgb(40, 28, 89)";
+}
+inlined card_theme {
+    "border-radius" : "8px";
+    "background-color" : "rgb(67, 67, 67)";
+}
+inlined pill_theme {
+    "border-radius" : "10px";
+    "background-color" : "rgb(205, 253, 255)";
+    "display" : "flex";
+    "align-items" : "center";
+    "justify-content" : "center";
+}
+inlined main_font {
+    "font-family" : "system-ui, sans-serif";
+}
+inlined text_one_theme {
+    "font-size" : "15px";
+    "font-weight" : "800";
+    "color" : " rgb(251, 251, 251)";
+    main_font;
+}
+inlined text_two_theme {
+    "font-size" : "12px";
+    "font-weight" : "400";
+    "color" : " rgb(207, 207, 207)";
+    main_font;
+}
+inlined text_three_theme {
+    "font-size" : "10px";
+    "font-weight" : "400";
+    "color" : " rgb(30, 42, 87)";
+    main_font;
+}
+
+##
+    register root_path;
+    "root_path" {
+        in htmlemiting {
+            emit_contents;
+        }
+    }
+##
+
+root_path {
+    script read_file("mixos-acorn/web/thistle/thistle.js");
+    button {
+        text "RESET";
+        "onclick" : "resetWebrunner();";
+    }
+
+    div {
+        "display" : "flex";
+        "width" : "100%";
+        "height" : "100%";
+        "align-items" : "top";
+        "justify-content" : "center";
+        div {
+            "display" : "flex";
+            "flex-direction" : "row";
+            "width" : "100%";
+            "height" : "10%";
+            "align-items" : "center";
+            "justify-content" : "center";
+            "padding" : "10px";
+            banner_theme;
+            div {
+                "flex" : "1";
+                text "My App" {"font-size" : "24px"; text_one_theme;}
+            }
+            div {
+                "flex" : "3";
+                "display" : "flex";
+                "flex-direction" : "row";
+                stateless template div nav(string label, string behaviour) {
+                    div {
+                        "flex" : "1";
+                        "display" : "flex";
+                        "align-items" : "center";
+                        "justify-content" : "center";
+                        "background-color" : "transparent";
+                        "onmouseenter" : "if(this.style.backgroundColor==='transparent')this.style.backgroundColor='rgba(0,0,0,0.25)'";
+                        "onmouseleave" : "if(this.style.backgroundColor==='rgba(0, 0, 0, 0.25)')this.style.backgroundColor='transparent'";
+                        text label {
+                            "font-size" : "14px";
+                            text_two_theme;
+                        }
+                        "onclick" : behaviour;
+                    }
+                }
+                nav("Home","goTo('/home')");
+                nav("About","goTo('/about')");
+                nav("Projects","goTo('/projects')");
+                nav("Contact","goTo('/contact')");
+            }
+            div {
+                "flex" : "1";
+                "padding" : "24px";
+                div {
+                    "border-radius" : "10px";
+                    "background-color" : "rgb(140, 68, 212)";
+                    "display" : "flex";
+                    "align-items" : "center";
+                    "justify-content" : "center";
+                    text "Sign in" {
+                        "font-weight" : "600";
+                        text_one_theme;
+                    }
+                }
+            }
+            
+        }
+    }
+}
+

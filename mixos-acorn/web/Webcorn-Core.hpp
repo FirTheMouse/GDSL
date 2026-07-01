@@ -317,6 +317,16 @@ namespace Acorn {
         });
 
 
+        // std::string add_function();
+        // uint32_t http_get_id = add_function("http_get", [this](Context& ctx){
+        //     standard_sub_process(ctx);
+        //     std::string url = string(*(Ptr*)ctx.node().children()[0].value().get()).to_std();
+        //     // parse host/path, connect, send GET, read response
+        //     string output = resolve_string_ticket(ctx.node());
+        //     output = /* response body */;
+        // }, sizeof(Ptr), string_id);
+
+
         void manage_sessions(const std::string& unitcode) {
             while(true) {
                 g_ptr<Webcorn_Core> unit = nullptr;

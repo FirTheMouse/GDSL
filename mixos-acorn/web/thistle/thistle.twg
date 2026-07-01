@@ -1109,9 +1109,12 @@ stateless template div build_render_sheet(int spool) {
 
     global int inbox_sheetpool; inbox_sheetpool = 0;
     global string inbox_sheetname; inbox_sheetname = "";
+    global string inbox_on_tab; inbox_on_tab = "Inbox";
 ##
 
 inbox {
+    Ptr string files;
+    string inbox_path;
     div inbox_root {
         sidebar_reload_target = call_owner(inbox_root);
         style "
@@ -1149,8 +1152,10 @@ inbox {
                 } else {
                     div inbox_display {
                         "width" : "100%";
-                        Ptr string files = list_files_in_directory("mixos-acorn/web/thistle/users/fir/inbox");
-                        stateless template div file_temp(string path, string id, bool is_sent) {
+                        "display" : "flex";
+                        "gap" : "8px";
+                        "padding" : "8px";
+                          stateless template div file_temp(string path, string id, bool is_sent) {
                             div {
                                 "display" : "flex";
                                 "flex-direction" : "row";
@@ -1167,7 +1172,7 @@ inbox {
                                     inbox_sheetpool = load_sheet(fpath+"/"+fid);
                                     inbox_sheetname = fid;
                                     print("Loaded ",fid," as ",inbox_sheetpool);
-                                    inbox_root.reload;
+                                    inbox_display.reload;
                                 }
                                 "oncontextmenu" : capture(
                                     string fidt ; js_lit(id),
@@ -1186,18 +1191,59 @@ inbox {
                             }
                         }
 
-                        "display" : "flex";
-                        "gap" : "8px";
-                        "padding" : "8px";
-
+                        if(inbox_on_tab=="Inbox") {
+                            inbox_path = "mixos-acorn/web/thistle/users/fir/inbox";
+                            files = list_files_in_directory(inbox_path);
+                        } else if(inbox_on_tab=="Sent") {
+                            inbox_path = "mixos-acorn/web/thistle/users/fir/sheets";
+                            files = list_files_in_directory(inbox_path);
+                        }
+                        
                         div {
                             "display" : "flex";
-                            "flex" : "1";
-                            "width" : "30%";
                             "flex-direction" : "column";
-                            "gap" : "4px";
-                            for(int i=0;i<files.length;i++) {
-                                file_temp("mixos-acorn/web/thistle/users/fir/inbox",files.get(i),false);
+                            "width" : "30%";
+                            "gap" : "2%";
+                            div {
+                                "flex" : "1";
+                                "display" : "flex";
+                                "flex-direction" : "row";
+                                "justify-contents" : "start";
+                                "gap" : "2%";
+                                stateless template div inbox_tab(string label) {
+                                    div {
+                                        "flex" : "1";
+                                        "display" : "flex";
+                                        "justify-contents" : "center";
+                                        "align-items" : "center";
+                                        "border-radius" : "8px";
+                                        "background-color" : (inbox_on_tab==label?"rgb(188, 188, 188)":"white");
+                                        "onclick" : capture(
+                                            string flabel ; js_lit(label)
+                                        ){
+                                            inbox_on_tab=flabel;
+                                            inbox_display.reload;
+                                        }
+                                        "padding" : "4px";
+                                        text label {
+                                            "flex" : "1";
+                                            "margin" : "8px";
+                                            text_theme;
+                                        }
+                                    }
+                                }
+                                inbox_tab("Inbox");
+                                inbox_tab("Sent");
+                            }
+                            
+                            div {
+                                "display" : "flex";
+                                "flex" : "20";
+                                "flex-direction" : "column";
+                                "gap" : "4px";
+                                for(int i=0;i<files.length;i++) {
+                                    file_temp(inbox_path,files.get(i),false);
+                                }
                             }
                         }
 

@@ -1,2 +1,3 @@
-"Words","Phrases","More","Data"
-"10","Words","3","June 7th"
+"Type","Amount"
+"Gym","33"
+"Transit","204"

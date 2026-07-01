@@ -263,6 +263,15 @@ while(0<1) {
             unit_setindex(0);
             continue;
         }
+
+        if(method=="RESET") {
+            print("Recompiled webrunner");
+            twig = compile(read_file("mixos-acorn/web/test.twg"));
+            page = twig.children.get(0);
+            method="GET";
+        }   
+        print("METHOD: ",method);
+
         for(int i=0;i<twig.children.length;i++) {
             Node child = twig.children.get(i);
             if(labels(child.type)==path) {
@@ -274,6 +283,7 @@ while(0<1) {
         string response = "";
 
         if(method=="GET") {
+            print("GETTING");
             ctx.source = "";
             htmlemit page;
             response_body.append(ctx.source);

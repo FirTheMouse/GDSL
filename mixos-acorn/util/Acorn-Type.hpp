@@ -449,7 +449,7 @@ namespace Acorn {
     struct Col : CCol {
         Col() {}
         Col(uint32_t _size) :  CCol(_size) {}
-        Col(const Col& o) : CCol(o), heterogenous(o.heterogenous), label(o.label), cells(o.cells) {}
+        Col(const Col& o) : CCol((const CCol&)o), heterogenous(o.heterogenous), label(o.label), cells(o.cells) {}
         Col(CCol q) : CCol(q) {}
         Col& operator=(Col&& o) {
             if(this == &o) return *this;

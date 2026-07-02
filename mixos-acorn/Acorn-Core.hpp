@@ -1,6 +1,8 @@
 #pragma once
 
 #include <thread>
+#include <mutex>
+#include <filesystem>
 #include "../core/Golden.hpp"
 #include "../mixos-acorn/util/Acorn-Type.hpp"
 #include "../ext/g_lib/core/q_object.hpp"

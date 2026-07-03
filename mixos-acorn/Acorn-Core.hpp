@@ -21,6 +21,7 @@ namespace Acorn {
         ColCol(const ColCol& o) : Col(sizeof(Col)) {
             element_size = o.element_size;
             tag = o.tag;
+            gen = o.gen;
             heterogenous = o.heterogenous;
             label = QCol(o.label);
             free = o.free;
@@ -73,10 +74,11 @@ namespace Acorn {
      //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
      uint32_t create_column(ColCol& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
         if(use_pooling&&!col.free.empty()) {
-            //Lazy version
+            //Lazy version that doesn't care about tags or sizes
             uint32_t idx = col.free.pop();
             Col& ncol = col[idx];
-            ncol.clear(); ncol.element_size = size; ncol.tag = tag;
+            ncol.clear(); ncol.element_size = size; ncol.tag = tag;  
+            ncol.gen++; //Gen only goes up to 65,535 it'll wraparound after that
             ncol.live = true;
             return idx; 
             
@@ -1256,20 +1258,24 @@ namespace Acorn {
 
         inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
             Ptr ticket(&types,type_id,create_column(types[type_id],size,tag,true),0);
+            ticket.gen = resolve_to_col(ticket).gen;
             return ticket;
         }
 
         inline Ptr get_ticket(ColCol* pool, uint32_t size, uint32_t tag) {
             Ptr ticket(pool,create_column(*pool,size,tag,true),0);
+            ticket.gen = resolve_to_col(ticket).gen;
             return ticket;
         }
 
         inline Ptr get_ticket(Ptr storeptr, uint32_t size, uint32_t tag) {
             if(storeptr.cachelevel==0) {
                 Ptr ticket(storeptr.unit,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
+                ticket.gen = resolve_to_col(ticket).gen;
                 return ticket;
             } else {
                 Ptr ticket(storeptr.cache,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
+                ticket.gen = resolve_to_col(ticket).gen;
                 return ticket;
             }
         }
@@ -1422,6 +1428,7 @@ namespace Acorn {
             n.cachelevel = 3;
             Col& col = types[node_type_id][n.idx];
             col.heterogenous = true;
+            n.gen = col.gen;
     
             col.qset(node_type_offset,(void*)&type,4);
             col.qset(node_sub_type_offset,(void*)&sub_type,4);
@@ -1553,6 +1560,7 @@ namespace Acorn {
             v.unit = uid;
             Col& col = types[value_type_id][v.idx];
             col.heterogenous = true;
+            v.gen = col.gen;
         
             col.qset(value_type_offset, (void*)&type, 4);
             col.qset(value_sub_type_offset, (void*)&sub_type, 4);
@@ -1582,6 +1590,7 @@ namespace Acorn {
             c.unit = uid;
             Col& col = types[context_type_id][c.idx];
             col.heterogenous = true;
+            c.gen = col.gen;
         
             Ptr dead_node = deadptr;
             Ptr dead_value = deadptr;
@@ -2751,6 +2760,7 @@ namespace Acorn {
     inline Ptr get_ticket_from_unit(Ptr p, uint32_t type_id, uint32_t size, uint32_t tag) {
         if(p.cachelevel==3) {
             Ptr ticket(p.cache,type_id,create_column(resolve_to_unit(p)[type_id],size,tag,true),0);
+            ticket.gen = resolve_to_col(ticket).gen;
             return ticket;
         } else if(p.cachelevel==0) {
             std::lock_guard<std::mutex> lock(units_mutex);

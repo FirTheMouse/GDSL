@@ -152,7 +152,7 @@ namespace Acorn {
             };
             void* cache;
         };
-        uint16_t unknown16;
+        uint16_t gen;
         uint8_t specialization; 
         uint8_t cachelevel;
         uint32_t device; 
@@ -164,7 +164,7 @@ namespace Acorn {
         inline bool operator==(const Ptr& other) const {
             return pool == other.pool && idx == other.idx && sidx == other.sidx && 
                 unit == other.unit && device == other.device &&
-                cachelevel == other.cachelevel && 
+                cachelevel == other.cachelevel && gen == other.gen &&
                 (cachelevel == 0 ? (zone == other.zone && region == other.region) : (cache == other.cache));
         }
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
@@ -348,6 +348,7 @@ namespace Acorn {
             index = o.index;
             cachelevel = o.cachelevel;
             live = o.live;
+            gen = o.gen;
         }
         CCol(CCol&& o) : QCol(std::move(o)) {
             element_size = o.element_size;
@@ -356,6 +357,7 @@ namespace Acorn {
             index = o.index;
             cachelevel = o.cachelevel;
             live = o.live;
+            gen = o.gen;
         }
         CCol& operator=(CCol&& o) {
             if(this == &o) return *this;
@@ -366,6 +368,7 @@ namespace Acorn {
             index = o.index;
             cachelevel = o.cachelevel;
             live = o.live;
+            gen = o.gen;
             return *this;
         }
         uint32_t element_size = 1;
@@ -374,6 +377,7 @@ namespace Acorn {
         uint32_t index = 0;
         uint8_t cachelevel = 0;
         bool live = true;
+        uint16_t gen = 0;
 
         inline uint32_t length() const {if(element_size==0||size==0) {return 0;} else {return size / element_size;}}
         void push(const void* element) {
@@ -560,10 +564,6 @@ namespace Acorn {
         return at;
     }
 
-   
-
-
-
     static void write_qcol(std::ostream& out, QCol& col) {
         write_raw<uint32_t>(out, col.size);
         out.write((const char*)col.storage, col.size);
@@ -583,6 +583,7 @@ namespace Acorn {
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, col.hash);
+        write_raw<uint32_t>(out, col.gen);
         write_raw<bool>(out, col.live);
     }
 
@@ -591,6 +592,7 @@ namespace Acorn {
         col.element_size = read_raw<uint32_t>(in);
         col.tag = read_raw<uint32_t>(in);
         col.hash = read_raw<uint32_t>(in);
+        col.gen = read_raw<uint32_t>(in);
         col.live = read_raw<bool>(in);
         return col;
     }
@@ -645,6 +647,7 @@ namespace Acorn {
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, col.hash);
+        write_raw<uint32_t>(out, col.gen);
         write_raw<bool>(out, col.live);
         write_raw<bool>(out, col.heterogenous);
         write_qcellcol(out, col.cells);
@@ -662,6 +665,7 @@ namespace Acorn {
         col.element_size = read_raw<uint32_t>(in);
         col.tag = read_raw<uint32_t>(in);
         col.hash = read_raw<uint32_t>(in);
+        col.gen = read_raw<uint32_t>(in);
         col.live = read_raw<bool>(in);
         col.heterogenous = read_raw<bool>(in);
         col.cells = read_qcellcol(in);

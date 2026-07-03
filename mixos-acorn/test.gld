@@ -1,13 +1,2 @@
-
-##
-    global string reload(Context c, Node n) {
-        print("SRC: ",c.source);
-        execut n;
-        print("AFTER: ",c.source);
-        return ctx.source;
-    }  
-    
-     
-
-##
-
+int i = 5;
+print(i);

@@ -1965,8 +1965,8 @@ namespace Acorn {
             });
         }
 
-        void dump_unit(bool clear_dump) {
-            if(clear_dump) writeFile("printout.txt","");
+        void dump_unit(bool clear_dump, std::string path = "printout.txt") {
+            if(clear_dump) writeFile(path,"");
 
             for(int t=0;t<types.length();t++) {
                 std::string to_print = "";
@@ -1976,7 +1976,7 @@ namespace Acorn {
                 to_print += "\n\n\n";
                 // print("COMMITING: ",t);
                 // print("TEXT: ",to_print);
-                editTextFile("printout.txt",[to_print](std::string& source){
+                editTextFile(path,[to_print](std::string& source){
                     source+=to_print;
                 });
             }

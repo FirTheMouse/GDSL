@@ -68,7 +68,7 @@ static inline std::string bg(const std::string& text, int r, int g, int b) {
 }
 
 
-std::string to_bin(uint32_t n) {
+static inline std::string to_bin(uint32_t n) {
   std::string s = "";
   for(int i = 31; i >= 0; i--) {
       s += ((n >> i) & 1) ? '1' : '0';
@@ -76,7 +76,7 @@ std::string to_bin(uint32_t n) {
   return s;
 }
 
-std::string to_hex(uint32_t n) {
+static inline  std::string to_hex(uint32_t n) {
   const char digits[] = "0123456789ABCDEF";
   std::string s = "0x";
   for(int i = 28; i >= 0; i -= 4) {

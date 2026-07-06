@@ -169,7 +169,7 @@ inline std::ofstream openWriteStream(const std::string& path) {
       return s;
   }
 
-  std::vector<uint8_t> readFileBytes(const std::string& path) {
+  static inline  std::vector<uint8_t> readFileBytes(const std::string& path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if(!file) { print(red("readFileBytes: failed to open "+path)); return {}; }
     size_t size = file.tellg();
@@ -179,13 +179,13 @@ inline std::ofstream openWriteStream(const std::string& path) {
     return bytes;
 }
 
-void writeFileBytes(const std::string& path, const std::vector<uint8_t>& bytes) {
+static inline void writeFileBytes(const std::string& path, const std::vector<uint8_t>& bytes) {
     std::ofstream file(path, std::ios::binary);
     if(!file) { print(red("writeFileBytes: failed to open "+path)); return; }
     file.write((const char*)bytes.data(), bytes.size());
 }
 
-void writeHex(const std::string& path, const std::vector<uint8_t>& bytes) {
+static inline void writeHex(const std::string& path, const std::vector<uint8_t>& bytes) {
     std::ofstream file(path);
     for(size_t i = 0; i < bytes.size(); i++) {
         if(i % 16 == 0) file << "\n" << std::hex << std::setw(8) << std::setfill('0') << i << ":  ";

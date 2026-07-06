@@ -815,10 +815,13 @@ namespace Acorn {
 
             Handler discard = [this](Context& ctx){
                 if(ctx.index()>0) {
+                    ctx.result().get(ctx.index()).quals() << turn_into_token(ctx.result().take(ctx.index()));
                     ctx.index()--;
-                    ctx.result().get(ctx.index()).quals() << turn_into_token(ctx.result().take(ctx.index()+1));
                 } else if(is_live(ctx.root())) {
                     ctx.root().quals() << turn_into_token(ctx.result().take(ctx.index()));
+                    if(!ctx.result().empty()) {
+                        ctx.index()--;
+                    }
                 }
             };
             t_handlers[end_id] = discard;
@@ -1873,9 +1876,7 @@ namespace Acorn {
             Node n = root.children()[0];
             if(root.children().length()>1) {
                 n.type(string_id);
-                for(int i=1;i<root.children().length();i++) {
-                    n.name().push(" "+root.children()[i].name().to_std());
-                }
+                n.name(literal);
             } else {
                 if(n.type()==identifier_id) {
                     n.type(string_id);

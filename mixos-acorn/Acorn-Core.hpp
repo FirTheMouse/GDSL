@@ -2483,7 +2483,7 @@ namespace Acorn {
                     ctx.node(ctx.result()[i]);
                     standard_process(ctx);
                     DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                    ctx.left(ctx.result()[i]);
+                    if(i>=0) {ctx.left(ctx.result()[i]);} else {ctx.left(deadptr);}
                 }
                 i++;
             }
@@ -2493,7 +2493,7 @@ namespace Acorn {
                     ctx.node(ctx.result()[i]);
                     standard_process(ctx);
                     DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                    ctx.left(ctx.result()[i]);
+                    if(i>=0) {ctx.left(ctx.result()[i]);} else {ctx.left(deadptr);}
                 }
                 i++;
             }

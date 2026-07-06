@@ -229,4 +229,31 @@ inline list<std::string> listFilesInDirectory(const std::string& path) {
     return files;
 }
 
+inline list<std::string> listDirectoriesInDirectory(const std::string& path) {
+    list<std::string> dirs;
+    #ifdef _WIN32
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA((path+"\\*").c_str(), &fd);
+        if(h == INVALID_HANDLE_VALUE) { print(red("listDirectoriesInDirectory: failed to open "+path)); return dirs; }
+        do {
+            if((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && 
+               std::string(fd.cFileName) != "." && 
+               std::string(fd.cFileName) != "..") {
+                dirs << fd.cFileName;
+            }
+        } while(FindNextFileA(h, &fd));
+        FindClose(h);
+    #else
+        DIR* dir = opendir(path.c_str());
+        if(!dir) { print(red("listDirectoriesInDirectory: failed to open "+path)); return dirs; }
+        struct dirent* entry;
+        while((entry = readdir(dir)) != nullptr) {
+            if(entry->d_type == DT_DIR && entry->d_name[0] != '.')
+                dirs << entry->d_name;
+        }
+        closedir(dir);
+    #endif
+    return dirs;
+}
+
 

@@ -1594,6 +1594,11 @@ namespace Acorn {
                 }
             };         
 
+            t_handlers[for_id] = [this](Context& ctx){
+                for(int i=0;i<ctx.node().children().length();i++) {
+                    place_node_in_scope(ctx.node().children()[i],ctx.node().scopes()[0]);
+                }
+            };
             r_handlers[for_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 ctx.node().scopes()[0].value(make_value());

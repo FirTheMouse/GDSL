@@ -805,7 +805,7 @@ namespace Acorn {
         size_t dot_id = add_binary_operator('.', "DOT", 8, 9);
         size_t pipe_id = add_binary_operator('|', "PIPE", 9, 8);
         uint32_t qmark_id = add_binary_operator('?',"QMARK",1,3);
-        uint32_t property_id = add_binary_operator(':',"COLON",5,6);
+        uint32_t property_id = add_binary_operator(':',"COLON",3,6);
         uint32_t hash_id = add_binary_operator('#',"HASH",5,6);
 
         uint32_t  add_binding_token_combo(const std::string& f, int lbp, int rbp, char a, char b, char c = '\0', char d = '\0') {

@@ -1955,18 +1955,18 @@ namespace Acorn {
         }
 
         void dump_pool(ColCol& pool, uint32_t index, bool clear_dump) {
-            if(clear_dump) writeFile("mixos-acorn/tests/printout.txt","");
+            if(clear_dump) writeFile("printout.txt","");
             std::string to_print = "";
             to_print += "TYPE "+std::to_string(index)+" "+pool.label.to_std()+(pool.tag!=0?" ["+labels[pool.tag]+"]":"")+":\n";
             to_print += type_to_string(pool);
             to_print += "\n\n\n";
-            editTextFile("mixos-acorn/tests/printout.txt",[to_print](std::string& source){
+            editTextFile("printout.txt",[to_print](std::string& source){
                 source+=to_print;
             });
         }
 
         void dump_unit(bool clear_dump) {
-            if(clear_dump) writeFile("mixos-acorn/tests/printout.txt","");
+            if(clear_dump) writeFile("printout.txt","");
 
             for(int t=0;t<types.length();t++) {
                 std::string to_print = "";
@@ -1976,7 +1976,7 @@ namespace Acorn {
                 to_print += "\n\n\n";
                 // print("COMMITING: ",t);
                 // print("TEXT: ",to_print);
-                editTextFile("mixos-acorn/tests/printout.txt",[to_print](std::string& source){
+                editTextFile("printout.txt",[to_print](std::string& source){
                     source+=to_print;
                 });
             }

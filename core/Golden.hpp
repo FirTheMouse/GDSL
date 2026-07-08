@@ -29,6 +29,11 @@ static inline void log(Args&&... args) {
     #endif
 }
 
+template<typename... Args>
+static inline void log_and_print(Args&&... args) {
+    print(std::forward<Args>(args)...); log(std::forward<Args>(args)...);
+}
+
 std::string ptr_to_string(uint64_t addr) {
     uint64_t varied = addr >> 4;
     

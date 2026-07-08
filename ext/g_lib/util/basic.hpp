@@ -32,6 +32,9 @@ static inline std::string red(const std::string& text) {
 static inline std::string blue(const std::string& text) {
   return "\x1b[34m"+text+"\x1b[0m";
 }
+static inline std::string navy(const std::string& text) {
+  return "\x1b[38;5;18m"+text+"\x1b[0m";
+}
 static inline std::string magenta(const std::string& text) {
   return "\x1b[35m"+text+"\x1b[0m";
 }

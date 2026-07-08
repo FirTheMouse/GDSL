@@ -1,2 +1,4 @@
-int i = 5;
-print(i);
+global int i; test;
+static global int b; test;
+global Ptr int nums; test;
+static global Ptr Ptr int nested; test;

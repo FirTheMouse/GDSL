@@ -13,6 +13,7 @@ namespace Acorn {
     static int _ctx_dummy_index = 0;
     class Unit;
     struct Node;
+    struct Context;
     struct Value;
 
     struct ColCol : Col {
@@ -279,6 +280,7 @@ namespace Acorn {
         inline int find(string look_for, int start_at, int nth_of = 1) {
             int found_at = -1;
             for(int i=start_at;i<col().length();i++) {
+                if(i+look_for.length() > col().length()) break; 
                 bool match = true;
                 for(int s=0;s<look_for.length();s++) {
                     if(*(char*)col()[i+s]!=look_for[s]) {
@@ -416,15 +418,28 @@ namespace Acorn {
         global[handler_type_id][at].push_default();
         return at;
     }
-
     uint32_t prefix_ptr_id = global_reg_id("prefix_ptr"); uint32_t suffix_ptr_id = global_reg_id("suffix_ptr");
-    uint32_t float_id = global_reg_id("float"); uint32_t prefix_float_id = global_reg_id("prefix_float"); uint32_t suffix_float_id = global_reg_id("suffix_float");
-    uint32_t int_id = global_reg_id("int"); uint32_t prefix_int_id = global_reg_id("prefix_int"); uint32_t suffix_int_id = global_reg_id("suffix_int");
-    uint32_t bool_id = global_reg_id("bool"); uint32_t prefix_bool_id = global_reg_id("prefix_bool"); uint32_t suffix_bool_id = global_reg_id("suffix_bool");
-    uint32_t string_id = global_reg_id("string"); uint32_t prefix_string_id = global_reg_id("prefix_string"); uint32_t suffix_string_id = global_reg_id("suffix_string");
-    uint32_t char_id = global_reg_id("char"); uint32_t prefix_char_id = global_reg_id("prefix_char"); uint32_t suffix_char_id = global_reg_id("suffix_char");
-    uint32_t ptr4_id = global_reg_id("ptr4"); uint32_t prefix_ptr4_id = global_reg_id("prefix_ptr4"); uint32_t suffix_ptr4_id = global_reg_id("suffix_ptr4");
-    uint32_t duck_id = global_reg_id("duck"); uint32_t prefix_duck_id = global_reg_id("prefix_duck"); uint32_t suffix_duck_id = global_reg_id("suffix_duck");
+
+    uint32_t global_register_type_ids(const std::string& label) {
+        uint32_t id = global_reg_id(label);
+        global_reg_id("prefix_"+label);
+        global_reg_id("suffix_"+label);
+        return id;
+    }
+    //Qual handlers which act on the value
+    size_t to_prefix_id(size_t id) {return id+1;}
+    //Qual handlers which act on the node
+    size_t to_suffix_id(size_t id) {return id+2;}
+
+    uint32_t float_id  = global_register_type_ids("float");
+    uint32_t int_id    = global_register_type_ids("int");
+    uint32_t bool_id   = global_register_type_ids("bool");
+    uint32_t string_id = global_register_type_ids("string");
+    uint32_t char_id   = global_register_type_ids("char");
+    uint32_t ptr4_id   = global_register_type_ids("ptr4");
+    uint32_t duck_id   = global_register_type_ids("duck");
+    uint32_t void_id   = global_register_type_ids("void");
+
     size_t list_id = global_reg_id("list");
     size_t map_id = global_reg_id("map");
     size_t weakptr_id = global_reg_id("weakptr");
@@ -450,10 +465,11 @@ namespace Acorn {
     size_t func_decl_id = global_reg_id("FUNC_DECL");
     size_t type_decl_id = global_reg_id("TYPE_DECL");
 
-    uint32_t sub_pass = global_reg_id("SUB_PASS");
-    uint32_t direct_pass = global_reg_id("DIRECT_PASS");
-    uint32_t travel_pass = global_reg_id("TRAVEL_PASS");
-    uint32_t resolving_pass = global_reg_id("RESOLVING_PASS");
+    uint32_t sub_pass_id = global_reg_id("SUB_PASS");
+    uint32_t process_node_pass_id = global_reg_id("PROCESS_NODE");
+    uint32_t direct_pass_id = global_reg_id("DIRECT_PASS");
+    uint32_t resolving_pass_id = global_reg_id("RESOLVING_PASS");
+    uint32_t travel_pass_id = global_reg_id("TRAVEL_PASS");
 
     size_t tombstone_col = 0; 
     size_t refs_col = 0;
@@ -783,8 +799,6 @@ namespace Acorn {
         inline void      sub_type(uint32_t st)    {memcpy(&storage[node_sub_type_offset],(void*)&st,4);}
     };
 
-
-
     struct Node : public Ptr {
         Node() {}
         Node(Ptr p) : Ptr(p) {}
@@ -857,6 +871,28 @@ namespace Acorn {
         inline bool  resolved()                {DEBUG_ONLY(if(safety_check("node:resolved:get")){return false;}) return *(bool*)resolve_to_col(*this).qget(resolved_offset);}
         inline void  resolved(bool b)          {DEBUG_ONLY(if(safety_check("node:resolved:set")){return;}) resolve_to_col(*this).qset(resolved_offset,(void*)&b,1);}
     
+        inline Node left()                     {DEBUG_ONLY(if(safety_check("node:left")){return deadptr;} if(children().empty()){throw_error("Attempted to get left (first child) but node "+Ptr_to_string(*this)+"'s children was empty"); return deadptr;}) return children()[0];}
+        inline Node right()                    {DEBUG_ONLY(if(safety_check("node:right")){return deadptr;} if(children().length()<2){throw_error("Attempted to get right (second child) but node "+Ptr_to_string(*this)+" did not have 2 children"); return deadptr;}) return children()[1];}
+        inline Node scope()                    {DEBUG_ONLY(if(safety_check("node:scope:get")){return deadptr;}) if(scopes().empty()) {return deadptr;} else {return scopes()[0];}}
+        inline void scope(Node n)              {DEBUG_ONLY(if(safety_check("node:scope:set")){return;}) if(scopes().empty()) {scopes() << n;} else {scopes().col().set(0,(void*)&n);}}
+        inline Node scope_owner()              {DEBUG_ONLY(if(safety_check("node:scope_owner")){return deadptr;}) return scope().owner();}
+        inline Node climb()                    {DEBUG_ONLY(if(safety_check("node:climb")){return deadptr;} if(!is_live(in_scope())){throw_error("Attempted to climb but node "+Ptr_to_string(*this)+" is not in a live scope"); return deadptr;}) return in_scope().owner();}
+        inline Node c0()                       {DEBUG_ONLY(if(safety_check("node:c0")){return deadptr;} if(children().empty()){throw_error("Attempted to first child but node "+Ptr_to_string(*this)+"'s children was empty"); return deadptr;}) return children()[0];}
+        inline Node c1()                       {DEBUG_ONLY(if(safety_check("node:c1")){return deadptr;} if(children().length()<2){throw_error("Attempted to get second child but node "+Ptr_to_string(*this)+" did not have 2 children"); return deadptr;}) return children()[1];}
+        
+        inline void* get()                     {DEBUG_ONLY(if(safety_check("node:get")){return nullptr;} if(!is_live(value())){throw_error("Attempted to get value but node "+Ptr_to_string(*this)+" does not have a live value"); return nullptr;}) return value().get();}
+        inline void* get(uint32_t i)           {DEBUG_ONLY(if(safety_check("node:get:with_arg")){return nullptr;} if(i>=children().length()){throw_error("Attempted to get value of child ",i," but node "+Ptr_to_string(*this)+" only has ",children().length()," children"); return nullptr;}) return children()[i].get();}
+        inline void set(void* v)               {DEBUG_ONLY(if(safety_check("node:set")){return;} if(!is_live(value())){throw_error("Attempted to set value but node "+Ptr_to_string(*this)+" does not have a live value"); return;}) value().set(v);}
+        inline void set(uint32_t i, void* v)   {DEBUG_ONLY(if(safety_check("node:set:with_arg")){return;} if(i>=children().length()){throw_error("Attempted to set value of child ",i," but node "+Ptr_to_string(*this)+" only has ",children().length()," children"); return;}) return children()[i].set(v);}
+        inline int&    getInt()                {DEBUG_ONLY(if(safety_check("node:getInt")){return _ctx_dummy_index;}) return *(int*)get();}                 inline int&    getInt(uint32_t i)    {DEBUG_ONLY(if(safety_check("node:getInt:i")){return _ctx_dummy_index;}) return *(int*)get(i);}
+        inline float&  getFloat()              {DEBUG_ONLY(if(safety_check("node:getFloat")){return *(float*)&_ctx_dummy_index;}) return *(float*)get();}   inline float&  getFloat(uint32_t i)  {DEBUG_ONLY(if(safety_check("node:getFloat:i")){return *(float*)&_ctx_dummy_index;}) return *(float*)get(i);}
+        inline bool&   getBool()               {DEBUG_ONLY(if(safety_check("node:getBool")){return *(bool*)&_ctx_dummy_index;}) return *(bool*)get();}      inline bool&   getBool(uint32_t i)   {DEBUG_ONLY(if(safety_check("node:getBool:i")){return *(bool*)&_ctx_dummy_index;}) return *(bool*)get(i);}
+        inline Ptr&    getPtr()                {DEBUG_ONLY(if(safety_check("node:getPtr")){return dead_ref;}) return *(Ptr*)get();}                         inline Ptr&    getPtr(uint32_t i)    {DEBUG_ONLY(if(safety_check("node:getPtr:i")){return dead_ref;}) return *(Ptr*)get(i);}
+        inline string  getString()             {DEBUG_ONLY(if(safety_check("node:getString")){return deadptr;}) return getPtr();}                           inline string  getString(uint32_t i) {DEBUG_ONLY(if(safety_check("node:getString:i")){return deadptr;}) return getPtr(i);}
+        inline Node    getNode()               {DEBUG_ONLY(if(safety_check("node:getNode")){return deadptr;}) return getPtr();}                             inline Node    getNode(uint32_t i)   {DEBUG_ONLY(if(safety_check("node:getNode:i")){return deadptr;}) return getPtr(i);}
+        inline Value   getValue()              {DEBUG_ONLY(if(safety_check("node:getValue")){return deadptr;}) return getPtr();}                            inline Value   getValue(uint32_t i)  {DEBUG_ONLY(if(safety_check("node:getValue:i")){return deadptr;}) return getPtr(i);}
+        inline Context getContext(); inline Context getContext(uint32_t i);
+
         inline void copy(Node o) {
             Col& src = resolve_to_col(o);
             Col& dst = resolve_to_col(*this);
@@ -978,6 +1014,9 @@ namespace Acorn {
         inline void     flag(bool b)         {DEBUG_ONLY(if(safety_check("context:flag:set")){return;}) resolve_to_col(*this).qset(context_flag_offset,(void*)&b,1);}
     };
 
+    inline Context Node::getContext() {DEBUG_ONLY(if(safety_check("node:getContext")){return deadptr;}) return getPtr();}  inline Context Node::getContext(uint32_t i) {DEBUG_ONLY(if(safety_check("node:getContext:i")){return deadptr;}) return getPtr(i);}
+
+    
     bool init_type_pool() {
         global[handler_type_id].label = "handlers";
         global[layout_type_id].label = "layouts";
@@ -1330,7 +1369,12 @@ namespace Acorn {
             #if NAMED_PTRS
                 std::string plabel = resolve_to_pool(p).label.empty()?std::to_string(p.pool):resolve_to_pool(p).label.to_std();
                 std::string pidx = resolve_to_col(p).label.empty()?std::to_string(p.idx):resolve_to_col(p).label.to_std();
-                std::string pstring = std::to_string(p.unit)+"|"+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
+                std::string pstring = "";
+                if(p.cachelevel==3) {
+                    pstring = plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
+                } else {
+                    pstring = std::to_string(p.unit)+"|"+plabel+"|"+pidx+"|"+std::to_string(p.sidx)+"";
+                }
                 uint64_t key = Ptr_to_key(p);
             
                 if(ptr_colors.hasKey(key)) {ptr_colors.get(key)(pstring);}
@@ -1984,28 +2028,26 @@ namespace Acorn {
 
         #define ACORN_DISPLAY_SUB_VALUES 0
 
-        std::string value_info(Value value, std::string indent = "") {
+        std::string value_info(Value value, int verbosity = 0, std::string indent = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(value)),red(" while another error was active")); return "";})
 
             std::string to_return = "";
             to_return += cyan("["+Ptr_as_string(value)+"]")+
-            + "(type: " + green(labels[value.type()])
-            + (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"");
+            + "("+ green(labels[value.type()]) + (value.size()!=0?green("["+std::to_string(value.size())+"]"):"")
+            + (value.sub_type()==0?"":green(":"+labels[value.sub_type()])) + (value.sub_size()!=0?green("["+std::to_string(value.sub_size())+"]"):"");
             if(is_live(value.data_ptr())) { //For post-mortems we want to see the adress, so it needs to be computed first, before the error
                 std::string ptr_addr = Ptr_as_string(value.data_ptr());
                 if(resolve_to_col(value.data_ptr()).empty()) {
-                    to_return += ", value: "+gray("empty")+" @"+ptr_addr;
+                    to_return += " "+gray("empty")+" @"+ptr_addr;
                 } else {
                     std::string tagstr = tag_to_str(value.type(),value.get());
                     if(tagstr.length()>50) tagstr = tagstr.substr(0,50); //Disable this to disable truncation of large values
-                    to_return += ", value: "+gray(tagstr)+" @"+ptr_addr;
+                    to_return += " "+gray(tagstr)+" @"+ptr_addr;
                 }
                 DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_to_string(value)),red(" but the value was invalid")); return to_return;})
             }
-            to_return += (value.sub_type()!=0?", sub_type: "+labels[value.sub_type()]:"")
+            to_return += (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"")
             + (is_live(value.type_scope())?", type_scope: "+blue(Ptr_as_string(value.type_scope())):"")
-            + (value.size()!=0?", size: "+std::to_string(value.size()):"")
-            + (value.sub_size()!=0?", sub_size: "+std::to_string(value.sub_size()):"")
             + (value.address()!=0?", address: "+std::to_string(value.address()):"")
             + (value.loc()!=-1?", loc: "+std::to_string(value.loc()):"")
             + (is_live(value.store_ptr())?", store: "+Ptr_as_string(value.store_ptr()):"");
@@ -2018,12 +2060,14 @@ namespace Acorn {
                     }
                 }
             #else
-                to_return+=(!value.sub_values().empty()?", sub: "+std::to_string(value.sub_values().length()):"");
+                to_return+=(!value.sub_values().empty()?", subvals: "+std::to_string(value.sub_values().length()):"");
             #endif
-            if(!value.quals().empty()) {
-                to_return += ", Quals: ";
-                for(int i=0;i<value.quals().length();i++) {
-                    to_return += labels[value.quals()[i].type()]+(i!=value.quals().length()-1?", ":"");
+            if(verbosity>0) {
+                if(!value.quals().empty()) {
+                    to_return += ", Quals: ";
+                    for(int i=0;i<value.quals().length();i++) {
+                        to_return += labels[value.quals()[i].type()]+(i!=value.quals().length()-1?", ":"");
+                    }
                 }
             }
             to_return += ")";
@@ -2035,7 +2079,7 @@ namespace Acorn {
             return to_return;
         }
         
-        std::string node_info(Node node, std::string indent = "") {
+        std::string node_info(Node node, int verbosity = 20, std::string indent = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
 
             std::string to_return = "";
@@ -2043,35 +2087,38 @@ namespace Acorn {
             + labels[node.type()]
             + (node.sub_type()==0?"":":"+labels[node.sub_type()])
             + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()))+" ") 
-            + (is_live(node.value())?value_info(node.value(),indent):"")
+            + (is_live(node.value())?value_info(node.value(),verbosity,indent):"")
             + (node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"")
             + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")
             + (!node.scopes().empty()?"[S:"+std::to_string(node.scopes().length())+"]":"")
             + (is_live(node.owner())?"[O:"+blue(Ptr_as_string(node.owner()))+"]":"")
             + (is_live(node.in_scope())?"{"+node.in_scope().name().to_std()+"}":"");
             if(!node.quals().empty()) {
-                to_return += "[Q: ";
+                std::string qual_list = "";
                 for(int i=0;i<node.quals().length();i++) {
                     if(node.quals()[i].mute()) {
-                        to_return += italic_str(Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()]);
+                        if(verbosity<1) {continue;}
+                        qual_list += italic_str(Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()]);
                     } else {
-                        to_return += Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()];
+                        qual_list += Ptr_as_string(node.quals()[i])+">"+labels[node.quals()[i].type()];
                     }
-                    to_return+=(i!=node.quals().length()-1?", ":"");
+                    qual_list+=(i!=node.quals().length()-1?", ":"");
                 }
-                to_return += "]";
+                if(qual_list.length()>0) {
+                    to_return += "[Q: "+qual_list+"]";
+                }
             }
             return to_return;
         }
 
         #define ACORN_DISPLAY_TABLES 0
 
-        std::string node_to_string(Node node, int depth = 0, int index = 0, bool print_sub_scopes = false, std::string sigil = "") {
+        std::string node_to_string(Node node, int depth = 0, int index = 0, int verbosity = 1, std::string sigil = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
             std::string indent(depth * 2, ' ');
             std::string to_return = "";
             
-            to_return += indent + sigil + std::to_string(index) + ": " + node_info(node,indent);
+            to_return += indent + sigil + std::to_string(index) + ": " + node_info(node,verbosity,indent);
         
             #if ACORN_DISPLAY_TABLES 
             if(node.value_table().length()>0) {
@@ -2090,8 +2137,6 @@ namespace Acorn {
             }
             #endif
         
-
-
             // if(!node->opt_str.empty()) {
             //     to_return +=  "\n" + indent + "  Opt_str: " + node->opt_str;
             // }
@@ -2102,11 +2147,11 @@ namespace Acorn {
                         if(node.children()[i].idx==node.idx) {
                             to_return+="\n "+indent+red("  self refrence");
                         } else {
-                            to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, print_sub_scopes,"c");
+                            to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, verbosity,"c");
                         }
                     }
                     else {
-                        to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i],indent);
+                        to_return += "\n" + indent + "[NULL CHILD] "+node_info(node.children()[i],verbosity,indent);
                     }
                 }
             }
@@ -2117,14 +2162,106 @@ namespace Acorn {
                 for(int s=0;s<node.scopes().length();s++) {
                     Node scope = node.scopes()[s];
                     if(scope.owner().idx==node.idx) {
-                        to_return += "\n " + node_to_string(scope, depth + 1, s, print_sub_scopes,"s");
+                        to_return += "\n " + node_to_string(scope, depth + 1, s, verbosity,"s");
                     }
                     else {
-                        to_return += "\n"+indent+"  s"+std::to_string(s)+": "+node_info(scope,indent);
+                        to_return += "\n"+indent+"  s"+std::to_string(s)+": "+node_info(scope,verbosity,indent);
                     }
                 }
             }
         
+            return to_return;
+        }
+
+
+        list<Context> get_context_trace(Context ctx) {
+            list<Context> to_return;
+            Context onctx = ctx;
+            while(is_live(onctx)) {
+                to_return << onctx;
+                onctx = onctx.parent();
+            }
+            return to_return;
+        }
+
+        std::string context_result_brick(node_col result, int index, std::string indent) {
+            std::string to_return = indent;
+            for(int i=0;i<result.length();i++) {
+                // if(to_return.length()%100==0) { Fix later if needed
+                //     to_return+=(i>0?"\n":"")+indent;
+                // }
+                if(i==index) {
+                    to_return+=gray(">"+node_basic_info(result[i]))+"| ";
+                } else {
+                    to_return+=node_basic_info(result[i])+"| ";
+                }
+            }
+            return to_return;
+        }
+
+        std::string context_basic_info(Context ctx) {
+            std::string to_return = labels[ctx.pass()];
+            return to_return;
+        }
+    
+        std::string context_info(Context ctx, int verbosity = 0, std::string indent = "", bool folded = false) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(ctx)),red(" while another error was active")); return "";})
+        
+            std::string nl = folded?"":"\n"+indent;
+            std::string to_return = "";
+            to_return += navy(Ptr_as_string(ctx)+" ")
+            + labels[ctx.pass()]+" "
+            + (ctx.state()==0?"":"State: "+std::to_string(ctx.state())+" ")
+            + (!is_live(ctx.source())?"":navy("Source at: ")+Ptr_as_string(ctx.source())+" ")+navy("Index: ")+std::to_string(ctx.index())+" "
+            + (folded?"":"\n"+context_result_brick(ctx.result(),ctx.index(),indent))
+            + (!is_live(ctx.node())?"":nl+navy("Node: ")+node_info(ctx.node(),verbosity,indent)+" ")
+            + (!is_live(ctx.left())?"":nl+navy("Left: ")+node_info(ctx.left(),verbosity,indent)+" ")
+            + (!is_live(ctx.root())?"":nl+navy("Root: ")+node_info(ctx.root(),verbosity,indent)+" ")
+            + (!is_live(ctx.out())?"":nl+navy("Out: ")+node_info(ctx.out(),verbosity,indent)+" ")
+            + (!is_live(ctx.qual())?"":nl+navy("Qual: ")+node_info(ctx.qual(),verbosity,indent)+" ")
+            + (!is_live(ctx.value())?"":nl+navy("Value: ")+value_info(ctx.value(),verbosity,indent)+" ")
+            + (!is_live(ctx.sub())?"":nl+navy("Sub: ")+context_info(ctx.sub(),verbosity,indent+"  "));
+            return to_return;
+        }
+
+        std::string context_to_string(Context ctx, int depth = 0, int index = 0, int verbosity = 1, std::string sigil = "") {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(ctx)),red(" while another error was active")); return "";})
+            std::string indent(depth * 2, ' ');
+            std::string head_handle(depth*2,'=');
+            std::string to_return = "";
+
+            to_return += navy(head_handle+sigil+std::to_string(index)+"> ")+context_info(ctx,verbosity,indent,true);
+
+            if(!ctx.result().empty()) {
+                for(int i=0;i<ctx.result().length();i++) {
+                    if(is_live(ctx.result()[i])) {
+                        to_return += (i==ctx.index()?"\n>":"\n ") + node_to_string(ctx.result()[i], depth + 2, i, verbosity,"n");
+                    }
+                    else {
+                        to_return += (i==ctx.index()?"\n>":"\n ") + indent + "[NULL NODE] ";
+                    }
+                }
+            }
+
+            return to_return;
+        }
+        std::string context_trace_verbose(Context ctx) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(ctx)),red(" while another error was active")); return "";})
+            std::string to_return = "";
+            list<Context> trace = get_context_trace(ctx);
+            for(int i = 0; i<trace.length(); i++) {
+                to_return += context_to_string(trace[i], i*3, i)+"\n";
+            }
+            return to_return;
+        }
+        std::string context_trace_to_string(Context ctx, int verbosity = 0) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(ctx)),red(" while another error was active")); return "";})
+            std::string to_return = "";
+            list<Context> trace = get_context_trace(ctx);
+            for(int i = 0; i<trace.length(); i++) {
+                std::string header = pad_str("["+std::to_string(i)+"] ",6);
+                to_return += header+context_info(trace[i],verbosity,std::string(header.length()+1,' '),false)+"\n";
+            }
             return to_return;
         }
 
@@ -2267,7 +2404,6 @@ namespace Acorn {
             invoke_in(&stage,ctx);
         }
 
-        uint32_t standard_travel_pass(Node root, Context sub = deadptr);
         uint32_t resume_travel_pass(Context ctx);
 
         void suspend() {running = false;}
@@ -2325,25 +2461,28 @@ namespace Acorn {
         }
     
         void process_node(Node node, Node left) {
-            Context ctx = make_context();
+            Context ctx = make_context(deadptr,deadptr,process_node_pass_id,unit_ctx);
+            unit_ctx = ctx;
             process_node(ctx,node,left);
+            unit_ctx = ctx.parent();
             deep_recycle_context(ctx);
         }
     
         void standard_sub_process_node(Node root) {
-            Context ctx = make_context();
+            Context ctx = make_context(deadptr,deadptr,process_node_pass_id,unit_ctx);
+            unit_ctx = ctx;
             ctx.node(root);
             standard_sub_process(ctx);
+            unit_ctx = ctx.parent();
             deep_recycle_context(ctx);
         }
 
         void standard_sub_process(Context& ctx) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a sub_process while an error was flagged")); return;})
             node_col children = ctx.node().children();
-            Context sub_ctx = make_context(children,ctx.source_ptr());
+            Context sub_ctx = make_context(children,ctx.source_ptr(),sub_pass_id,ctx);
             sub_ctx.root(ctx.node());
             sub_ctx.sub(ctx.sub());
-
             int& i = sub_ctx.index();
             while(i < sub_ctx.result().length()) {
                 if(i==0) {
@@ -2352,7 +2491,7 @@ namespace Acorn {
                     process_node(sub_ctx, sub_ctx.result().get(i), sub_ctx.result().get(i-1));
                 }
 
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; print(red("ERROR IN SUB PROCESS:\n"),context_info(sub_ctx)); ERROR_FLAG = true; endline(); return;})
 
                 i++;
             }
@@ -2436,23 +2575,24 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a direct pass while an error was flagged")); return;})
             node_col children = root.children();
             newline("Direct pass over "+std::to_string(children.length())+" nodes");
-            Context ctx = make_context(children);
-            int& i = ctx.index();
+            Context ctx = make_context(children,deadptr,direct_pass_id,unit_ctx);
             ctx.root(root);
-            while(i < ctx.result().length()) {
-                ctx.node(ctx.result().get(i));
+            unit_ctx = ctx;
+            while(unit_ctx.index()< unit_ctx.result().length()) {
+                unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
                 standard_process(ctx);
-                ctx.left(ctx.result().get(i));
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                i++;
+                DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; print(red("ERROR IN DIRECT PASS:\n"),context_info(unit_ctx)); ERROR_FLAG = true; endline(); unit_ctx = unit_ctx.parent(); return;})
+                unit_ctx.left((unit_ctx.index()<0)?deadptr:unit_ctx.result().get(unit_ctx.index()));
+                unit_ctx.index()++;
             }
     
             node_col scopes = root.scopes();
             for(int i = 0; i<scopes.length(); i++) {
                 standard_direct_pass(scopes.get(i));
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                DEBUG_ONLY(if(ERROR_FLAG) {endline(); unit_ctx = unit_ctx.parent(); return;})
             }
             endline();
+            unit_ctx = unit_ctx.parent();
             deep_recycle_context(ctx);
         }
 
@@ -2520,6 +2660,38 @@ namespace Acorn {
             }
             endline();
             deep_recycle_context(ctx);
+        }
+
+        uint32_t standard_travel_pass(Node root, Context sub = deadptr) {
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
+            node_col children = root.children();
+            newline("Travel pass over "+std::to_string(children.length())+" nodes");
+            Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr,travel_pass_id,unit_ctx);
+            ctx.root(root);
+            ctx.sub(sub);
+            unit_ctx = ctx;
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
+            while(unit_ctx.index() < unit_ctx.result().length()) {
+                unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
+                standard_process(unit_ctx);
+                unit_ctx.left((unit_ctx.index()<0)?deadptr:unit_ctx.result().get(unit_ctx.index()));
+                DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; print(red("ERROR IN TRAVEL PASS:\n"),context_info(ctx)); ERROR_FLAG = true; endline(); unit_ctx = unit_ctx.parent(); return 0;})
+                //DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; if(ctx==unit_ctx) {print(red("ERROR IN TRAVEL PASS:\n"),context_trace_verbose(ctx));} ERROR_FLAG = true; endline(); return 0;})
+                if(unit_ctx.state()>0) { //This is the return/break process
+                    DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
+                    endline();
+                    uint32_t state = unit_ctx.state();
+                    unit_ctx = unit_ctx.parent();
+                    deep_recycle_context(ctx);
+                    return state;
+                }
+                unit_ctx.index()++;
+            }
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
+            endline();
+            unit_ctx = unit_ctx.parent();
+            deep_recycle_context(ctx);
+            return 0;
         }
 
         void standard_backwards_child_scopes(Node node) {
@@ -2774,38 +2946,6 @@ namespace Acorn {
         return os;
     }
 
-    //Returns true if flagged for a return/break
-    uint32_t Unit::standard_travel_pass(Node root, Context sub) {
-        DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
-        node_col children = root.children();
-        newline("Travel pass over "+std::to_string(children.length())+" nodes");
-        Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr,travel_pass,unit_ctx);
-        ctx.root(root);
-        ctx.sub(sub);
-        unit_ctx = ctx;
-        DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
-        while(unit_ctx.index() < unit_ctx.result().length()) {
-            unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
-            standard_process(unit_ctx);
-            Node nleft = unit_ctx.result().get(unit_ctx.index());
-            unit_ctx.left(nleft);
-            DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
-            if(unit_ctx.state()>0) { //This is the return/break process
-                DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
-                endline();
-                uint32_t state = unit_ctx.state();
-                unit_ctx = unit_ctx.parent();
-                deep_recycle_context(ctx);
-                return state;
-            }
-            unit_ctx.index()++;
-        }
-        DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
-        endline();
-        unit_ctx = unit_ctx.parent();
-        deep_recycle_context(ctx);
-        return 0;
-    }
     
     //To prove a point about continuations and Seaside
     uint32_t Unit::resume_travel_pass(Context ctx) {

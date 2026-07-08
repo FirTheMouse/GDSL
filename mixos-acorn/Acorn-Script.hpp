@@ -49,7 +49,7 @@ namespace Acorn {
             return deadptr;
         }
 
-        uint32_t test_id = reg_id("TEST");
+        uint32_t test_id = make_tokenized_keyword("test");
         Stage& n_handlers = reg_stage("naming"); 
         
         uint32_t labels_id = make_tokenized_keyword("labels");
@@ -307,6 +307,11 @@ namespace Acorn {
             }
             result = true;
             ctx.node().value().set((void*)&result);
+        });
+        uint32_t check_noequality_string = overload_type(int_id,"!=string","CHECK_NOEQUALITY_STRING",make_value(bool_id,1),[this](Context& ctx){
+            x_handlers.run(check_equality_string)(ctx);
+            bool b = !(*(bool*)ctx.node().value().get());
+            ctx.node().value().set((void*)&b);
         });
 
         uint32_t check_lessthan_or_equalsto_int = overload_type(int_id,"<=int","CHECK_LEQ_INT",make_value(bool_id,1),[this](Context& ctx){
@@ -842,7 +847,7 @@ namespace Acorn {
                 int lbp = *(int*)ctx.node().children()[1].value().get();
                 int rbp = *(int*)ctx.node().children()[2].value().get();
                 set_binding_powers(type,lbp,rbp);
-                print("Set the bidning powers for ",labels[type]," to ",lbp," ",rbp);
+                print("Set the binding powers for ",labels[type]," to ",lbp," ",rbp);
             });
 
             //Revist this idea later once we have proper closures
@@ -1136,7 +1141,7 @@ namespace Acorn {
             x_handlers[var_decl_id] = [this](Context& ctx){
                 fire_quals(ctx,ctx.node().value());
             };
-            r_handlers[prefix_ptr_id] = [this](Context& ctx){
+            r_handlers[to_prefix_id(ptr_id)] = [this](Context& ctx){
                 if(is_live(ctx.value())) {
                     if(ctx.value().quals().length()>1) {
                         int i = 0;
@@ -1157,7 +1162,7 @@ namespace Acorn {
                     }
                 }
             };
-            x_handlers[prefix_ptr_id] = [this](Context& ctx){
+            x_handlers[to_prefix_id(ptr_id)] = [this](Context& ctx){
                 if(is_live(ctx.value())) {
                     if(ctx.value().sub_type()!=0) {
                         Ptr ticket = get_ticket(data_store_id,ctx.value().sub_size(),ctx.value().sub_type());
@@ -1165,7 +1170,7 @@ namespace Acorn {
                     }
                 }
             };
-            x_handlers[prefix_string_id] = [this](Context& ctx){
+            x_handlers[to_prefix_id(string_id)] = [this](Context& ctx){
                 if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
                     Ptr ticket = get_ticket(name_store_id,1,char_id);
                     ctx.value().set((void*)&ticket);
@@ -1451,10 +1456,7 @@ namespace Acorn {
                 ctx.state(standard_travel_pass(ctx.node().scopes()[0]));
             };
 
-            x_handlers[make_tokenized_keyword("test")] = [this](Context& ctx){
-                print("THIS SHOULD NOT PRINT");
-            };
-
+ 
             r_handlers[in_id] = [this](Context& ctx){
                 if(!ctx.node().children().empty()&&is_live(ctx.node().in_scope())&&is_live(ctx.node().in_scope().owner())) {
                     ctx.node().quals() << copy_as_token(ctx.node());
@@ -1781,6 +1783,24 @@ namespace Acorn {
                 }
             };
 
+            // r_handlers[test_id] = [this](Context& ctx) {
+            //     ctx.node().value(make_value(int_id,4));
+            // };
+            // a_handlers[test_id] = [this](Context& ctx){
+            //     print("I'm a test during ",active_stage->label,", looking at my context I see: ");
+            //     print(context_trace_to_string(ctx));
+            // };
+            // x_handlers[test_id] = a_handlers[test_id];
+            x_handlers[test_id] = [this](Context& ctx){
+                Node node = ctx.left();
+                print(node_info(node,1));
+                if(is_live(node.value())) {
+                    for(int q=0;q<node.value().quals().length();q++) {
+                        Node qual = node.value().quals()[q];
+                        print("  ",q,": ",node_info(qual,1)," | ",is_true_type.getOrDefault(qual.type(),false)?"Y":"N");
+                    }
+                }
+            };
 
 
             a_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
@@ -1861,7 +1881,7 @@ namespace Acorn {
             if(post_mortem_printed) return; 
             else post_mortem_printed = true;
 
-            print(red("FINISHED WITH ERROR: "),ERROR_MSG);
+            print(red("UNIT "+std::to_string(uid)+" FINISHED WITH ERROR IN "+active_stage->label+": "),ERROR_MSG);
             ERROR_FLAG = false;
             launch_blackfeather(root);
             ERROR_FLAG = true;

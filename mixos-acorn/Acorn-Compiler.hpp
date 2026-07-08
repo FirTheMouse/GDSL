@@ -33,10 +33,7 @@ namespace Acorn {
         Stage& x_handlers = reg_stage("executing");
 
         map<std::string,Value> keywords;
-        //Qual handlers which act on the value
-        size_t to_prefix_id(size_t id) {return id+1;}
-        //Qual handlers which act on the node
-        size_t to_suffix_id(size_t id) {return id+2;}
+        map<uint32_t,bool> is_true_type;
 
         void a_pass_resolve_keywords(node_col nodes, int context = -1) {
             for(int i=0;i<nodes.length();i++) {
@@ -85,6 +82,7 @@ namespace Acorn {
         }
 
         void add_type_stamping_handler(uint32_t type) {
+            is_true_type[type] = true;
             t_handlers[to_prefix_id(type)] = [](Context& ctx){
                 if(ctx.value().sub_type() == 0) {
                     ctx.value().sub_type(ctx.qual().sub_type());
@@ -101,12 +99,19 @@ namespace Acorn {
                     ctx.node().value().type(ctx.node().type());
                 }
             };
-            // r_handlers[to_prefix_id(type)] = [](Context& ctx){
-            //     if(is_live(ctx.value())&&ctx.value().quals()[0]==ctx.qual()) {
-            //         ctx.value().type(ctx.qual().value().type());
-            //         ctx.value().size(ctx.qual().value().size());
-            //     }
-            // };
+        }
+        void register_type_initilizers(uint32_t prefix_type) {
+            r_handlers[prefix_type] = [this](Context& ctx){
+                if(ctx.value().size()==0&&layouts.hasKey(ctx.value().type())) {
+                    ctx.value().size(layouts.get(ctx.value().type()).total_size);
+                }
+            };
+            x_handlers[prefix_type] = [this](Context& ctx){
+                if(is_live(ctx.value())&&ctx.value().quals()[0].type()!=ptr_id) { //Beause Ptrs store subtypes in their quals
+                    ctx.value().data_col().push_default();
+                    ctx.value().data_col().heterogenous = true;
+                }
+            }; 
         }
 
         Value make_type_value(const std::string& f, size_t size = 0) {
@@ -121,20 +126,6 @@ namespace Acorn {
             return val.type();
         }
 
-
-        void register_type_initilizers(uint32_t prefix_type) {
-            r_handlers[prefix_type] = [this](Context& ctx){
-                if(ctx.value().size()==0&&layouts.hasKey(ctx.value().type())) {
-                    ctx.value().size(layouts.get(ctx.value().type()).total_size);
-                }
-            };
-            x_handlers[prefix_type] = [this](Context& ctx){
-                if(is_live(ctx.value())&&ctx.value().quals()[0].type()!=ptr_id) { //Beause Ptrs store subtypes in their quals
-                    ctx.value().data_col().push_default();
-                    ctx.value().data_col().heterogenous = true;
-                }
-            }; 
-        }
         uint32_t make_type(const std::string& f, uint32_t size = 0) {
             Value val = make_type_value(f,size);
             keywords.put(f,val);
@@ -794,8 +785,8 @@ namespace Acorn {
 
         size_t plus_id = add_binary_operator('+',"PLUS", 4, 6);
         size_t dash_id = add_binary_operator('-',"DASH", 4, 5);
-        size_t rangle_id = add_binary_operator('>',"RANGLE", 2, 3);
-        size_t langle_id = add_binary_operator('<',"LANGLE", 2, 3);
+        size_t rangle_id = add_binary_operator('>',"RANGLE", 4, 5);
+        size_t langle_id = add_binary_operator('<',"LANGLE", 4, 5);
         size_t bang_id = add_binary_operator('!',"BANG", 2, 3);
         size_t equals_id = add_binary_operator('=', "EQUALS", 1, 1);
         size_t star_id = add_binary_operator('*',"STAR", 5, 7);
@@ -806,7 +797,7 @@ namespace Acorn {
         size_t pipe_id = add_binary_operator('|', "PIPE", 9, 8);
         uint32_t qmark_id = add_binary_operator('?',"QMARK",1,3);
         uint32_t property_id = add_binary_operator(':',"COLON",3,6);
-        uint32_t hash_id = add_binary_operator('#',"HASH",5,6);
+        uint32_t hash_id = add_binary_operator('#',"HASH",5,3); //This may also be set in acorn_script right now because I was testing it out
 
         uint32_t  add_binding_token_combo(const std::string& f, int lbp, int rbp, char a, char b, char c = '\0', char d = '\0') {
             uint32_t id = add_token_combo(f,a,b,c,d);
@@ -841,12 +832,12 @@ namespace Acorn {
         uint32_t langle_langle_id = add_binding_token_combo("LANGLE_LANGLE",8,9,'<','<');
         uint32_t rangle_rangle_id = add_binding_token_combo("RANGLE_RANGLE",8,9,'>','>');
 
-        uint32_t equals_equals_id =  add_binding_token_combo("EQUALS_EQUALS",2,3,'=','=');
-        uint32_t bang_equals_id =  add_binding_token_combo("BANG_EQUALS",2,3,'!','=');
-        uint32_t langle_equals_id =  add_binding_token_combo("LANGLE_EQUALS",2,3,'<','=');
-        uint32_t rangle_equals_id =  add_binding_token_combo("RANGLE__EQUALS",2,3,'>','=');
-        uint32_t amp_amp_id =  add_binding_token_combo("AMP_AMP",1,1,'&','&');
-        uint32_t pipe_pipe_id =  add_binding_token_combo("PIPE_PIPE",1,1,'|','|');
+        uint32_t equals_equals_id =  add_binding_token_combo("EQUALS_EQUALS",4,5,'=','=');
+        uint32_t bang_equals_id =  add_binding_token_combo("BANG_EQUALS",4,5,'!','=');
+        uint32_t langle_equals_id =  add_binding_token_combo("LANGLE_EQUALS",4,5,'<','=');
+        uint32_t rangle_equals_id =  add_binding_token_combo("RANGLE__EQUALS",4,5,'>','=');
+        uint32_t amp_amp_id =  add_binding_token_combo("AMP_AMP",3,3,'&','&');
+        uint32_t pipe_pipe_id =  add_binding_token_combo("PIPE_PIPE",2,2,'|','|');
 
         uint32_t random_combo_id = add_token_combo("RANDOM",'|','*','^','+');
 
@@ -1130,7 +1121,7 @@ namespace Acorn {
             value_printers[string_id] = [this](Context& ctx) {void* p = ctx.value().get(); DEBUG_ONLY(if(ERROR_FLAG) {return;}) ctx.source() = *(string*)p;};
             value_printers[node_id] = [this](Context& ctx) {ctx.source(node_to_string((Node&)(*(Ptr*)ctx.value().get())));};
             value_printers[value_id] = [this](Context& ctx) {ctx.source(value_info((Value&)(*(Ptr*)ctx.value().get())));};
-            value_printers[context_id] = [this](Context& ctx) {Context context = (Context&)(*(Ptr*)ctx.value().get()); std::string src = "Source ptr of "+Ptr_as_string(context)+": "+Ptr_as_string(context.source_ptr()); ctx.source(src);};
+            value_printers[context_id] = [this](Context& ctx) {Context context = (Context&)(*(Ptr*)ctx.value().get()); std::string src = context_trace_to_string(context); ctx.source(src);};
                 
             t_handlers[ptr_id] = [this](Context& ctx) {
                 Ptr p = string_to_Ptr(ctx.node().name().to_std());
@@ -1588,27 +1579,6 @@ namespace Acorn {
             }
         }
 
-        void desync_args(Node root) {
-            if(is_live(root.value().data_ptr())) {
-                Ptr newptr = root.value().data_ptr();
-                newptr.sidx = newptr.sidx-1;
-                resolve_to_col(root.value()).qset(value_data_offset,(void*)&newptr,sizeof(Ptr));
-            }
-            for(int i=0;i<root.children().length();i++) {
-                desync_args(root.children()[i]);
-            }
-        }
-        void resync_args(Node root) {
-            if(is_live(root.value().data_ptr())) {
-                Ptr newptr = root.value().data_ptr();
-                newptr.sidx = newptr.sidx+1;
-                resolve_to_col(root.value()).qset(value_data_offset,(void*)&newptr,sizeof(Ptr));
-            }
-            for(int i=0;i<root.children().length();i++) {
-                resync_args(root.children()[i]);
-            }
-        }
-
         void call_func(Context& ctx, Node scope) {
             list<list<uint8_t>> temps;
             for(int i=0;i<ctx.node().children().length();i++) {
@@ -1633,17 +1603,39 @@ namespace Acorn {
             }
         }
 
+        bool resolve_types(Value lv, Value rv, uint32_t ltype) {
+            uint32_t rtype = rv.type();
+
+            if(ltype == duck_id) return true; //Ducks accept anything
+            if(rtype == duck_id) return true; //Ducks also go into anything
+            if(rtype == 0) return false; //If the type is undefined it's probably a bug, check where this manifests in the future and throw_error if always a terminable error
+            if(ltype == rtype) return true; //An exact match, just pass on
+            
+            //Add coercion handlers in the future
+
+            //throw_error("compiler:resolve_types unhandled type mismatch, ltype: ", labels[ltype]," rtype: ", labels[rtype]);
+            return false;
+        }
+
         void assign(Value lv, Value rv) {
             if(rv.data_col().empty()) return; //No data to copy
 
             Ptr lp = lv.data_ptr();
             Ptr rp = rv.data_ptr();
 
-            //print("Equals: ",node_to_string(ctx.node()));
-
             if(!is_live(lp)) return; //Normally caused by something being delcared but never used, and thus missed by the m pass
             DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
-
+            
+            //Deal with this later when it becomes more useful
+            // if(is_live(lv)) {
+            //     for(int q=0;q<lv.quals().length();q++) {
+            //         Node qual = lv.quals()[q];
+            //         if(is_true_type.getOrDefault(qual.type(),false)) {
+            //             if(resolve_types(lv, rv, qual.type())) {break;}
+            //             else {return;}
+            //         }
+            //     }
+            // }
             Col& lcol = resolve_to_col(lp);
 
             uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
@@ -1990,6 +1982,8 @@ namespace Acorn {
             value_printers[function_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
             register_type("duck",duck_id,0);
             value_printers[duck_id] = [this](Context& ctx){ctx.source()="QUACK!";};
+            register_type("void",void_id,0);
+            value_printers[void_id] = [this](Context& ctx){ctx.source()="void!";};
 
             set_binding_powers(random_combo_id,8,9);
 
@@ -2465,6 +2459,35 @@ namespace Acorn {
             x_handlers[to_unary_id(dash_id)] = [this](Context& ctx){
                 int neg = -(*(int*)ctx.node().children()[0].value().get());
                 ctx.node().value().set((void*)&neg);
+            };
+
+
+            r_handlers[amp_amp_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                if(!is_live(ctx.node().value())) ctx.node().value(make_value(bool_id,1));
+            };
+            r_handlers[pipe_pipe_id] = r_handlers[amp_amp_id];
+            x_handlers[amp_amp_id] = [this](Context& ctx){
+                process_node(ctx, ctx.node().children()[0]);
+                bool left = *(bool*)ctx.node().children()[0].value().get();
+                if(!left) {
+                    ctx.node().value().set((void*)&left);
+                    return;
+                }
+                process_node(ctx, ctx.node().children()[1]);
+                bool result = *(bool*)ctx.node().children()[1].value().get();
+                ctx.node().value().set((void*)&result);
+            };
+            x_handlers[pipe_pipe_id] = [this](Context& ctx){
+                process_node(ctx, ctx.node().children()[0]);
+                bool left = *(bool*)ctx.node().children()[0].value().get();
+                if(left) {
+                    ctx.node().value().set((void*)&left);
+                    return;
+                }
+                process_node(ctx, ctx.node().children()[1]);
+                bool result = *(bool*)ctx.node().children()[1].value().get();
+                ctx.node().value().set((void*)&result);
             };
 
             x_handlers[make_tokenized_keyword("root_name")] = [this](Context& ctx){

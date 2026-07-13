@@ -300,3 +300,14 @@ f = fs.get(3);
 print(f("Two"));
 f = fs.get(4);
 print(f("Three"));
+
+
+
+
+Test 10 running mistakes
+
+for(int i=0;i<5;i++) {
+    MISTAKE(i);
+    catch {print("Error caught: ",unit_errors.get(0));}
+    print("TEST ", i, " FINISHED");
+}

@@ -444,6 +444,8 @@ namespace Acorn {
     size_t map_id = global_reg_id("map");
     size_t weakptr_id = global_reg_id("weakptr");
     size_t col_id = global_reg_id("col");
+    size_t colcol_id = global_reg_id("colcol");
+    size_t colcolcol_id = global_reg_id("colcolcol");
     
     uint32_t silenced_id = global_reg_id("SILENCED");
     uint32_t any_id = global_reg_id("any");
@@ -455,6 +457,7 @@ namespace Acorn {
     size_t node_id = global_reg_id("node"); size_t prefix_node_id = global_reg_id("prefix_node"); size_t suffix_node_id = global_reg_id("suffix_node");
     size_t value_id = global_reg_id("value"); size_t prefix_value_id = global_reg_id("prefix_value"); size_t suffix_value_id = global_reg_id("suffix_value");
     size_t context_id = global_reg_id("context"); size_t prefix_context_id = global_reg_id("prefix_context"); size_t suffix_context_id = global_reg_id("suffix_context");
+
 
     size_t var_decl_id = global_reg_id("VAR_DECL");
     size_t func_call_id = global_reg_id("FUNC_CALL");
@@ -470,6 +473,10 @@ namespace Acorn {
     uint32_t direct_pass_id = global_reg_id("DIRECT_PASS");
     uint32_t resolving_pass_id = global_reg_id("RESOLVING_PASS");
     uint32_t travel_pass_id = global_reg_id("TRAVEL_PASS");
+    uint32_t backwards_pass_id = global_reg_id("BACKWARDS_PASS");
+    uint32_t memory_backwards_pass_id = global_reg_id("MEMORY_BACKWARDS_PASS");
+    
+    
 
     size_t tombstone_col = 0; 
     size_t refs_col = 0;
@@ -638,7 +645,6 @@ namespace Acorn {
         context_total_size = ctemp.total_size;
         return at;
     }
-
 
     template<typename T>
     struct col_Ptr : Ptr {
@@ -884,13 +890,14 @@ namespace Acorn {
         inline void* get(uint32_t i)           {DEBUG_ONLY(if(safety_check("node:get:with_arg")){return nullptr;} if(i>=children().length()){throw_error("Attempted to get value of child ",i," but node "+Ptr_to_string(*this)+" only has ",children().length()," children"); return nullptr;}) return children()[i].get();}
         inline void set(void* v)               {DEBUG_ONLY(if(safety_check("node:set")){return;} if(!is_live(value())){throw_error("Attempted to set value but node "+Ptr_to_string(*this)+" does not have a live value"); return;}) value().set(v);}
         inline void set(uint32_t i, void* v)   {DEBUG_ONLY(if(safety_check("node:set:with_arg")){return;} if(i>=children().length()){throw_error("Attempted to set value of child ",i," but node "+Ptr_to_string(*this)+" only has ",children().length()," children"); return;}) return children()[i].set(v);}
-        inline int&    getInt()                {DEBUG_ONLY(if(safety_check("node:getInt")){return _ctx_dummy_index;}) return *(int*)get();}                 inline int&    getInt(uint32_t i)    {DEBUG_ONLY(if(safety_check("node:getInt:i")){return _ctx_dummy_index;}) return *(int*)get(i);}
-        inline float&  getFloat()              {DEBUG_ONLY(if(safety_check("node:getFloat")){return *(float*)&_ctx_dummy_index;}) return *(float*)get();}   inline float&  getFloat(uint32_t i)  {DEBUG_ONLY(if(safety_check("node:getFloat:i")){return *(float*)&_ctx_dummy_index;}) return *(float*)get(i);}
-        inline bool&   getBool()               {DEBUG_ONLY(if(safety_check("node:getBool")){return *(bool*)&_ctx_dummy_index;}) return *(bool*)get();}      inline bool&   getBool(uint32_t i)   {DEBUG_ONLY(if(safety_check("node:getBool:i")){return *(bool*)&_ctx_dummy_index;}) return *(bool*)get(i);}
-        inline Ptr&    getPtr()                {DEBUG_ONLY(if(safety_check("node:getPtr")){return dead_ref;}) return *(Ptr*)get();}                         inline Ptr&    getPtr(uint32_t i)    {DEBUG_ONLY(if(safety_check("node:getPtr:i")){return dead_ref;}) return *(Ptr*)get(i);}
+        inline int&    getInt()                {void* p = get(); DEBUG_ONLY(if(safety_check("node:getInt")){return _ctx_dummy_index;})              return *(int*)p;}    inline int&    getInt(uint32_t i)    {void* p = get(i); DEBUG_ONLY(if(safety_check("node:getInt:i")){return _ctx_dummy_index;})              return *(int*)p;}
+        inline float&  getFloat()              {void* p = get(); DEBUG_ONLY(if(safety_check("node:getFloat")){return *(float*)&_ctx_dummy_index;})  return *(float*)p;}  inline float&  getFloat(uint32_t i)  {void* p = get(i); DEBUG_ONLY(if(safety_check("node:getFloat:i")){return *(float*)&_ctx_dummy_index;})  return *(float*)p;}
+        inline bool&   getBool()               {void* p = get(); DEBUG_ONLY(if(safety_check("node:getBool")){return *(bool*)&_ctx_dummy_index;})    return *(bool*)p;}   inline bool&   getBool(uint32_t i)   {void* p = get(i); DEBUG_ONLY(if(safety_check("node:getBool:i")){return *(bool*)&_ctx_dummy_index;})    return *(bool*)p;}
+        inline Ptr&    getPtr()                {void* p = get(); DEBUG_ONLY(if(safety_check("node:getPtr")){return dead_ref;})                      return *(Ptr*)p;}    inline Ptr&    getPtr(uint32_t i)    {void* p = get(i); DEBUG_ONLY(if(safety_check("node:getPtr:i")){return dead_ref;})                      return *(Ptr*)p;}
         inline string  getString()             {DEBUG_ONLY(if(safety_check("node:getString")){return deadptr;}) return getPtr();}                           inline string  getString(uint32_t i) {DEBUG_ONLY(if(safety_check("node:getString:i")){return deadptr;}) return getPtr(i);}
         inline Node    getNode()               {DEBUG_ONLY(if(safety_check("node:getNode")){return deadptr;}) return getPtr();}                             inline Node    getNode(uint32_t i)   {DEBUG_ONLY(if(safety_check("node:getNode:i")){return deadptr;}) return getPtr(i);}
         inline Value   getValue()              {DEBUG_ONLY(if(safety_check("node:getValue")){return deadptr;}) return getPtr();}                            inline Value   getValue(uint32_t i)  {DEBUG_ONLY(if(safety_check("node:getValue:i")){return deadptr;}) return getPtr(i);}
+
         inline Context getContext(); inline Context getContext(uint32_t i);
 
         inline void copy(Node o) {
@@ -1158,6 +1165,10 @@ namespace Acorn {
         Stage* active_stage;
         list<Watcher> watchers;
         g_ptr<Log::Span> uspan = make<Log::Span>();
+        list<std::string> uargs;
+
+        bool UERROR_FLAG = false;
+        list<std::string> UERRORS;
 
         bool running = true; 
         Context unit_ctx = deadptr;
@@ -1717,7 +1728,20 @@ namespace Acorn {
                 s+="]";
                 return s;
             } else {
-                return "(add tag_to_str for "+labels[tag]+")";
+                if(layouts.hasKey(tag)) {
+                    std::string to_return = "";
+                    _layout& l = layouts.get(tag);
+                    for(int o=0;o<l.offsets.length();o++) {
+                        std::string line = "";
+                        line+=l.labels[o]+": ";
+                        line +=tag_to_str(l.tags[o], (uint8_t*)data + l.offsets[o]);
+                        line+=" | ";
+                        to_return+=line;
+                    }
+                    return to_return;
+                } else {
+                    return "(add tag_to_str for "+labels[tag]+")";
+                }
             }
         }
         
@@ -1860,6 +1884,25 @@ namespace Acorn {
                     for(int l=0;l<lines.length();l++) {
                         to_return+=std::string(widths[l]+lpadlen+3,'=')+"/ \\";
                     }
+                }
+            }
+            return to_return;
+        }
+
+        std::string heterogenous_col_to_string(Col& col) {
+            std::string to_return = "";
+            if(col.heterogenous) {
+                if(layouts.hasKey(col.tag)) {
+                    _layout& l = layouts.get(col.tag);
+                    for(int o=0;o<l.offsets.length();o++) {
+                        std::string line = "";
+                        line+=pad_str(l.labels[o]+": ",12);
+                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
+                        line+="\n";
+                        to_return+=line;
+                    }
+                } else {
+                    print(red("core::heterogenous_col_to_string unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
                 }
             }
             return to_return;
@@ -2014,7 +2057,7 @@ namespace Acorn {
 
             for(int t=0;t<types.length();t++) {
                 std::string to_print = "";
-                to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+":\n";
+                to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+(types[t].tag!=0?" ["+labels[types[t].tag]+"]":"")+":\n";
                 //print("PRINTING: ",t);
                 to_print += type_to_string(types[t]);
                 to_print += "\n\n\n";
@@ -2025,6 +2068,295 @@ namespace Acorn {
                 });
             }
         }
+
+
+        map<uint32_t,bool> init_ptr_aliases() {
+            map<uint32_t,bool> to_return;
+            to_return.put(ptr_id,true); to_return.put(string_id,true); 
+            to_return.put(node_id,true); to_return.put(value_id,true); to_return.put(context_id,true);
+            to_return.put(col_id,true); to_return.put(colcol_id,true); to_return.put(colcolcol_id,true);
+            return to_return;
+        }
+        map<uint32_t,bool> ptr_alias_lookup = init_ptr_aliases();
+        inline void register_ptr_alias(uint32_t type) {ptr_alias_lookup.put(type, true);}
+        inline bool is_ptr_alias(uint32_t type) {return ptr_alias_lookup.getOrDefault(type, false);}
+    
+        inline list<Col*> ColCol_to_group(ColCol& col) {list<Col*> grouping; for(int c=0;c<col.length();c++){grouping << &col[c];} return grouping;}
+        inline list<ColCol*> ColColCol_to_group(ColColCol& col) {list<ColCol*> grouping; for(int c=0;c<col.length();c++){grouping << &col[c];} return grouping;}
+    
+        inline void offset_field_ptrs(Col& col, int offset, uint32_t field, uint32_t greater_than_threshold = 0) {
+            if(col.heterogenous) {
+                //Add a scan over the layout and normalization for Ptr members in the future if needed
+            } else if(is_ptr_alias(col.tag)) {
+                for(int r=0;r<col.length();r++) {
+                    Ptr& ptr = *(Ptr*)col[r];
+                    if(is_live(ptr)) {
+                        uint32_t val = ptr[field];
+                        if(offset < 0 && val >= greater_than_threshold && val < greater_than_threshold + (uint32_t)(-offset)) {
+                            ptr = deadptr;
+                        } else if(val >= greater_than_threshold) {
+                            ptr[field] += offset;
+                        }
+                    }
+                }
+            }
+        }
+    
+        void offset_sidx_ptrs(Col& col, int offset, uint32_t greater_than_threshold = 0) {offset_field_ptrs(col,offset,1,greater_than_threshold);}
+    
+        void offset_idx_ptrs(list<Col*> cols, int offset, uint32_t greater_than_threshold = 0) {
+            for(int c=0;c<cols.length();c++) {
+                Col& col = *cols[c];
+                offset_field_ptrs(col,offset,2,greater_than_threshold);
+            }
+        }
+        void offset_idx_ptrs(ColCol& cols, int offset, uint32_t greater_than_threshold = 0) {offset_idx_ptrs(ColCol_to_group(cols),offset,greater_than_threshold);}
+        
+        void offset_pool_ptrs(list<ColCol*> pools, int offset, uint32_t greater_than_threshold = 0) {
+            for(int p=0;p<pools.length();p++) {
+                for(int c=0;c<pools[p]->length();c++) {
+                    Col& col = pools[p]->get(c);
+                    offset_field_ptrs(col,offset,3,greater_than_threshold);
+                }
+            }
+        }
+        void offset_pool_ptrs(ColColCol& cols, int offset, uint32_t greater_than_threshold = 0) {offset_pool_ptrs(ColColCol_to_group(cols),offset,greater_than_threshold);}
+    
+        void insert_pools(ColColCol& col3, list<ColCol*> cols, uint32_t at) {
+            offset_pool_ptrs(col3,cols.length(),at);
+            offset_pool_ptrs(cols,at);
+            for(int p=cols.length()-1;p>=0;p--) {
+                col3.insert(at,*cols[p]);
+            }
+        }
+        void insert_pools(ColColCol& col3, ColColCol& cols, uint32_t at) {insert_pools(col3,ColColCol_to_group(cols),at);}
+    
+        void push_pools(ColColCol& col3, list<ColCol*> cols) {
+            offset_pool_ptrs(cols,col3.length());
+            for(int p=0;p<cols.length();p++) {
+                col3.push(*cols[p]);
+            }
+        }
+        void push_pools(ColColCol& col3, ColColCol& cols) {push_pools(col3,ColColCol_to_group(cols));}
+    
+        //Implment later if needed
+        // void insert_elements(Col& col, QCol elements, uint32_t at) {
+
+        // }
+        QCol take_elements(Col& col, uint32_t from, uint32_t to) {
+            QCol to_return = col.take_range(from,to);
+            offset_sidx_ptrs(col, -(int)(to - from), from);
+            return to_return;
+        }
+
+        ColColCol take_pools(ColColCol& col3, uint32_t from, uint32_t to) {
+            QCol raw = col3.take_range(from,to);
+            offset_pool_ptrs(col3, -(int)(to - from), from);
+            ColColCol to_return;
+            uint32_t count = to - from;
+            for(uint32_t i = 0; i < count; i++) {
+                ColCol& cc = *(ColCol*)raw.qget(i * sizeof(ColCol));
+                to_return.push(cc);
+            }
+            offset_pool_ptrs(to_return, -(int)(from+1));
+            return to_return;
+        }
+        void remove_pools(ColColCol& col3, uint32_t from, uint32_t to) {ColColCol returned = take_pools(col3,from,to);}
+
+        uint32_t find_pools_start(uint32_t from, uint32_t start_tag) {
+            if(from==0) return 0;
+            while(types[from].tag != start_tag) {
+                if(from == 0) {
+                    throw_error("core:find_pools_start unable to find the starting tag "+labels[start_tag]);
+                    return 0;
+                }
+                from -= 1;
+            }
+            return from;
+        }
+        list<ColCol*> gather_pools_from(uint32_t from, uint32_t start_tag, uint32_t end_tag) {
+            list<ColCol*> to_return;
+            if(from>=types.length()) {print(red("core:gather_pools_from from "+std::to_string(from)+" out of bounds for types length "+std::to_string(types.length()))); return to_return;}
+            from = find_pools_start(from,start_tag);
+            for(int p=from;p<types.length();p++) {
+                to_return << &types[p];
+                if(types[p].tag==end_tag) {
+                    break;
+                }
+            }
+            return to_return;
+        }
+
+        enum class SnapField : uint8_t {
+            //QCol fields
+            Size = 1, Data = 2,
+            //CCol fields  
+            Esize = 3, Tag = 4, Hash = 5, Index = 6, Cachelevel = 7, Live = 8, Gen = 9,
+            //Col fields
+            Hetero = 10, Label = 11, Cells = 12, Free = 13,
+            //Structural
+            Cols = 14, End = 255,
+        };
+
+        template<typename T>
+        inline void snapshot_field(std::ostream& out, SnapField field, T val) {
+            write_raw<uint8_t>(out, (uint8_t)field); write_raw<uint32_t>(out, sizeof(T)); write_raw<T>(out, val);
+        }
+        inline void snapshot_end(std::ostream& out) {
+            write_raw<uint8_t>(out, (uint8_t)SnapField::End); write_raw<uint32_t>(out, 0);
+        }
+        inline void snapshot_string(std::ostream& out, SnapField field, const std::string& s) {
+            write_raw<uint8_t>(out, (uint8_t)field); write_raw<uint32_t>(out, s.size()); out.write(s.data(), s.size());
+        }
+
+        void snapshot_qcol(std::ostream& out, QCol& col, bool include_data) {
+            snapshot_field<uint32_t>(out, SnapField::Size, col.size);
+            if(include_data) {write_raw<uint8_t>(out, (uint8_t)SnapField::Data);    write_raw<uint32_t>(out, col.size); out.write((const char*)col.storage, col.size);}
+            snapshot_end(out);
+        }
+        QCol load_snapshot_qcol(std::istream& in, bool include_data) {
+            QCol col;
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Size: col.resize(read_raw<uint32_t>(in)); break;
+                    case SnapField::Data: if(include_data) {in.read((char*)col.storage, len); col.size = len;} else {in.seekg(len, std::ios::cur);} break;
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+            return col;
+        }
+
+        void snapshot_ccol(std::ostream& out, CCol& col, bool include_data) {
+            snapshot_qcol(out, col, include_data);
+            snapshot_field<uint32_t>(out, SnapField::Esize, col.element_size);
+            snapshot_string(out, SnapField::Tag, labels[col.tag]);
+            snapshot_field<uint32_t>(out, SnapField::Hash, col.hash);
+            snapshot_field<uint32_t>(out, SnapField::Index, col.index);
+            snapshot_field<bool>(out, SnapField::Live, col.live);
+            snapshot_field<uint16_t>(out, SnapField::Gen, col.gen);
+            snapshot_end(out);
+        }        
+        CCol load_snapshot_ccol(std::istream& in, bool incldue_data) {
+            CCol col = load_snapshot_qcol(in,incldue_data);
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Esize: col.element_size = read_raw<uint32_t>(in); break;
+                    case SnapField::Tag: {
+                        std::string s(len, '\0');
+                        in.read(s.data(), len);
+                        uint32_t zero = 0;
+                        col.tag = labels_lookup.getOrDefault(s, zero);
+                        break;
+                    }
+                    case SnapField::Hash:  col.hash = read_raw<uint32_t>(in); break;
+                    case SnapField::Index: col.index = read_raw<uint32_t>(in); break;
+                    case SnapField::Live:  col.live = read_raw<bool>(in); break;
+                    case SnapField::Gen:   col.gen = read_raw<uint16_t>(in); break;
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+            return col;
+        }
+
+        void snapshot_qcellcol(std::ostream& out, QCellCol& col) {
+            snapshot_qcol(out, col, false);
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols); write_raw<uint32_t>(out, col.length());
+            for(uint32_t i = 0; i < col.length(); i++) snapshot_ccol(out, col.get(i), true);
+            snapshot_end(out);
+        }
+        QCellCol load_snapshot_qcellcol(std::istream& in) {
+            QCellCol col = load_snapshot_qcol(in,false);
+            col.clear();
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Cols: {
+                        uint32_t count = len;
+                        for(uint32_t i = 0; i < count; i++) {
+                            CCol c = load_snapshot_ccol(in,true);
+                            col.push(c);
+                            c.storage = nullptr;
+                        }
+                        break;
+                    }
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+            return col;
+        }
+
+        void snapshot_col(std::ostream& out, Col& col, bool include_data) {
+            snapshot_ccol(out, col, include_data);
+            snapshot_qcellcol(out, col.cells);
+            snapshot_field<bool>(out, SnapField::Hetero, col.heterogenous);
+            snapshot_string(out, SnapField::Label, col.label.to_std());
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Free);    write_raw<uint32_t>(out, col.free.length() * 4);
+            for(int i = 0; i < col.free.length(); i++) write_raw<uint32_t>(out, col.free[i]);
+            snapshot_end(out);
+        }
+        Col load_snapshot_col(std::istream& in, bool include_data) {
+            Col col = load_snapshot_ccol(in,include_data);
+            col.cells = load_snapshot_qcellcol(in);
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Hetero: col.heterogenous = read_raw<bool>(in); break;
+                    case SnapField::Label: {
+                        std::string s(len, '\0');
+                        in.read(s.data(), len);
+                        col.label = s;
+                        break;
+                    }
+                    case SnapField::Free: {
+                        uint32_t count = len / 4;
+                        for(uint32_t i = 0; i < count; i++) col.free << read_raw<uint32_t>(in);
+                        break;
+                    }
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+            return col;
+        }
+
+        void snapshot_colcol(std::ostream& out, ColCol& col) {
+            snapshot_col(out, col,false);
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols);  write_raw<uint32_t>(out, col.length());
+            for(uint32_t i = 0; i < col.length(); i++) snapshot_col(out, col[i], true);
+            snapshot_end(out);
+        }
+        ColCol load_snapshot_colcol(std::istream& in) {
+            ColCol col = load_snapshot_col(in,false);
+            col.clear();
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Cols: {
+                        uint32_t count = len;
+                        for(uint32_t i = 0; i < count; i++) {
+                            Col c = load_snapshot_col(in,true);
+                            col.push(c);
+                        }
+                        break;
+                    }
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+            return col;
+        }
+
+        
 
         #define ACORN_DISPLAY_SUB_VALUES 0
 
@@ -2041,7 +2373,9 @@ namespace Acorn {
                     to_return += " "+gray("empty")+" @"+ptr_addr;
                 } else {
                     std::string tagstr = tag_to_str(value.type(),value.get());
-                    if(tagstr.length()>50) tagstr = tagstr.substr(0,50); //Disable this to disable truncation of large values
+                    if(value.type()==string_id) { //Just making it strings for now
+                        if(tagstr.length()>50) tagstr = tagstr.substr(0,50); //Disable this to disable truncation of large values
+                    }
                     to_return += " "+gray(tagstr)+" @"+ptr_addr;
                 }
                 DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_to_string(value)),red(" but the value was invalid")); return to_return;})
@@ -2075,7 +2409,20 @@ namespace Acorn {
         }
 
         std::string node_basic_info(Node node) {
-            std::string to_return = labels[node.type()]+ (node.name().length()==0?"":" "+node.name().to_std()+" ");
+            std::string type = labels[node.type()];
+            std::string name = (node.name().length()==0?"":node.name().to_std());
+            std::string to_return = type+(name!=type?" "+name:"");
+            return to_return;
+        }
+
+        std::string node_basic_info_with_children(Node node) {
+            std::string to_return = node_basic_info(node);
+            for(int c=0;c<node.children().length();c++) {
+                if(c==0) {to_return+="[";}
+                to_return+=node_basic_info(node.children()[c]);
+                if(c==node.children().length()-1) {to_return+="]";}
+                else {to_return+=", ";}
+            }
             return to_return;
         }
         
@@ -2191,9 +2538,9 @@ namespace Acorn {
                 //     to_return+=(i>0?"\n":"")+indent;
                 // }
                 if(i==index) {
-                    to_return+=gray(">"+node_basic_info(result[i]))+"| ";
+                    to_return+=gray(">"+node_basic_info_with_children(result[i]))+" | ";
                 } else {
-                    to_return+=node_basic_info(result[i])+"| ";
+                    to_return+=node_basic_info(result[i])+" | ";
                 }
             }
             return to_return;
@@ -2207,7 +2554,7 @@ namespace Acorn {
         std::string context_info(Context ctx, int verbosity = 0, std::string indent = "", bool folded = false) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(ctx)),red(" while another error was active")); return "";})
         
-            std::string nl = folded?"":"\n"+indent;
+            std::string nl = folded?"":"\n"+indent+"  ";
             std::string to_return = "";
             to_return += navy(Ptr_as_string(ctx)+" ")
             + labels[ctx.pass()]+" "
@@ -2258,9 +2605,9 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(ctx)),red(" while another error was active")); return "";})
             std::string to_return = "";
             list<Context> trace = get_context_trace(ctx);
-            for(int i = 0; i<trace.length(); i++) {
-                std::string header = pad_str("["+std::to_string(i)+"] ",6);
-                to_return += header+context_info(trace[i],verbosity,std::string(header.length()+1,' '),false)+"\n";
+            for(int i = trace.length()-1; i>=0; i--) {
+                std::string header = pad_str("["+std::to_string(trace.length()-(i+1))+"] ",5);
+                to_return += header+context_info(trace[i],verbosity,std::string(header.length()+1,' '),false)+(i!=0?"\n":"");
             }
             return to_return;
         }
@@ -2306,6 +2653,219 @@ namespace Acorn {
             print("CHILDREN WITH 2 NODES: ",types[children_store_id].length());
             c.name("C");
             print(c.name().to_std());
+        }
+
+        void test_pool_groups() {
+            uint32_t dataidx = types.length();
+            uint32_t storeidx = dataidx+1;
+            
+            int elements = 10000;
+
+            ColCol tdata;
+            Col tdribbon(sizeof(Ptr)); tdribbon.tag = ptr_id;
+            for(int i=0;i<elements;i++) {
+                Ptr p(uid,storeidx,0,i);
+                tdribbon.push((void*)&p);
+            }
+            tdata.push(tdribbon);
+            types.push(tdata);
+
+            list<int> direct;
+
+            ColCol tstore;
+            Col tsribbon(4); tsribbon.tag = int_id;
+            for(int i=0;i<elements;i++) {
+                int r = randi(0,1000000);
+                direct << r;
+                tsribbon.push((void*)&r);
+            }
+            tstore.push(tsribbon);
+            types.push(tstore);
+
+            ColCol& data = types[dataidx];
+            ColCol& store = types[storeidx];
+            Col& dribbon = data[0];
+            Col& sribbon = store[0];
+
+            uint8_t* snapshot = (uint8_t*)malloc(dribbon.size);
+            memcpy(snapshot, dribbon.storage, dribbon.size);
+
+            Log::rig r;
+
+            r.add_process("restore_snapshot_0",[&](int i){
+                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            });
+            r.add_process("reset_to_0",[&](int i){
+                Ptr& p = *(Ptr*)dribbon.sget(i);
+                p.cache = nullptr;
+                p.cachelevel = 0;
+            });
+            r.add_process("sort_cachelevel_0",[&](int i){
+                if(i==0) {
+                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+                        [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
+                }
+            });
+            
+            r.add_process("restore_snapshot_3",[&](int i){
+                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            });
+            r.add_process("lower_to_3",[&](int i){
+                Ptr& p = *(Ptr*)dribbon.sget(i);
+                p.cache = &types;
+                p.cachelevel = 3;
+            });
+            r.add_process("sort_cachelevel_3",[&](int i){
+                if(i==0) {
+                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+                        [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
+                }
+            });
+            
+            r.add_process("restore_snapshot_2",[&](int i){
+                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            });
+            r.add_process("lower_to_2",[&](int i){
+                Ptr& p = *(Ptr*)dribbon.sget(i);
+                p.cache = &store;
+                p.cachelevel = 2;
+            });
+            r.add_process("sort_cachelevel_2",[&](int i){
+                if(i==0) {
+                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+                        [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
+                }
+            });
+            
+            r.add_process("restore_snapshot_1",[&](int i){
+                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            });
+            r.add_process("lower_to_1",[&](int i){
+                Ptr& p = *(Ptr*)dribbon.sget(i);
+                p.cache = &sribbon;
+                p.cachelevel = 1;
+            });
+            r.add_process("sort_cachelevel_1",[&](int i){
+                if(i==0) {
+                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+                        [](Ptr& a, Ptr& b){ return *(int*)cache_as_col(a).sget(a.sidx) < *(int*)cache_as_col(b).sget(b.sidx); });
+                }
+            });
+
+            uint8_t* sribbon_snapshot = (uint8_t*)malloc(sribbon.size);
+            memcpy(sribbon_snapshot, sribbon.storage, sribbon.size);
+            r.add_process("sort_sribbon",[&](int i){
+                if(i==0) {
+                    std::sort((int*)sribbon.storage, (int*)sribbon.storage + elements);
+                }
+            });
+            r.add_process("restore_sribbon",[&](int i){
+                if(i==0) memcpy(sribbon.storage, sribbon_snapshot, sribbon.size);
+            });
+
+            int* direct_snapshot = (int*)malloc(elements * sizeof(int));
+            memcpy(direct_snapshot, direct.data(), elements * sizeof(int));
+            r.add_process("sort_direct",[&](int i){
+                if(i==0) {
+                    std::sort(direct.data(), direct.data() + elements);
+                }
+            });
+            r.add_process("restore_direct",[&](int i){
+                if(i==0) memcpy(direct.data(), direct_snapshot, elements * sizeof(int));
+            });
+
+        
+            
+            r.add_comparison("sort_cachelevel_1","sort_cachelevel_3");
+            r.add_comparison("sort_cachelevel_3","sort_cachelevel_0");
+            r.add_comparison("sort_cachelevel_1","sort_cachelevel_0");
+            
+            r.run(100,true,elements);
+
+
+            // int six = 6;
+            // ColColCol main_pool;
+            // for(uint32_t p=0;p<3;p++) {
+            //     ColCol subpool; 
+
+            //     Col sc(sizeof(Ptr)); sc.tag = ptr_id;
+            //     Ptr sp(p,1,0);
+            //     sc.push((void*)&sp);
+            //     Ptr ssp((p==2?0:p+1),1,0);
+            //     sc.push((void*)&ssp);
+            //     subpool.push(sc);
+
+            //     for(uint32_t i=0;i<3;i++) {
+            //         Col c(4); c.tag = int_id;
+            //         c.push((void*)&i);
+            //         c.push((void*)&six);
+            //         subpool.push(c);
+            //     }
+            //     main_pool.push(subpool);
+            // }
+            // writeFile("printout.txt","");
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====MAIN POOL DUMP=====\n\n";});
+            // for(int p=0;p<main_pool.length();p++) {
+            //     dump_pool(main_pool[p],p,false);
+            // }
+
+            // ColCol pool_a; pool_a.tag = func_call_id; pool_a.label = "data";
+            // ColCol pool_b; pool_b.tag = function_id; pool_b.label = "meta";
+            // ColCol pool_c; pool_c.tag = func_decl_id; pool_c.label = "store";
+        
+            // for(uint32_t i=0;i<3;i++) {
+            //     Col col(sizeof(Ptr)); col.tag = ptr_id;
+            //     Ptr p((i==0?1:i), 1, 0);
+            //     col.push((void*)&p);
+            //     pool_a.push(col);
+
+            //     Col subcol(4); subcol.tag = int_id;
+            //     subcol.push((void*)&i);
+            //     if(i==0) {
+            //         pool_a.push(subcol);
+            //     } else if(i==1) {
+            //         pool_b.push(subcol);
+            //     } else if(i==2) {
+            //         pool_c.push(subcol);
+            //     }
+            // }
+        
+            // uint32_t base = main_pool.length();
+            // print("Base offset: ", base);
+        
+            // list<ColCol*> group = {&pool_a, &pool_b, &pool_c};
+
+            // print("Dumping subpools");
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====SUB POOL DUMP=====\n\n";});
+            // for(int p=0;p<group.length();p++) {
+            //     dump_pool(*group[p],p,false);
+            // }
+
+            // insert_pools(main_pool, group, 1);
+
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====POST PUSH=====\n\n";});
+            // for(int p=0;p<main_pool.length();p++) {
+            //     dump_pool(main_pool[p],p,false);
+            // }
+
+            // ColColCol c3 = take_pools(main_pool,2,3);
+
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====TOOK 1=====\n\n";});
+            // for(int p=0;p<main_pool.length();p++) {
+            //     dump_pool(main_pool[p],p,false);
+            // }
+
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====DUMPING 1=====\n\n";});
+            // for(int p=0;p<c3.length();p++) {
+            //     dump_pool(c3[p],p,false);
+            // }
+
+            // insert_pools(main_pool,c3,3);
+
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====INSERTED AT 2=====\n\n";});
+            // for(int p=0;p<main_pool.length();p++) {
+            //     dump_pool(main_pool[p],p,false);
+            // }
         }
 
       
@@ -2406,6 +2966,58 @@ namespace Acorn {
 
         uint32_t resume_travel_pass(Context ctx);
 
+        bool node_source_position(Node node, float& x, float& y, int depth = 0) {
+            if(!is_live(node) || depth > 16) return false;
+        
+            if(node.x() >= 0.0f && node.y() >= 0.0f) {
+                x = node.x(); y = node.y();
+                return true;
+            }
+        
+            for(int i = 0; i < node.quals().length(); i++) {
+                Node qual = node.quals()[i];
+                if(qual.mute() && node_source_position(qual, x, y, depth + 1)) {
+                    return true;
+                }
+            }
+        
+            for(int i = 0; i < node.quals().length(); i++) {
+                if(node_source_position(node.quals()[i], x, y, depth + 1)) {
+                    return true;
+                }
+            }
+        
+            return false;
+        }
+
+        std::string enrich_error_msg(Context& ctx, const std::string& msg) {
+            std::string to_return = "";
+            to_return += context_trace_to_string(ctx);
+            to_return+=red("\nERROR IN "+labels[ctx.pass()]);
+            float x = -1.0f; float y = -1.0f;
+            if (node_source_position(ctx.node(), x, y)) {
+                if(y>=0) {to_return+=red(" ON LINE " + std::to_string((int)y + 1));}
+                else if(x>=0) {to_return+=red(" COLUMN " + std::to_string((int)x + 1));} 
+                //^ This is intentional, most humans dont' just read column like this, it's included for languages that are just one contigious stream
+            }
+            to_return+=red(": ")+msg;
+            return to_return;
+        }
+
+        void catch_pass_error(Context& ctx) {
+            UERROR_FLAG = true;
+            UERRORS << ERROR_MSG;
+
+            ERROR_FLAG = false; 
+            print(enrich_error_msg(ctx,ERROR_MSG));
+            ERROR_MSG = "";
+        }
+        void end_pass(Context& ctx) {
+            endline();
+            unit_ctx = ctx.parent();
+            deep_recycle_context(ctx);
+        }
+
         void suspend() {running = false;}
         void resume() {running = true;}
 
@@ -2491,7 +3103,7 @@ namespace Acorn {
                     process_node(sub_ctx, sub_ctx.result().get(i), sub_ctx.result().get(i-1));
                 }
 
-                DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; print(red("ERROR IN SUB PROCESS:\n"),context_info(sub_ctx)); ERROR_FLAG = true; endline(); return;})
+                DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(sub_ctx); endline(); return;})
 
                 i++;
             }
@@ -2502,7 +3114,7 @@ namespace Acorn {
         void backwards_sub_process(Context& ctx) { 
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a backwards sub_process while an error was flagged")); return;})
             node_col children = ctx.node().children();
-            Context sub_ctx = make_context(children,ctx.source_ptr());
+            Context sub_ctx = make_context(children,ctx.source_ptr(),sub_pass_id,ctx);
             sub_ctx.root(ctx.node());
             sub_ctx.sub(ctx.sub());
             int& i = sub_ctx.index();
@@ -2513,7 +3125,7 @@ namespace Acorn {
                 } else {
                     process_node(sub_ctx, sub_ctx.result().get(i), sub_ctx.result().get(i+1));
                 }
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
+                DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(sub_ctx); endline(); return;})
                 i--;
             }
             ctx.flag(sub_ctx.flag());
@@ -2570,6 +3182,145 @@ namespace Acorn {
                 recycle_context(sub_ctx);
             }
         }
+
+
+        void standard_pass_child_scopes(Node node, std::function<void(Node)> behaviour) {
+            for(int c = 0; c < node.children().length(); c++) {
+                Node child = node.children()[c];
+                if(!child.scopes().empty()) {
+                    standard_sub_process_node(child);
+                    for(int s = 0; s < child.scopes().length(); s++) {
+                        if(child.scopes()[s].owner()==child) {
+                            behaviour(child.scopes()[s]);
+                        }
+                    }
+                }
+                standard_pass_child_scopes(child, behaviour);
+            }
+        }
+
+        map<uint32_t,Handler> pass_handlers;
+        Handler default_pass_handler = [this](Context& ctx){
+            print(red("No pass handler found for type: "+labels[ctx.pass()]));
+        };
+        bool init_pass_handlers() {
+            pass_handlers[undefined_id] = [this](Context& ctx){};
+            pass_handlers[direct_pass_id] = [this](Context& ctx){
+                while(unit_ctx.index()< unit_ctx.result().length()) {
+                    unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
+                    standard_process(unit_ctx);
+                    DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(unit_ctx); return;})
+                    unit_ctx.left((unit_ctx.index()<0)?deadptr:unit_ctx.result().get(unit_ctx.index()));
+                    unit_ctx.index()++;
+                }
+                node_col scopes = unit_ctx.root().scopes();
+                for(int i = 0; i<scopes.length(); i++) {
+                    standard_direct_pass(scopes.get(i));
+                    DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(unit_ctx); return;})
+                }
+            };
+
+            pass_handlers[resolving_pass_id] = [this](Context& ctx){
+                int& i = unit_ctx.index();
+                while(i < unit_ctx.result().length()) {    //Process all nodes with scopes first (like any declerations)
+                    if(!unit_ctx.result()[i].scopes().empty()) {
+                        unit_ctx.node(unit_ctx.result()[i]);
+                        standard_process(unit_ctx);
+                        DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx);  return;})
+                        if(i>=0) {unit_ctx.left(unit_ctx.result()[i]);} else {unit_ctx.left(deadptr);}
+                    }
+                    i++;
+                }
+                i = 0;
+                while(i < unit_ctx.result().length()) {    //Then process nodes without scopes
+                    if(unit_ctx.result()[i].scopes().empty()) {
+                        unit_ctx.node(unit_ctx.result()[i]);
+                        standard_process(unit_ctx);
+                        DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                        if(i>=0) {unit_ctx.left(unit_ctx.result()[i]);} else {unit_ctx.left(deadptr);}
+                    }
+                    i++;
+                }
+                i = 0;
+                while(i < unit_ctx.result().length()) {    //Then the children of nodes with scopes
+                    if(!unit_ctx.result()[i].scopes().empty()) {
+                        standard_sub_process_node(unit_ctx.result()[i]);
+                    }
+                    DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                    i++;
+                }
+                i = 0;
+                while(i < unit_ctx.result().length()) {    //Then finnaly the subscopes
+                    standard_pass_child_scopes(unit_ctx.result()[i],[this](Node node){standard_resolving_pass(node);}); //Processing closures and such, any child containing it's own scopes
+                    if(!unit_ctx.result()[i].scopes().empty()) {
+                        for(int s = 0;s<unit_ctx.result()[i].scopes().length();s++) {
+                            if(unit_ctx.result()[i].scopes()[s].owner()==unit_ctx.result()[i]) {
+                                standard_resolving_pass(unit_ctx.result()[i].scopes()[s]);
+                                DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                            }
+                        }
+                    }
+                    i++;
+                }
+            };
+
+            pass_handlers[travel_pass_id] = [this](Context& ctx){
+                while(unit_ctx.index() < unit_ctx.result().length()) {
+                    unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
+                    standard_process(unit_ctx);
+                    unit_ctx.left((unit_ctx.index()<0)?deadptr:unit_ctx.result().get(unit_ctx.index()));
+                    DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                    if(unit_ctx.state()>0) { //This is the return/break process
+                        return;
+                    }
+                    unit_ctx.index()++;
+                }
+            };
+
+            pass_handlers[backwards_pass_id] = [this](Context& ctx){
+                int& i = unit_ctx.index();
+                while(i >= 0) {
+                    unit_ctx.node(unit_ctx.result().get(i));
+                    standard_process(unit_ctx);
+                    DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                    node_col scopes = unit_ctx.result().get(i).scopes();
+                    standard_pass_child_scopes(unit_ctx.result()[i],[this](Node node){standard_backwards_pass(node);});
+                    for(int s = 0; s<scopes.length(); s++) {
+                        if(is_live(scopes.get(s).owner())&&scopes.get(s).owner()==unit_ctx.result().get(i)) {
+                            memory_backwards_pass(scopes.get(s));
+                            DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                        }
+                    }
+                    unit_ctx.left(unit_ctx.result().get(i));
+                    i--;
+                }
+            };
+
+            pass_handlers[memory_backwards_pass_id] = [this](Context& ctx){
+                int& i = unit_ctx.index();
+                while(i >= 0) {
+                    unit_ctx.node(unit_ctx.result().get(i));
+                    standard_pass_child_scopes(unit_ctx.result()[i],[this](Node node){memory_backwards_pass(node);});
+                    node_col scopes = unit_ctx.result().get(i).scopes();
+                    for(int s = 0; s<scopes.length(); s++) {
+                        if(is_live(scopes.get(s).owner())&&scopes.get(s).owner()==unit_ctx.result().get(i)) {
+                            memory_backwards_pass(scopes.get(s));
+                            DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                        }
+                    }
+                    standard_process(unit_ctx);
+                    DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(ctx); return;})
+                    unit_ctx.left(unit_ctx.result().get(i));
+                    i--;
+                }
+            };
+            return true;
+        }
+        bool passes_initilized = init_pass_handlers();
+
+        void run_pass(Context& ctx) {
+            pass_handlers.getOrDefault(ctx.pass(),default_pass_handler)(ctx);
+        }
     
         void standard_direct_pass(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a direct pass while an error was flagged")); return;})
@@ -2578,92 +3329,31 @@ namespace Acorn {
             Context ctx = make_context(children,deadptr,direct_pass_id,unit_ctx);
             ctx.root(root);
             unit_ctx = ctx;
-            while(unit_ctx.index()< unit_ctx.result().length()) {
-                unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
-                standard_process(ctx);
-                DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; print(red("ERROR IN DIRECT PASS:\n"),context_info(unit_ctx)); ERROR_FLAG = true; endline(); unit_ctx = unit_ctx.parent(); return;})
-                unit_ctx.left((unit_ctx.index()<0)?deadptr:unit_ctx.result().get(unit_ctx.index()));
-                unit_ctx.index()++;
-            }
-    
-            node_col scopes = root.scopes();
-            for(int i = 0; i<scopes.length(); i++) {
-                standard_direct_pass(scopes.get(i));
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); unit_ctx = unit_ctx.parent(); return;})
-            }
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
+                run_pass(ctx);
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
             unit_ctx = unit_ctx.parent();
             deep_recycle_context(ctx);
-        }
-
-        void standard_resolve_child_scopes(Node node) {
-            for(int c = 0; c < node.children().length(); c++) {
-                Node child = node.children()[c];
-                if(!child.scopes().empty()) {
-                    standard_sub_process_node(child);
-                    for(int s = 0; s < child.scopes().length(); s++) {
-                        if(child.scopes()[s].owner()==child) {
-                            standard_resolving_pass(child.scopes()[s]);
-                        }
-                    }
-                }
-                standard_resolve_child_scopes(child);
-            }
         }
 
         void standard_resolving_pass(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a resolving pass while an error was flagged")); return;})
             node_col children = root.children();
             newline("Resolving pass over "+std::to_string(children.length())+" nodes");
-            Context ctx = make_context(children);
-            int& i = ctx.index();
+            Context ctx = make_context(children,deadptr,resolving_pass_id,unit_ctx);
             ctx.root(root);
-            while(i < ctx.result().length()) {    //Process all nodes with scopes first (like any declerations)
-                if(!ctx.result()[i].scopes().empty()) {
-                    ctx.node(ctx.result()[i]);
-                    standard_process(ctx);
-                    DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                    if(i>=0) {ctx.left(ctx.result()[i]);} else {ctx.left(deadptr);}
-                }
-                i++;
-            }
-            i = 0;
-            while(i < ctx.result().length()) {    //Then process nodes without scopes
-                if(ctx.result()[i].scopes().empty()) {
-                    ctx.node(ctx.result()[i]);
-                    standard_process(ctx);
-                    DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                    if(i>=0) {ctx.left(ctx.result()[i]);} else {ctx.left(deadptr);}
-                }
-                i++;
-            }
-            i = 0;
-            while(i < ctx.result().length()) {    //Then the children of nodes with scopes
-                if(!ctx.result()[i].scopes().empty()) {
-                    standard_sub_process_node(ctx.result()[i]);
-                }
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                i++;
-            }
-            i = 0;
-            while(i < ctx.result().length()) {    //Then finnaly the subscopes
-                standard_resolve_child_scopes(ctx.result()[i]); //Processing closures and such, any child containing it's own scopes
-                if(!ctx.result()[i].scopes().empty()) {
-                    for(int s = 0;s<ctx.result()[i].scopes().length();s++) {
-                        if(ctx.result()[i].scopes()[s].owner()==ctx.result()[i]) {
-                            standard_resolving_pass(ctx.result()[i].scopes()[s]);
-                            DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                        }
-                    }
-                }
-                i++;
-            }
+            unit_ctx = ctx;
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
+                run_pass(ctx);
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
+            unit_ctx = unit_ctx.parent();
             deep_recycle_context(ctx);
         }
 
         uint32_t standard_travel_pass(Node root, Context sub = deadptr) {
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return true;})
+            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a travel pass while an error was flagged")); return 0;})
             node_col children = root.children();
             newline("Travel pass over "+std::to_string(children.length())+" nodes");
             Context ctx = make_context(children,is_live(sub)?sub.source_ptr():deadptr,travel_pass_id,unit_ctx);
@@ -2671,110 +3361,44 @@ namespace Acorn {
             ctx.sub(sub);
             unit_ctx = ctx;
             DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
-            while(unit_ctx.index() < unit_ctx.result().length()) {
-                unit_ctx.node(unit_ctx.result().get(unit_ctx.index()));
-                standard_process(unit_ctx);
-                unit_ctx.left((unit_ctx.index()<0)?deadptr:unit_ctx.result().get(unit_ctx.index()));
-                DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; print(red("ERROR IN TRAVEL PASS:\n"),context_info(ctx)); ERROR_FLAG = true; endline(); unit_ctx = unit_ctx.parent(); return 0;})
-                //DEBUG_ONLY(if(ERROR_FLAG) {ERROR_FLAG = false; if(ctx==unit_ctx) {print(red("ERROR IN TRAVEL PASS:\n"),context_trace_verbose(ctx));} ERROR_FLAG = true; endline(); return 0;})
-                if(unit_ctx.state()>0) { //This is the return/break process
-                    DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
-                    endline();
-                    uint32_t state = unit_ctx.state();
-                    unit_ctx = unit_ctx.parent();
-                    deep_recycle_context(ctx);
-                    return state;
-                }
-                unit_ctx.index()++;
-            }
+                run_pass(ctx);
             DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
+            uint32_t state = unit_ctx.state();
             unit_ctx = unit_ctx.parent();
             deep_recycle_context(ctx);
-            return 0;
-        }
-
-        void standard_backwards_child_scopes(Node node) {
-            for(int c = 0; c < node.children().length(); c++) {
-                Node child = node.children()[c];
-                if(!child.scopes().empty()) {
-                    standard_sub_process_node(child);
-                    for(int s = 0; s < child.scopes().length(); s++) {
-                        if(child.scopes()[s].owner()==child) {
-                            standard_backwards_pass(child.scopes()[s]);
-                        }
-                    }
-                }
-                standard_backwards_child_scopes(child);
-            }
+            return state;
         }
 
         void standard_backwards_pass(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a backwards pass while an error was flagged")); return;})
             node_col children = root.children();
             newline("Backwards pass over "+std::to_string(children.length())+" nodes");
-            Context ctx = make_context(children);
-            int& i = ctx.index();
+            Context ctx = make_context(children,deadptr,backwards_pass_id,unit_ctx);
             ctx.root(root);
-            i = ctx.result().length()-1;
-            while(i >= 0) {
-                ctx.node(ctx.result().get(i));
-                standard_process(ctx);
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                node_col scopes = ctx.result().get(i).scopes();
-                standard_backwards_child_scopes(ctx.result().get(i));
-                for(int s = 0; s<scopes.length(); s++) {
-                    if(is_live(scopes.get(s).owner())&&scopes.get(s).owner().idx==ctx.result().get(i).idx) {
-                        memory_backwards_pass(scopes.get(s));
-                        DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                    }
-                }
-                ctx.left(ctx.result().get(i));
-                i--;
-            }
+            ctx.index() = ctx.result().length()-1;
+            unit_ctx = ctx;
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
+                run_pass(ctx);
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
+            unit_ctx = unit_ctx.parent();
             deep_recycle_context(ctx);
-        }
-
-        void standard_memory_backwards_child_scopes(Node node) {
-            for(int c = 0; c < node.children().length(); c++) {
-                Node child = node.children()[c];
-                if(!child.scopes().empty()) {
-                    standard_sub_process_node(child);
-                    for(int s = 0; s < child.scopes().length(); s++) {
-                        if(child.scopes()[s].owner()==child) {
-                            memory_backwards_pass(child.scopes()[s]);
-                        }
-                    }
-                }
-                standard_memory_backwards_child_scopes(child);
-            }
         }
 
         void memory_backwards_pass(Node root) {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted a memory backwards pass while an error was flagged")); return;})
             node_col children = root.children();
             newline("Backwards pass over "+std::to_string(children.length())+" nodes");
-            Context ctx = make_context(children);
-            int& i = ctx.index();
+            Context ctx = make_context(children,deadptr,memory_backwards_pass_id,unit_ctx);
             ctx.root(root);
-            i = ctx.result().length()-1;
-            while(i >= 0) {
-                ctx.node(ctx.result().get(i));
-                standard_memory_backwards_child_scopes(ctx.result().get(i));
-                node_col scopes = ctx.result().get(i).scopes();
-                for(int s = 0; s<scopes.length(); s++) {
-                    if(is_live(scopes.get(s).owner())&&scopes.get(s).owner()==ctx.result().get(i)) {
-                        memory_backwards_pass(scopes.get(s));
-                        DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                    }
-                }
-                standard_process(ctx);
-                DEBUG_ONLY(if(ERROR_FLAG) {endline(); return;})
-                ctx.left(ctx.result().get(i));
-                i--;
-            }
+            ctx.index() = ctx.result().length()-1;
+            unit_ctx = ctx;
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.passstart) w.passstart(ctx);})
+                run_pass(ctx);
+            DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
+            unit_ctx = unit_ctx.parent();
             deep_recycle_context(ctx);
         }   
 
@@ -2817,8 +3441,34 @@ namespace Acorn {
         }
 
         enum norm_ops {
-            NORM_IDS = 0
+            NORM_IDS = 0, NORM_PTRS = 1
         };
+
+        void write_normalize_trailer(std::ostream& out,list<uint32_t> passes) {
+            uint32_t pass_count = passes.length();
+            write_raw(out, pass_count);
+            for(int p=0;p<pass_count;p++) {
+                switch(passes[p]) {
+                    case NORM_IDS: {
+                        write_raw<uint32_t>(out, NORM_IDS);
+                        write_raw<uint32_t>(out, labels.entrySet().length());
+                        for(auto e : labels.entrySet()) {
+                            write_raw<uint32_t>(out, e.key);
+                            write_string(out, e.value);
+                        }
+                    }
+                    break;
+                    case NORM_PTRS: {
+                        write_raw<uint32_t>(out, NORM_PTRS);
+                    }
+                    break;
+
+                    default:
+                    print(red("core:write_normalize unrecognized pass: "+std::to_string(passes[p])));
+                    break;
+                }
+            }
+        }
     
         void normalize(std::ifstream& in, list<void*> data, uint8_t level) {
             uint32_t pass_count = read_raw<uint32_t>(in);
@@ -2861,29 +3511,6 @@ namespace Acorn {
                 }
             }
         }
-
-        void write_normalize_trailer(std::ostream& out,list<uint32_t> passes) {
-            uint32_t pass_count = passes.length();
-            write_raw(out, pass_count);
-            for(int p=0;p<pass_count;p++) {
-                switch(passes[p]) {
-                    case NORM_IDS: {
-                        write_raw<uint32_t>(out, NORM_IDS);
-                        write_raw<uint32_t>(out, labels.entrySet().length());
-                        for(auto e : labels.entrySet()) {
-                            write_raw<uint32_t>(out, e.key);
-                            write_string(out, e.value);
-                        }
-                    }
-                    break;
-
-                    default:
-                    print(red("core:write_normalize unrecognized pass: "+std::to_string(passes[p])));
-                    break;
-                }
-            }
-        }
-
 
         void save_acorn(const std::string& path) {
             auto out = openWriteStream(path);

@@ -6,8 +6,8 @@
 
 namespace Acorn {
 
-    bool ERROR_FLAG = false;
-    std::string ERROR_MSG = "";
+    inline thread_local bool ERROR_FLAG = false;
+    inline thread_local std::string ERROR_MSG = "";
 
     template<typename... Args>
     void throw_error(Args&&... args) {
@@ -18,10 +18,41 @@ namespace Acorn {
         print(red("ERROR: "),ERROR_MSG);
     }
 
+    template<typename... Args>
+    void append_error(Args&&... args) {
+        std::ostringstream oss;
+        (oss << ... << std::forward<Args>(args));
+        ERROR_MSG+=yellow(" -> ")+oss.str();
+        print(red("ERROR: "), oss.str());
+    }
+    
     #if ACORN_DEBUG
         #define DEBUG_ONLY(x) x
+        #define CHECK_ERROR_VAL(value, ...)     \
+            do {                                \
+                if (ERROR_FLAG) {               \
+                    append_error(               \
+                        __VA_ARGS__,            \
+                        " [", strip_path(__FILE__), ":", __LINE__, "]" \
+                    );                          \
+                    return value;               \
+                }                               \
+            } while (false)
+    
+        #define CHECK_ERROR(...)                \
+            do {                                \
+                if (ERROR_FLAG) {               \
+                    append_error(               \
+                        __VA_ARGS__,            \
+                        " [", strip_path(__FILE__), ":", __LINE__, "]" \
+                    );                          \
+                    return;                     \
+                }                               \
+            } while (false)                     
     #else
         #define DEBUG_ONLY(x)
+        #define CHECK_ERROR_VAL(value, ...)
+        #define CHECK_ERROR(...)
     #endif
 
     uint32_t hashBytes(const void* data, uint32_t size) {
@@ -168,6 +199,16 @@ namespace Acorn {
                 (cachelevel == 0 ? (zone == other.zone && region == other.region) : (cache == other.cache));
         }
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
+        inline uint32_t& operator[](uint32_t field) {
+            switch(field) {
+                case 5: return device;
+                case 4: return unit;
+                case 3: return pool;
+                case 2: return idx;
+                case 1: return sidx;
+                default: return sidx;
+            }
+        }
     };
     static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
@@ -291,6 +332,20 @@ namespace Acorn {
             memcpy(out, qget((size/width - 1) * width), width);
             resize(size - width);
         }
+
+        QCol take_range(uint32_t from, uint32_t to, uint32_t width) {
+            uint32_t byte_from = from * width;
+            uint32_t byte_to = to * width;
+            uint32_t remove_size = byte_to - byte_from;
+            QCol to_return; to_return.resize(remove_size);
+            memcpy(to_return.storage, &storage[byte_from], remove_size);
+            memmove(&storage[byte_from], &storage[byte_to], size - byte_to);
+            size -= remove_size;
+            return to_return;
+        }
+        QCol take(uint32_t index, uint32_t width) {
+            return take_range(index, index+1, width);
+        }
     };
 
     struct QString : QCol {
@@ -390,7 +445,7 @@ namespace Acorn {
         }
         
         inline void* sget(uint32_t index) const {
-            DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", elment size is ",element_size," tag is ",tag);return nullptr;})
+            DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", element size is ",element_size," tag is ",tag);return nullptr;})
             return &storage[index * element_size];
         }
         inline void* iget(uint32_t index, uint32_t offset) {
@@ -401,6 +456,8 @@ namespace Acorn {
         inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
         void removeAt(uint32_t index) {QCol::removeAt(index,element_size);}
         void pop(void* out) {QCol::pop(out,element_size);}
+        QCol take(uint32_t index) {return QCol::take_range(index, index+1, element_size);}
+        QCol take_range(uint32_t from, uint32_t to) {return QCol::take_range(from, to, element_size);}
     };
 
     struct QCellCol : QCol {

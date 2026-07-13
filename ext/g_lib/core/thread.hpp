@@ -118,6 +118,13 @@ void end() {
     }
 }
 
+void detach() {
+    shouldStopThread = true;
+    if (impl.joinable()) {
+        impl.detach();
+    }
+}
+
 void setSpeed(float speed)
 {
     if(speed<=0.0f) {runningTurn = false; sliceSpeed.store(0);}

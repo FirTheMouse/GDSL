@@ -1252,6 +1252,7 @@ namespace Acorn {
                     node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value(), node.count_qual(hoisted_id)));
                     node.scopes()[0].type(type_scope_id);
                     add_template(node.value().type());
+                    keywords.put(node.name().to_std(),node.value());
                     r_handlers[to_prefix_id(node.value().type())] = [this](Context& ctx){
                         if(ctx.value().size()==0&&layouts.hasKey(ctx.value().type())) {
                             ctx.value().size(layouts.get(ctx.value().type()).total_size);
@@ -1263,6 +1264,9 @@ namespace Acorn {
                             ctx.value().data_col().heterogenous = true;
                         }
                     }; 
+                    value_printers[node.value().type()] = [this](Context& ctx){
+                        ctx.source() = heterogenous_col_to_string(ctx.value().data_col());
+                    };
                 }
             } else {
                 has_scope = find_node_in_scope(node); //To distinquish func_calls from object identifiers
@@ -1978,6 +1982,14 @@ namespace Acorn {
             register_type("Value",value_id,sizeof(Ptr));
             register_type("Context",context_id,sizeof(Ptr));
             register_type("Ptr",ptr_id,sizeof(Ptr));
+
+            register_type("Col",col_id,sizeof(Ptr));
+            value_printers[col_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
+            register_type("ColCol",colcol_id,sizeof(Ptr));
+            value_printers[colcol_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
+            register_type("ColColCol",colcolcol_id,sizeof(Ptr));
+            value_printers[colcolcol_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
+
             register_type("func",function_id,sizeof(Ptr));
             value_printers[function_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
             register_type("duck",duck_id,0);
@@ -2368,6 +2380,43 @@ namespace Acorn {
             };
 
 
+            r_handlers[rangle_equals_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_overload(ctx);
+                if(!is_live(ctx.node().value())) ctx.node().value(make_value(bool_id,1));
+            };
+            x_handlers[rangle_equals_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                void* p1 = ctx.node().children()[0].value().get();
+                void* p2 = ctx.node().children()[1].value().get();
+                DEBUG_ONLY(if(ERROR_FLAG){return;})
+                int result =      
+                    *(int*)p1
+                    >=
+                    *(int*)p2
+                ;
+                ctx.node().value().set((void*)&result);
+            };
+
+            r_handlers[langle_equals_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_overload(ctx);
+                if(!is_live(ctx.node().value())) ctx.node().value(make_value(bool_id,1));
+            };
+            x_handlers[langle_equals_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+                void* p1 = ctx.node().children()[0].value().get();
+                void* p2 = ctx.node().children()[1].value().get();
+                DEBUG_ONLY(if(ERROR_FLAG){return;})
+                int result =      
+                    *(int*)p1
+                    <=
+                    *(int*)p2
+                ;
+                ctx.node().value().set((void*)&result);
+            };
+
+
             // r_handlers[plus_equals_id] = [this](Context& ctx){
             //     if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
             //     standard_sub_process(ctx);
@@ -2380,11 +2429,13 @@ namespace Acorn {
                 resolve_overload(ctx);
                 if(!is_live(ctx.node().value())) ctx.node().value(make_value(int_id,4));
             };
+
             x_handlers[plus_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 void* p1 = ctx.node().children()[0].value().get();
+                CHECK_ERROR("Left arg of plus is invalid");
                 void* p2 = ctx.node().children()[1].value().get();
-                DEBUG_ONLY(if(ERROR_FLAG){return;})
+                CHECK_ERROR("Right arg of plus is invalid");
                 int result =      
                     *(int*)p1
                     +

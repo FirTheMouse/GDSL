@@ -1,4 +1,11 @@
-global int i; test;
-static global int b; test;
-global Ptr int nums; test;
-static global Ptr Ptr int nested; test;
+int i = 5;
+if(true) {
+    i=i+a;
+}
+
+catch {
+    Ptr string uerrors = unit_errors;
+    print("Caught an error");
+}
+
+print("i is: ",i);

@@ -1,11 +1,8 @@
-int i = 5;
-if(true) {
-    i=i+a;
-}
-
-catch {
-    Ptr string uerrors = unit_errors;
-    print("Caught an error");
-}
-
-print("i is: ",i);
+string s = "
+    this is
+        a multi line
+    string      thing
+";
+print(s);
+DEBUG_ROOT_X_VERBOSE;
+STAMP_SOURCE;

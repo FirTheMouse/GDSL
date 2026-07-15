@@ -69,7 +69,7 @@ inline std::string add_commas(int num) {
 
     bool is_str_num(const std::string& tocheck) {for(auto c : tocheck) {if(!std::isdigit(c)) return false;} return true;}
 
-    std::string escape_string(const std::string& content, bool compact_spaces = true) {
+    std::string escape_string(const std::string& content, bool compact_spaces = false, list<char> extra_escapes = {}) {
         std::string escaped;
         int space_count = 0;
         for(char c : content) {
@@ -86,9 +86,16 @@ inline std::string add_commas(int num) {
                 case '\n': escaped += "\\n"; break;
                 case '\t': escaped += "\\t"; break;
                 case '\r': escaped += "\\r"; break;
-                //case '"':  escaped += "\\\""; break;
                 case '\\': escaped += "\\\\"; break;
-                default:   escaped += c; break;
+                default:  {
+                    if(extra_escapes.has(c)) {
+                        escaped += '\\';
+                        escaped += c;
+                    } else {
+                        escaped += c; 
+                    }
+                    break;
+                }
             }
         }
         return escaped;

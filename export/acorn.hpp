@@ -4308,7 +4308,7 @@ namespace Acorn {
                     return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
                 }
                 std::string content = string(ptr).to_std();
-                return Ptr_as_string(ptr)+"> \""+escape_string(content)+"\"";
+                return Ptr_as_string(ptr)+"> \""+escape_string(content,true)+"\"";
             } else if(tag==ptr_id) {
                 return Ptr_to_string(*(Ptr*)data);
             } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id||tag==function_id) {
@@ -4667,7 +4667,7 @@ namespace Acorn {
             to_return += blue(Ptr_as_string(node)+" ")
             + labels[node.type()]
             + (node.sub_type()==0?"":":"+labels[node.sub_type()])
-            + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()))+" ") 
+            + (node.name().length()==0?"":" "+green(escape_string(node.name().to_std()),true)+" ") 
             + (is_live(node.value())?value_info(node.value()):"")
             + (node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"")
             + (!node.children().empty()?"[C:"+std::to_string(node.children().length())+"]":"")

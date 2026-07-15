@@ -158,21 +158,40 @@ namespace Acorn {
 
 
         map<std::string,uint32_t> tokenized_keywords;
+
+
+
+        list<uint32_t> tokenizer_context_stack;
         map<char,bool> char_is_split;
 
         map<char, Handler> tokenizer_functions;
         map<uint32_t, Handler> tokenizer_state_functions;
         Handler tokenizer_default_function = nullptr;
 
-        float at_x = 0.0f;
-        float at_y = 0.0f;
 
-        size_t make_tokenized_keyword(const std::string& token_name, size_t default_id = 0) {
+
+        map<uint32_t,list<std::function<void()>>> token_registers;
+        size_t make_tokenized_keyword(const std::string& token_name, size_t default_id = 0, uint32_t registeryid = 0) {
             size_t id = default_id;
             if(default_id==0) {
                 id = reg_id(token_name);
             }
-            tokenized_keywords.put(token_name,id);
+
+            if(registeryid==0) {
+                tokenized_keywords.put(token_name,id);
+            }
+            token_registers[registeryid] << [this,token_name,id]() {
+                tokenized_keywords[token_name] = id;
+            };
+            return id;
+        }
+
+        uint32_t make_registering_tokenized_keyword(const std::string& token_name, size_t default_id = 0, uint32_t registeryid = 0) {
+            uint32_t id = make_tokenized_keyword(token_name,default_id,registeryid);
+            tokenizer_state_functions[id] = [this](Context& ctx){
+                for(auto& f : token_registers[ctx.node().type()]) {f();}
+                ctx.state(0); at_x-=1.0f; --ctx.index();
+            };
             return id;
         }
 
@@ -223,7 +242,7 @@ namespace Acorn {
         size_t add_token(char c, const std::string& f) {
             size_t id = reg_id(f);
             tokenizer_functions[c] = [this,id,c](Context& ctx) {
-                ctx.node(make_node(0,0,"",at_x,at_y));
+                ctx.node(make_node(0,0,"",at_x,at_y,at_z));
                 int to_skip = find_token_combo(ctx);
                 if(to_skip!=0) { 
                     ctx.node().name().push(c);
@@ -268,13 +287,17 @@ namespace Acorn {
         size_t comment_id = reg_id("COMMENT");
         size_t single_quote_id = add_token('\'',"SINGLE_QUOTE");
 
+        bool prevent_tokenizer_position_reset = false;
+
         Node tokenize(const std::string& code) {
+
+            tokenized_keywords.clear(); 
+            for(auto& f : token_registers[0]) {f();}
+
             Node root = make_node();
             root.name("ROOT");
             node_col result = root.children();
             uint32_t state = 0;
-            at_x = 0.0f;
-            at_y = 0.0f;
             Context ctx = make_context(result);
             int& index = ctx.index();
 
@@ -326,13 +349,25 @@ namespace Acorn {
                     ctx.state(0); 
                     at_x-=1.0f;
                     --ctx.index();
-                    ctx.node().type(tokenized_keywords.getOrDefault(ctx.node().name().to_std(),ctx.node().type()));
+                    if(tokenized_keywords.hasKey(ctx.node().name().to_std())) {
+                        uint32_t tokenized_type = tokenized_keywords.get(ctx.node().name().to_std());
+                        ctx.node().type(tokenized_type);
+                        if(tokenizer_state_functions.hasKey(tokenized_type)) {ctx.state(tokenized_type);}
+                    } else {
+                        ctx.node().type(ctx.node().type());
+                    }
                     return;
                 } else {
                     ctx.node().name().push(c);
                     if(ctx.index()+1==ctx.source().length()) {
                         ctx.state(0); 
-                        ctx.node().type(tokenized_keywords.getOrDefault(ctx.node().name().to_std(),ctx.node().type()));
+                        if(tokenized_keywords.hasKey(ctx.node().name().to_std())) {
+                            uint32_t tokenized_type = tokenized_keywords.get(ctx.node().name().to_std());
+                            ctx.node().type(tokenized_type);
+                            if(tokenizer_state_functions.hasKey(tokenized_type)) {ctx.state(tokenized_type);}
+                        } else {
+                            ctx.node().type(ctx.node().type());
+                        }
                     }
                 }
             });
@@ -370,12 +405,12 @@ namespace Acorn {
                 char c = ctx.source().at(ctx.index());
                 if(std::isalpha(c)) {
                     ctx.state(in_alpha_id);
-                    ctx.node(make_node(identifier_id,0,std::string(1,c),at_x,at_y));
+                    ctx.node(make_node(identifier_id,0,std::string(1,c),at_x,at_y,at_z));
                     ctx.result().push(ctx.node());
                 }
                 else if(std::isdigit(c)) {
                     ctx.state(in_digit_id);
-                    ctx.node(make_node(int_id,0,std::string(1,c),at_x,at_y));
+                    ctx.node(make_node(int_id,0,std::string(1,c),at_x,at_y,at_z));
                     ctx.result().push(ctx.node());
                 }  else {
                     print("tokenize:default_function missing handling for char: ",c);
@@ -688,8 +723,8 @@ namespace Acorn {
         }
         
 
-        Node value_to_qual(Value val, std::string name = "", float x = -1.0f, float y = -1.0f) {
-            Node to_return = make_node(val.type(),val.sub_type(),name,x,y,0.0f,val);
+        Node value_to_qual(Value val, std::string name = "") {
+            Node to_return = make_node(val.type(),val.sub_type(),name,-1.0f,-1.0f,0.0f,val);
             return to_return;
         }
 
@@ -842,6 +877,32 @@ namespace Acorn {
         uint32_t random_combo_id = add_token_combo("RANDOM",'|','*','^','+');
 
         uint32_t arguments_id = reg_id("ARGUMENTS"); //For function calls
+
+        void take_right(Context ctx, int amt) {
+            for(int i = 0; i<amt; i++) {
+                ctx.index()+=(i+1);
+                if(ctx.index() < ctx.result().length()) {
+                    process_node(ctx,ctx.result().get(ctx.index()));
+                }
+                for(int r=0;r<ctx.result().length();r++) {
+                    if(ctx.result()[r]==ctx.node()) {ctx.index() = r;}
+                }
+            }
+
+            for(int i = 0; i<amt; i++) {
+                if(ctx.index() + 1 < ctx.result().length()) {
+                    ctx.node().children() << ctx.result().take(ctx.index() + 1);
+                } 
+            }
+        }
+        void take_left(Context ctx, int amt) {
+            for(int i = 0; i<amt; i++) {
+                if(ctx.index() - 1 >= 0) {
+                    ctx.node().children().insert(0,ctx.result().take(ctx.index() - 1));
+                    ctx.index()--;
+                }
+            }
+        }
 
         void init_stage_a() {
             discard_types.push_if_absent(undefined_id);
@@ -1167,7 +1228,8 @@ namespace Acorn {
             int root_idx = -1;
             if(is_qualifier) {
                 if(is_live(ctx.node().value())) {
-                    decl_value.quals() << value_to_qual(node.value(),node.name().to_std(),node.x(),node.y());
+                    decl_value.quals() << value_to_qual(node.value(),node.name().to_std());
+                    node.quals() << copy_as_token(decl_value.quals().last(),node.x(),node.y(),node.z()); 
                 }
                 for(int i = 0; i < node.children().length(); i++) {
                     Node c = node.children()[i];
@@ -1175,7 +1237,8 @@ namespace Acorn {
                     if(c.type()!=identifier_id) {break;}
 
                     if(is_live(c.value())&&c.value().type()!=0&&c.value().type()!=duck_id) {
-                        decl_value.quals() << value_to_qual(c.value(),c.name().to_std(),c.x(),c.y());
+                        decl_value.quals() << value_to_qual(c.value(),c.name().to_std());
+                        node.quals() << copy_as_token(decl_value.quals().last(),c.x(),c.y(),c.z()); 
                     } else {
                         root_idx = i;
                         break;
@@ -1190,7 +1253,8 @@ namespace Acorn {
                         Node c = node.children()[i];
                         find_value_in_scope(c);
                         if(is_live(c.value())&&c.value().type()!=0&&c.value().type()!=duck_id) {
-                            node.quals() << value_to_qual(c.value(),c.name().to_std(),c.x(),c.y());
+                            node.quals() << value_to_qual(c.value(),c.name().to_std());
+                            node.quals() << copy_as_token(decl_value.quals().last(),c.x(),c.y(),c.z());
                         } 
                     }
                     node.children(node.children().take(root_idx).children());
@@ -1362,7 +1426,12 @@ namespace Acorn {
             if(!layouts.hasKey(type)) {
                 layouts.put(type,_layout(add_template(type)));
             }
+
+            float old_at_x = at_x; float old_at_y = at_y;
+            at_x = 0.0f; at_y =0.0f;
             Node expr = tokenize(instr);
+            at_x = old_at_x; at_y = old_at_y;
+
             Stage* old_stage = active_stage;
             start_stage(a_handlers);
             standard_direct_pass(expr);
@@ -2275,14 +2344,25 @@ namespace Acorn {
                     ctx.node().quals() << open_token;
                     ctx.node().type(string_id);
                     ctx.node().name().col().clear();
-                    ctx.node().x(at_x);
-                    ctx.node().y(at_y);
+                    ctx.node().x(-1.0f); ctx.node().y(-1.0f);
                 }
 
                 if(c == '"') {
                     ctx.state(0);
-                    Node closer = copy_as_token(ctx.node().quals()[0]);
-                    closer.x(at_x); closer.y(at_y);
+                    Node closer = copy_as_token(ctx.node().quals()[0],at_x,at_y,at_z);
+
+                    std::string name = ctx.node().name().to_std();
+                    size_t last_nl = name.rfind('\n');
+                    size_t line_start = (last_nl == std::string::npos) ? 0 : last_nl + 1;
+                    std::string line_content = name.substr(line_start);
+                    if(!line_content.empty()) {
+                        float line_x = at_x - (float)line_content.length();
+                        Node line_token = make_node(string_id, 0, line_content, line_x, at_y, at_z);
+                        line_token.mute(true);
+                        ctx.node().quals() << line_token;
+                    }
+
+
                     ctx.node().quals() << closer;
                 } else if(c == '\\' && ctx.index()+1<ctx.source().length()) {
                     char next = ctx.source().at(ctx.index() + 1);
@@ -2290,13 +2370,23 @@ namespace Acorn {
                         case 'n':  ctx.node().name().push('\n'); break;
                         case 't':  ctx.node().name().push('\t'); break;
                         case 'r':  ctx.node().name().push('\r'); break;
-                        case '"':  ctx.node().name().push('"');  break;
-                        case '\\': ctx.node().name().push('\\'); break;
-                        default:   ctx.node().name().push(next); break;
+                        default:  at_x -= 1.0f; ctx.node().name().push(next); break;
                     }
                     at_x += 1.0f;
                     ctx.index()++;
                 } else if(c == '\n') {
+                    std::string name = ctx.node().name().to_std();
+                    size_t last_nl = name.rfind('\n');
+                    size_t line_start = (last_nl == std::string::npos) ? 0 : last_nl + 1;
+                    std::string line_content = name.substr(line_start);
+                    if(!line_content.empty()) {
+                        float line_x = at_x - (float)line_content.length();
+                        Node line_token = make_node(string_id, 0, line_content, line_x, at_y, at_z);
+                        line_token.mute(true);
+                        ctx.node().quals() << line_token;
+                    }
+                    
+                    ctx.node().name().push("\n");
                     at_y += 1.0f;
                     at_x = -1.0f;
                 } else {
@@ -2313,8 +2403,6 @@ namespace Acorn {
                     ctx.node().quals() << open_token;
                     ctx.node().type(string_id);
                     ctx.node().name().col().clear();
-                    ctx.node().x(at_x);
-                    ctx.node().y(at_y);
                 }
 
                 if(c == '\'') {
@@ -2328,14 +2416,12 @@ namespace Acorn {
                         case 'n':  ctx.node().name().push('\n'); break;
                         case 't':  ctx.node().name().push('\t'); break;
                         case 'r':  ctx.node().name().push('\r'); break;
-                        case '"':  ctx.node().name().push('"');  break;
-                        case '\'':  ctx.node().name().push('\'');  break;
-                        case '\\': ctx.node().name().push('\\'); break;
-                        default:   ctx.node().name().push(next); break;
+                        default: at_x -= 1.0f; ctx.node().name().push(next); break;
                     }
                     at_x += 1.0f;
                     ctx.index()++;
                 } else if(c == '\n') {
+                    ctx.node().name().push('\n');
                     at_y += 1.0f;
                     at_x = -1.0f;
                 } else {

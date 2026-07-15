@@ -106,6 +106,10 @@ namespace Acorn {
         Blackfeather_Unit(uint16_t _uid) : Unit(_uid) {init();}
         Blackfeather_Unit() {init();}
         
+        float at_x = 0.0f;
+        float at_y = 0.0f;
+        float at_z = 0.0f; float last_z = 0.0f;
+
         void init() override {
             setup_signals();
         }
@@ -201,13 +205,17 @@ namespace Acorn {
             if(is_live(node.value())) {
                 for(int i=0;i<node.value().quals().length();i++) collect_stamps_unsorted(node.value().quals()[i],nodes);
             }
-        }
+        } 
         void collect_stamps(Node node, list<Node>& nodes, map<uint64_t,bool>& visited) {
             uint64_t key = Ptr_to_key(node);
             if(visited.getOrDefault(key, false)) return;
             visited.put(key, true);
+
+            // if(node.z()>=0.0f&&node.z()!=at_z) {
+            //     print(node.z()," z is wrong for ",at_z," node info: ",node_info(node));
+            // }
             
-            if(node.x()>=0.0f&&node.y()>=0.0f) {
+            if(node.x()>=0.0f&&node.y()>=0.0f&&node.z()==at_z) {
                 int x = (int)node.x();
                 int y = (int)node.y();
                 int insert_at = nodes.length();

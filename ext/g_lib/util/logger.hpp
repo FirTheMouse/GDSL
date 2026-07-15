@@ -141,6 +141,41 @@ public:
 };
 
 
+struct Profiler {
+    Log::Line timer;
+    list<double> times;
+
+    double mean() {
+        double sum = 0.0;
+        for(auto s : times) sum += s;
+        return sum / times.length();
+    }
+    double variance() {
+        double m = mean();
+        double sum = 0.0;
+        for(auto s : times) sum += (s-m)*(s-m);
+        return sum / times.length();
+    }
+    double stddev() { return std::sqrt(variance()); }
+    double min() { double m = times[0]; for(auto s : times) if(s<m) m=s; return m; }
+    double max() { double m = times[0]; for(auto s : times) if(s>m) m=s; return m; }
+    int count() { return times.length(); }
+
+    void start() {timer.start();}
+    void end() {times << timer.end();}
+    void reset() {timer.end(); times.clear();}
+
+    std::string to_string() {
+        std::string to_return = 
+        "n="+std::to_string(count())+
+        ", mean="+ftime(mean())+
+        ", std="+ftime(stddev())+
+        ", min="+ftime(min())+
+        ", max="+ftime(max());
+        return to_return;
+    }   
+};
+
 struct SeqLine : public q_object
 {
     SeqLine() {};
@@ -188,6 +223,7 @@ public:
     Span() {line_root = make<SeqLine>("Root",false);};
 
     map<std::string, Log::Line> timers;
+    map<std::string, Log::Profiler> profilers;
     map<std::string, int> counters;
     bool print_on_line_end = false;
     bool log_everything = false;
@@ -216,6 +252,41 @@ public:
     }
     inline std::string timer_string(const std::string &label) {return label + ": " + ftime(get_time(label));}
     void print_timers() {for (auto label : timers.keySet()) {print(timer_string(label));}}
+
+    void start_profiler(const std::string& label) {
+        if (profilers.hasKey(label)) {
+            Log::Profiler &profiler = profilers.get(label);
+            profiler.start();
+        } else {
+            Log::Profiler profiler;
+            profiler.start();
+            profilers.put(label, profiler);
+        }
+    }
+    void time_block(const std::string& label) {start_profiler(label);}
+
+    void end_profiler(const std::string &label) {
+        if(profilers.hasKey(label)) {
+            Log::Profiler &profiler = profilers.get(label);
+            profiler.end();
+        }
+    }
+    void end_block(const std::string& label) {start_profiler(label);}
+
+    void print_profiler(const std::string& label) {
+        if (profilers.hasKey(label)) {
+            Log::Profiler &profiler = profilers.get(label);
+            print(label," : ",profiler.to_string());
+        } else {
+            print(red("Span:print_profiler profiler "+label+" not found!"));
+        }
+    }
+    void print_all_profilers() {
+        for(auto& e : profilers.entrySet()) {
+            print(e.key," : ",e.value.to_string());
+        }
+    }
+
 
     inline void increment(const std::string &label, int by = 1) {counters.getOrPut(label, 0) += by;}
     inline int get_count(const std::string &label) {return counters.getOrDefault(label, 0);}

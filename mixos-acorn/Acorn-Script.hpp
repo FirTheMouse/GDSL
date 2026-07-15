@@ -661,7 +661,7 @@ namespace Acorn {
 
 
         uint32_t gather_pools_id = add_function("gather_pools",[this](Context& ctx){
-            
+
         },sizeof(Ptr),ptr_id);
 
         void e_stage_assignment_handler(Context& ctx) {
@@ -975,7 +975,7 @@ namespace Acorn {
 
             Handler discard = [this](Context& ctx){
                 if(ctx.index()>0) {
-                    ctx.result().get(ctx.index()).quals() << turn_into_token(ctx.result().take(ctx.index()));
+                    ctx.result().get(ctx.index()-1).quals() << turn_into_token(ctx.result().take(ctx.index()));
                     ctx.index()--;
                 } else if(is_live(ctx.root())) {
                     ctx.root().quals() << turn_into_token(ctx.result().take(ctx.index()));
@@ -993,7 +993,8 @@ namespace Acorn {
                 make_tokenized_keyword(ctx.node().quals().last().name().to_std());
             };
             a_handlers[make_tokenized_keyword("newstage")] = [this](Context& ctx){
-                reg_stage(ctx.result().take(ctx.index()+1).name().to_std());
+                ctx.node().quals() << turn_into_token(ctx.result().take(ctx.index()+1));
+                reg_stage(ctx.node().quals().last().name().to_std());
             };
 
             add_function("set_binding_powers",[this](Context& ctx){
@@ -1103,7 +1104,25 @@ namespace Acorn {
                 ctx.node().value().set((void*)&p);
             });
 
+            add_function("take_left",[this](Context& ctx){
+                standard_sub_process(ctx); 
+                take_left(ctx.sub(),ctx.node().getInt(0));
+            });
+            add_function("take_right",[this](Context& ctx){
+                standard_sub_process(ctx); 
+                take_right(ctx.sub(),ctx.node().getInt(0));
+            });
 
+            uint32_t query_id = make_registering_tokenized_keyword("query");
+            uint32_t queryend_id = make_tokenized_keyword("endquery");
+            uint32_t query_for_id = make_tokenized_keyword("for",reg_id("query_for"),query_id);
+            uint32_t query_in_id = make_tokenized_keyword("in",reg_id("query_in"),query_id);
+            
+            tokenizer_state_functions[queryend_id] = [this](Context& ctx){
+                tokenized_keywords.clear(); 
+                for(auto& f : token_registers[0]) {f();}
+                ctx.state(0); at_x-=1.0f; --ctx.index();
+            };
 
 
 
@@ -1172,8 +1191,8 @@ namespace Acorn {
                 if(c == '/' && (ctx.index()+1<ctx.source().length()&&ctx.source().at(ctx.index()+1)=='/')) {
                     ctx.node().type(comment_id);
                     ctx.state(0);
-                    ctx.result().removeAt(ctx.index());
                     ctx.index()++;
+                    at_x += 1.0f;
                     ctx.node().name().push("//");
                 } else if(c == '\n') {
                     at_y += 1.0f;
@@ -1217,9 +1236,12 @@ namespace Acorn {
                     std::string oldlabel = unit_label;
                     unit_label = oldlabel+"pc";
 
+                    float old_at_x = at_x; float old_at_y = at_y;
+                    at_x = ctx.node().quals()[0].x(); at_y = ctx.node().quals()[0].y(); at_z = ctx.node().quals()[0].z();
                     Node root = process(ctx.node().name().to_std());
                     ctx.node().name().col().clear(); //To avoid stinking up the nodenet and memory dump
                     compile(root,false);
+                    at_x = old_at_x; at_y = old_at_y;
                     start_logged_stage(x_handlers);
                     standard_travel_pass(root);
                     end_logged_stage();
@@ -1836,12 +1858,16 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 Node& node = (Node&)(*(Ptr*)ctx.node().value().get());
                 std::string source = string(*(Ptr*)ctx.node().children()[0].value().get()).to_std();
+                float old_at_x = at_x; float old_at_y = at_y; float old_at_z = at_z;
+                at_x = 0.0f; at_y = 0.0f; last_z++; at_z = last_z;
                 Node root = process(source);
+                root.z(at_z);
+                at_x = old_at_x; at_y = old_at_y; at_z = old_at_z;
                 compile(root);
                 start_logged_stage(x_handlers);
                 node.copy(root);
-                ctx.node().scopes() << root;
-                root.owner(ctx.node());
+                // ctx.node().scopes() << root;
+                // root.owner(ctx.node());
                 end_logged_stage();
             };
 
@@ -1852,7 +1878,7 @@ namespace Acorn {
             //         ctx.root().value_table().put(((QString&)vt.cells[i]).to_std(),*(Value*)vt[i]);
             //     }
             // };
-            x_handlers[precompiling_id] = [this](Context& ctx){ctx.node().scopes()[0].owner(ctx.node());}; //To restore visibility
+            m_handlers[precompiling_id] = [this](Context& ctx){ctx.node().scopes()[0].owner(ctx.node());}; //To restore visibility
 
             e_handlers.default_function = [this](Context& ctx){
                 if(!ctx.node().scopes().empty()&&ctx.node().scopes()[0].owner()==ctx.node()) {
@@ -2003,6 +2029,13 @@ namespace Acorn {
                 print(node_to_string(ctx.node().in_scope()));
             };
 
+            add_function("DEBUG_ROOT_X_BRIEF",[this](Context& ctx){
+                print(node_to_string(ctx.node().in_scope(),0,0,0));
+            });
+            add_function("DEBUG_ROOT_X_VERBOSE",[this](Context& ctx){
+                print(node_to_string(ctx.node().in_scope(),0,0,2));
+            });
+
             x_handlers[make_tokenized_keyword("MISTAKE")] = [this](Context& ctx) {
                 standard_sub_process(ctx);
                 Node node = make_node();
@@ -2045,6 +2078,46 @@ namespace Acorn {
                     }
                 }
             };
+
+            add_function("STAMP_SOURCE",[this](Context& ctx){
+
+                Node node = ctx.node().in_scope();
+                float old_at_z = at_z;
+                if(ctx.node().children().length()==1) {
+                    standard_sub_process(ctx);
+                    node = ctx.node().getNode(0);
+                    if(node.z()>0) {
+                        at_z = node.z();
+                    }
+                }
+
+                writeFile("printout.txt",fnodenet_to_string(node,Stamper{[this](Node n, list<int>& offsets){
+                    std::string to_return = n.name().to_std();
+                    if(n.type()!=0) {
+                        list<char> extra_escapes; 
+                        if(is_live(n.value())&&n.value().type()==string_id) {
+                            if(!n.quals().empty()&&n.quals()[0].name().to_std()=="'") {
+                                extra_escapes << '\'';
+                            } else {
+                                extra_escapes << '"';
+                            }
+                        }
+                        std::string nreturn = escape_string(to_return,false,extra_escapes);
+                        //std::string nreturn = "<span class='"+labels[n.type()]+"'>"+to_return+"</span>";
+                        while((int)n.y()>=offsets.length()) {offsets<<0;}
+                        n.x(n.x()+offsets[(int)n.y()]);
+                        offsets[(int)n.y()]+=nreturn.length()-to_return.length();
+                        to_return = nreturn;
+                    }
+                    return to_return;
+                },[this](Node n){
+                    list<Node> stamps;
+                    map<uint64_t,bool> visited;
+                    collect_stamps(n,stamps,visited);
+                    return stamps;
+                }}));
+                at_z = old_at_z;
+            });
 
             e_handlers[make_tokenized_keyword("LBF_E")] = [this](Context& ctx){print("Launching blackfeather in e stage"); launch_blackfeather(unit_root);};
             x_handlers[make_tokenized_keyword("LBF_X")] = [this](Context& ctx){print("Launching blackfeather in x stage"); launch_blackfeather(unit_root);};
@@ -2105,7 +2178,10 @@ namespace Acorn {
         }
 
         Node compile_literal(const std::string& literal) {
+            float old_at_x = at_x; float old_at_y = at_y;
+            at_x = 0.0f; at_y =0.0f;
             Node root = tokenize(literal);
+            at_x = old_at_x; at_y = old_at_y;
             Node n = root.children()[0];
             if(root.children().length()>1) {
                 n.type(string_id);

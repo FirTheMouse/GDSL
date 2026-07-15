@@ -311,3 +311,26 @@ for(int i=0;i<5;i++) {
     catch {print("Error caught: ",unit_errors.get(0));}
     print("TEST ", i, " FINISHED");
 }
+
+
+Backup:
+
+##
+    //set_binding_powers(#query_for,4,2);
+    // "query_for" { in assembling {
+    //     take_right(1);
+    // } }
+
+    //set_binding_powers(#query_in,4,2);
+    // "query_in" { in assembling {
+    //     take_left(1);
+    //     take_right(1);
+    // } }
+##
+
+query; 
+    from all in c with label "type" (where value is "travel");
+
+endquery;
+
+DEBUG_ROOT_X_BRIEF;

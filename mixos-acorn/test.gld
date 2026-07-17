@@ -1,8 +1,10 @@
-string s = "
-    this is
-        a multi line
-    string      thing
-";
-print(s);
-DEBUG_ROOT_X_VERBOSE;
-STAMP_SOURCE;
+ColCol pool = create_pool;
+Ptr c = pool.add; c.tag(#int); c.element_size(4);
+c.put("A",3); c.put("B",9); c.put("C",12); c.put("D",19);
+
+c.getOrPut("G") = 55;
+c.getOrPut("NUMS") = 33;
+
+DEBUG_ROOT;
+
+dump_pool(pool,true);

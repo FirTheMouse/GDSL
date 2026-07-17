@@ -55,20 +55,20 @@ namespace Acorn {
             // for(uint32_t i = 0; i < val.cells.length(); i++) {
             //     val.cells.get(i).storage = nullptr;
             // }
-            val.cells.storage = nullptr;
+            val.cells.nullstorage();
         }
         Col& operator[](uint32_t idx) {return *(Col*)Col::sget(idx);}
         void push(Col t) {
             Col::push((void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            t.cells.storage = nullptr;
+            t.cells.nullstorage();
         }
         void put(const std::string& key, Col t) {
             Col::put(key,(void*)&t); //This should probably have tag string id for display later, may require reordering how we register the ids
             t.storage = nullptr;
             t.label.storage = nullptr;
-            t.cells.storage = nullptr;
+            t.cells.nullstorage();
         }
     };
 
@@ -150,20 +150,20 @@ namespace Acorn {
             // for(uint32_t i = 0; i < val.cells.length(); i++) {
             //     val.cells.get(i).storage = nullptr;
             // }
-            val.cells.storage = nullptr;
+            val.cells.nullstorage();
         }
         ColCol& operator[](uint32_t idx) {return *(ColCol*)Col::sget(idx);}
         void push(ColCol t) {
             Col::push((void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            t.cells.storage = nullptr;
+            t.cells.nullstorage();
         }
         void insert(uint32_t index, ColCol t) {
             CCol::insert(index,(void*)&t);
             t.storage = nullptr;
             t.label.storage = nullptr;
-            t.cells.storage = nullptr;
+            t.cells.nullstorage();
         }
     };
 
@@ -237,7 +237,13 @@ namespace Acorn {
     static ColCol col2_ref;
     inline ColCol& resolve_to_pool(const Ptr& ptr) {
         switch(ptr.cachelevel) {
-            case 0: case 3: {return resolve_to_unit(ptr)[ptr.pool];}
+            case 0: case 3: {
+                ColColCol& unit = resolve_to_unit(ptr); 
+                CHECK_ERROR_VAL(col2_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to pool because it failed to resolve to a unit"); 
+                ColCol& col = unit[ptr.pool];
+                CHECK_ERROR_VAL(col2_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to pool because it was out of bounds");
+                return col;
+            }
             case 2: return *(ColCol*)ptr.cache;
             default: 
                 throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to pool because it's cachelevel ",(uint32_t)ptr.cachelevel," is too low");
@@ -247,7 +253,13 @@ namespace Acorn {
     static Col col1_ref;
     inline Col& resolve_to_col(const Ptr& ptr) {
         switch(ptr.cachelevel) {
-            case 0: case 3: case 2: {return resolve_to_pool(ptr)[ptr.idx];}
+            case 0: case 3: case 2: {
+                ColCol& pool = resolve_to_pool(ptr); 
+                CHECK_ERROR_VAL(col1_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to col because it failed to resolve to a pool"); 
+                Col& col = pool[ptr.idx];
+                CHECK_ERROR_VAL(col1_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to col because it was out of bounds");
+                return col;
+            }
             case 1: return *(Col*)ptr.cache;
             default: 
                 throw_error("Can not resolve Ptr ",Ptr_to_string(ptr)," to col because it's cachelevel ",(uint32_t)ptr.cachelevel," is too low");
@@ -1307,8 +1319,11 @@ namespace Acorn {
         virtual void run(Node root) {}
 
         inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag) {
+            if(type_id>=types.length()) {throw_error("Unable to create a ticket: an invalid type id ",type_id," was given"); return deadptr;}
             Ptr ticket(&types,type_id,create_column(types[type_id],size,tag,true),0);
-            ticket.gen = resolve_to_col(ticket).gen;
+            Col& col = resolve_to_col(ticket);
+            CHECK_ERROR_VAL(ticket,"Bad ticket created: ",Ptr_as_string(ticket));
+            ticket.gen = col.gen;
             return ticket;
         }
 
@@ -1933,11 +1948,12 @@ namespace Acorn {
                         std::string line = "";
                         //print("Line ",lines.length()," Subline ",subline.length());
                         //print("Row ",r," Column ",c," Tag ",labels[col.tag],"(",col.tag,")");
-                        if(col.cells.length()>r) {
-                            if(col.cells[r].tag==string_id) {
-                                line += "["+((QString&)col.cells[r]).to_std()+"] ";
+                        CCol* cell = col.cells.find_cell(r);
+                        if(cell) {
+                            if(cell->tag==string_id) {
+                                line += "["+((QString&)*cell).to_std()+"] ";
                             } else {
-                                line += "["+labels[col.cells[r].tag]+"?] ";
+                                line += "["+labels[cell->tag]+"?] ";
                             }
                         }
                         line += tag_to_str(col.tag,col[r]);
@@ -1977,11 +1993,12 @@ namespace Acorn {
                 } else {
                     for(int r=0;r<col.length();r++) {
                         std::string line = "";
-                        if(col.cells.length()>r) {
-                            if(col.cells[r].tag==string_id) {
-                                line += "["+((QString&)col.cells[r]).to_std()+"] ";
+                        CCol* cell = col.cells.find_cell(r);
+                        if(cell) {
+                            if(cell->tag==string_id) {
+                                line += "["+((QString&)*cell).to_std()+"] ";
                             } else {
-                                line += "["+labels[col.cells[r].tag]+"?] ";
+                                line += "["+labels[cell->tag]+"?] ";
                             }
                         }
                         line += tag_to_str(col.tag,col[r]);
@@ -2211,7 +2228,11 @@ namespace Acorn {
 
         void snapshot_qcol(std::ostream& out, QCol& col, bool include_data) {
             snapshot_field<uint32_t>(out, SnapField::Size, col.size);
-            if(include_data) {write_raw<uint8_t>(out, (uint8_t)SnapField::Data);    write_raw<uint32_t>(out, col.size); out.write((const char*)col.storage, col.size);}
+            if(include_data) {
+                write_raw<uint8_t>(out, (uint8_t)SnapField::Data);
+                write_raw<uint32_t>(out, col.size); 
+                out.write((const char*)col.storage, col.size);
+            }
             snapshot_end(out);
         }
         QCol load_snapshot_qcol(std::istream& in, bool include_data) {
@@ -2264,15 +2285,23 @@ namespace Acorn {
             return col;
         }
 
+
         void snapshot_qcellcol(std::ostream& out, QCellCol& col) {
-            snapshot_qcol(out, col, false);
-            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols); write_raw<uint32_t>(out, col.length());
-            for(uint32_t i = 0; i < col.length(); i++) snapshot_ccol(out, col.get(i), true);
+            uint32_t count = 0;
+            list<CCol*> to_save;
+            for(uint32_t i = 0; i < col.length(); i++) {
+                if(col.get(i).storage) {
+                    count++;
+                    to_save << &col.get(i);
+                }
+            }
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols); write_raw<uint32_t>(out, count);
+            for(uint32_t i = 0; i < to_save.length(); i++) snapshot_ccol(out, *to_save[i], true);
             snapshot_end(out);
         }
+        
         QCellCol load_snapshot_qcellcol(std::istream& in) {
-            QCellCol col = load_snapshot_qcol(in,false);
-            col.clear();
+            QCellCol col;
             while(true) {
                 SnapField field = (SnapField)read_raw<uint8_t>(in);
                 uint32_t len = read_raw<uint32_t>(in);
@@ -2281,9 +2310,8 @@ namespace Acorn {
                     case SnapField::Cols: {
                         uint32_t count = len;
                         for(uint32_t i = 0; i < count; i++) {
-                            CCol c = load_snapshot_ccol(in,true);
-                            col.push(c);
-                            c.storage = nullptr;
+                            CCol c = load_snapshot_ccol(in, true);
+                            col.scan_for_slot(c);
                         }
                         break;
                     }
@@ -2425,6 +2453,12 @@ namespace Acorn {
             }
             return to_return;
         }
+
+        std::string node_basic_info_with_children_and_position(Node node) {
+            std::string to_return = node_basic_info_with_children(node);
+            to_return+=(node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"");
+            return to_return;
+        }
         
         std::string node_info(Node node, int verbosity = 20, std::string indent = "") {
             DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_as_string(node)),red(" while another error was active")); return "";})
@@ -2475,16 +2509,16 @@ namespace Acorn {
             #if ACORN_DISPLAY_TABLES 
             if(node.value_table().length()>0) {
                 to_return += "\n" + indent + "   Value table:";
-                QCellCol cells = node.value_table().col().cells;
-                for(int i=0;i<cells.length();i++) {
-                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+value_info(node.value_table().get(cells.get(i).index),indent+"     ");
+                QCellCol& cells = node.value_table().col().cells;
+                for(int i=0;i<node.value_table().length();i++) {
+                    to_return += "\n" + indent + "     Key: "+((QString&)*cells.find_cell(i)).to_std()+" | "+value_info(node.value_table().get(i),indent+"     ");
                 }
             }
             if(node.node_table().length()>0) {
                 to_return += "\n" + indent + "   Node table:";
-                QCellCol cells = node.node_table().col().cells;
-                for(int i=0;i<cells.length();i++) {
-                    to_return += "\n" + indent + "     Key: "+((QString&)cells[i]).to_std()+" | "+node_info(node.node_table().get(cells.get(i).index),indent+"     ");
+                QCellCol& cells = node.node_table().col().cells;
+                for(int i=0;i<node.node_table().length();i++) {
+                    to_return += "\n" + indent + "     Key: "+((QString&)*cells.find_cell(i)).to_std()+" | "+node_info(node.node_table().get(i),indent+"     ");
                 }
             }
             #endif
@@ -2661,131 +2695,225 @@ namespace Acorn {
         }
 
         void test_pool_groups() {
-            uint32_t dataidx = types.length();
-            uint32_t storeidx = dataidx+1;
-            
-            int elements = 10000;
 
-            ColCol tdata;
-            Col tdribbon(sizeof(Ptr)); tdribbon.tag = ptr_id;
-            for(int i=0;i<elements;i++) {
-                Ptr p(uid,storeidx,0,i);
-                tdribbon.push((void*)&p);
+            int ITS = 100;
+            list<std::string> titles;
+            for(int i = 0; i < ITS; i++) {
+                int rl = randi(5,20);
+                std::string rstr = sgen::randsgen(sgen::TRUE_RANDOM);
+                for(int r=0;r<rl;r++) {
+                    rstr+=sgen::randsgen(sgen::TRUE_RANDOM);
+                }
+                titles << rstr;
             }
-            tdata.push(tdribbon);
-            types.push(tdata);
-
-            list<int> direct;
-
-            ColCol tstore;
-            Col tsribbon(4); tsribbon.tag = int_id;
-            for(int i=0;i<elements;i++) {
-                int r = randi(0,1000000);
-                direct << r;
-                tsribbon.push((void*)&r);
+        
+            for(int i=0;i<20;i++) {
+                print(titles[i]," : ",to_bin(hashBytes(titles[i].data(),titles[i].size())));
             }
-            tstore.push(tsribbon);
-            types.push(tstore);
 
-            ColCol& data = types[dataidx];
-            ColCol& store = types[storeidx];
-            Col& dribbon = data[0];
-            Col& sribbon = store[0];
-
-            uint8_t* snapshot = (uint8_t*)malloc(dribbon.size);
-            memcpy(snapshot, dribbon.storage, dribbon.size);
-
+            // --- Three structures under test ---
+            Col col(4); col.tag = 0; // element_size=4 (storing ints), matches CCol(uint32_t _size) ctor
+            map<std::string,int> g_map;
+            std::unordered_map<std::string,int> std_map;
+        
             Log::rig r;
+        
+            // --- Cleanup, run once per pass (i==0), mirrors old bench's "clean" processes ---
+            r.add_process("clean_col",[&](int i){
+                if(i==0) { col = Col(4); col.tag = 0; }
+            },1);
+            r.add_process("clean_g_map",[&](int i){
+                if(i==0) { g_map.clear(); }
+            },1);
+            r.add_process("clean_std_map",[&](int i){
+                if(i==0) { std_map.clear(); }
+            },1);
+        
+            // --- Populate: insert ITS string-keyed int entries into each structure ---
+            r.add_process("populate_col",[&](int i){
+                int val = i;
+                col.put(titles[i], (void*)&val);
+            },1);
+            r.add_process("populate_g_map",[&](int i){
+                g_map.put(titles[i], i);
+            },1);
+            r.add_process("populate_std_map",[&](int i){
+                std_map.emplace(titles[i], i);
+            },1);
+        
+            // --- Access: point lookup by key, same key set used to populate ---
+            r.add_process("access_col",[&](int i){
+                volatile int a = *(int*)col.get(titles[i]);
+            },1);
+            r.add_process("access_g_map",[&](int i){
+                volatile int a = g_map.get(titles[i]);
+            },1);
+            r.add_process("access_std_map",[&](int i){
+                volatile int a = std_map.at(titles[i]);
+            },1);
+        
+            // --- hasKey: presence check, same key set ---
+            r.add_process("haskey_col",[&](int i){
+                volatile bool b = col.hasKey(titles[i]);
+            },1);
+            r.add_process("haskey_g_map",[&](int i){
+                volatile bool b = g_map.hasKey(titles[i]);
+            },1);
+            r.add_process("haskey_std_map",[&](int i){
+                volatile bool b = (std_map.find(titles[i]) != std_map.end());
+            },1);
+        
+            r.add_comparison("populate_col","populate_g_map");
+            r.add_comparison("populate_col","populate_std_map");
+            r.add_comparison("access_col","access_g_map");
+            r.add_comparison("access_col","access_std_map");
+            r.add_comparison("haskey_col","haskey_g_map");
+            r.add_comparison("haskey_col","haskey_std_map");
+        
+            r.run(1000,true,ITS);
+        
+            // --- Scale up: 100 -> 10,000 -> 1,000,000, same shape as the old bench's ITS^(i+1) loop ---
+            for(int i = 0; i < 2; i++) {
+                int new_its = (int)std::pow(ITS, i+1);
+                print("ITS: ", new_its);
+        
+                titles.clear();
+                for(int j = 0; j < new_its; j++) titles << std::to_string(j);
+        
+                r.run(1000,false,new_its);
+            }
+        
+            print("Final col length: ", col.length());
+            print("Final g_map size: ", g_map.size());
+            print("Final std_map size: ", std_map.size());
 
-            r.add_process("restore_snapshot_0",[&](int i){
-                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
-            });
-            r.add_process("reset_to_0",[&](int i){
-                Ptr& p = *(Ptr*)dribbon.sget(i);
-                p.cache = nullptr;
-                p.cachelevel = 0;
-            });
-            r.add_process("sort_cachelevel_0",[&](int i){
-                if(i==0) {
-                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
-                        [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
-                }
-            });
-            
-            r.add_process("restore_snapshot_3",[&](int i){
-                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
-            });
-            r.add_process("lower_to_3",[&](int i){
-                Ptr& p = *(Ptr*)dribbon.sget(i);
-                p.cache = &types;
-                p.cachelevel = 3;
-            });
-            r.add_process("sort_cachelevel_3",[&](int i){
-                if(i==0) {
-                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
-                        [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
-                }
-            });
-            
-            r.add_process("restore_snapshot_2",[&](int i){
-                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
-            });
-            r.add_process("lower_to_2",[&](int i){
-                Ptr& p = *(Ptr*)dribbon.sget(i);
-                p.cache = &store;
-                p.cachelevel = 2;
-            });
-            r.add_process("sort_cachelevel_2",[&](int i){
-                if(i==0) {
-                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
-                        [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
-                }
-            });
-            
-            r.add_process("restore_snapshot_1",[&](int i){
-                if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
-            });
-            r.add_process("lower_to_1",[&](int i){
-                Ptr& p = *(Ptr*)dribbon.sget(i);
-                p.cache = &sribbon;
-                p.cachelevel = 1;
-            });
-            r.add_process("sort_cachelevel_1",[&](int i){
-                if(i==0) {
-                    std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
-                        [](Ptr& a, Ptr& b){ return *(int*)cache_as_col(a).sget(a.sidx) < *(int*)cache_as_col(b).sget(b.sidx); });
-                }
-            });
 
-            uint8_t* sribbon_snapshot = (uint8_t*)malloc(sribbon.size);
-            memcpy(sribbon_snapshot, sribbon.storage, sribbon.size);
-            r.add_process("sort_sribbon",[&](int i){
-                if(i==0) {
-                    std::sort((int*)sribbon.storage, (int*)sribbon.storage + elements);
-                }
-            });
-            r.add_process("restore_sribbon",[&](int i){
-                if(i==0) memcpy(sribbon.storage, sribbon_snapshot, sribbon.size);
-            });
 
-            int* direct_snapshot = (int*)malloc(elements * sizeof(int));
-            memcpy(direct_snapshot, direct.data(), elements * sizeof(int));
-            r.add_process("sort_direct",[&](int i){
-                if(i==0) {
-                    std::sort(direct.data(), direct.data() + elements);
-                }
-            });
-            r.add_process("restore_direct",[&](int i){
-                if(i==0) memcpy(direct.data(), direct_snapshot, elements * sizeof(int));
-            });
+            // uint32_t dataidx = types.length();
+            // uint32_t storeidx = dataidx+1;
+            
+            // int elements = 10000;
+
+            // ColCol tdata;
+            // Col tdribbon(sizeof(Ptr)); tdribbon.tag = ptr_id;
+            // for(int i=0;i<elements;i++) {
+            //     Ptr p(uid,storeidx,0,i);
+            //     tdribbon.push((void*)&p);
+            // }
+            // tdata.push(tdribbon);
+            // types.push(tdata);
+
+            // list<int> direct;
+
+            // ColCol tstore;
+            // Col tsribbon(4); tsribbon.tag = int_id;
+            // for(int i=0;i<elements;i++) {
+            //     int r = randi(0,1000000);
+            //     direct << r;
+            //     tsribbon.push((void*)&r);
+            // }
+            // tstore.push(tsribbon);
+            // types.push(tstore);
+
+            // ColCol& data = types[dataidx];
+            // ColCol& store = types[storeidx];
+            // Col& dribbon = data[0];
+            // Col& sribbon = store[0];
+
+            // uint8_t* snapshot = (uint8_t*)malloc(dribbon.size);
+            // memcpy(snapshot, dribbon.storage, dribbon.size);
+
+            // Log::rig r;
+
+            // r.add_process("restore_snapshot_0",[&](int i){
+            //     if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            // });
+            // r.add_process("reset_to_0",[&](int i){
+            //     Ptr& p = *(Ptr*)dribbon.sget(i);
+            //     p.cache = nullptr;
+            //     p.cachelevel = 0;
+            // });
+            // r.add_process("sort_cachelevel_0",[&](int i){
+            //     if(i==0) {
+            //         std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+            //             [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
+            //     }
+            // });
+            
+            // r.add_process("restore_snapshot_3",[&](int i){
+            //     if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            // });
+            // r.add_process("lower_to_3",[&](int i){
+            //     Ptr& p = *(Ptr*)dribbon.sget(i);
+            //     p.cache = &types;
+            //     p.cachelevel = 3;
+            // });
+            // r.add_process("sort_cachelevel_3",[&](int i){
+            //     if(i==0) {
+            //         std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+            //             [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
+            //     }
+            // });
+            
+            // r.add_process("restore_snapshot_2",[&](int i){
+            //     if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            // });
+            // r.add_process("lower_to_2",[&](int i){
+            //     Ptr& p = *(Ptr*)dribbon.sget(i);
+            //     p.cache = &store;
+            //     p.cachelevel = 2;
+            // });
+            // r.add_process("sort_cachelevel_2",[&](int i){
+            //     if(i==0) {
+            //         std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+            //             [](Ptr& a, Ptr& b){ return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b); });
+            //     }
+            // });
+            
+            // r.add_process("restore_snapshot_1",[&](int i){
+            //     if(i==0) memcpy(dribbon.storage, snapshot, dribbon.size);
+            // });
+            // r.add_process("lower_to_1",[&](int i){
+            //     Ptr& p = *(Ptr*)dribbon.sget(i);
+            //     p.cache = &sribbon;
+            //     p.cachelevel = 1;
+            // });
+            // r.add_process("sort_cachelevel_1",[&](int i){
+            //     if(i==0) {
+            //         std::sort((Ptr*)dribbon.storage, (Ptr*)dribbon.storage + elements,
+            //             [](Ptr& a, Ptr& b){ return *(int*)cache_as_col(a).sget(a.sidx) < *(int*)cache_as_col(b).sget(b.sidx); });
+            //     }
+            // });
+
+            // uint8_t* sribbon_snapshot = (uint8_t*)malloc(sribbon.size);
+            // memcpy(sribbon_snapshot, sribbon.storage, sribbon.size);
+            // r.add_process("sort_sribbon",[&](int i){
+            //     if(i==0) {
+            //         std::sort((int*)sribbon.storage, (int*)sribbon.storage + elements);
+            //     }
+            // });
+            // r.add_process("restore_sribbon",[&](int i){
+            //     if(i==0) memcpy(sribbon.storage, sribbon_snapshot, sribbon.size);
+            // });
+
+            // int* direct_snapshot = (int*)malloc(elements * sizeof(int));
+            // memcpy(direct_snapshot, direct.data(), elements * sizeof(int));
+            // r.add_process("sort_direct",[&](int i){
+            //     if(i==0) {
+            //         std::sort(direct.data(), direct.data() + elements);
+            //     }
+            // });
+            // r.add_process("restore_direct",[&](int i){
+            //     if(i==0) memcpy(direct.data(), direct_snapshot, elements * sizeof(int));
+            // });
 
         
             
-            r.add_comparison("sort_cachelevel_1","sort_cachelevel_3");
-            r.add_comparison("sort_cachelevel_3","sort_cachelevel_0");
-            r.add_comparison("sort_cachelevel_1","sort_cachelevel_0");
+            // r.add_comparison("sort_cachelevel_1","sort_cachelevel_3");
+            // r.add_comparison("sort_cachelevel_3","sort_cachelevel_0");
+            // r.add_comparison("sort_cachelevel_1","sort_cachelevel_0");
             
-            r.run(100,true,elements);
+            // r.run(100,true,elements);
 
 
             // int six = 6;
@@ -2996,7 +3124,7 @@ namespace Acorn {
             return false;
         }
 
-        std::string enrich_error_msg(Context& ctx, const std::string& msg) {
+        std::string enrich_error_msg(Context& ctx, std::string& msg) {
             std::string to_return = "";
             to_return += context_trace_to_string(ctx);
             to_return+=red("\nERROR IN "+labels[ctx.pass()]);
@@ -3006,16 +3134,38 @@ namespace Acorn {
                 else if(x>=0) {to_return+=red(" COLUMN " + std::to_string((int)x + 1));} 
                 //^ This is intentional, most humans dont' just read column like this, it's included for languages that are just one contigious stream
             }
+
+            if(msg.find("tag is")!=std::string::npos) {
+                size_t at = msg.find("tag is") + 7;
+                size_t start = at;
+                while(at < msg.length() && std::isdigit(msg[at])) at++;
+                if(at > start) {
+                    uint32_t tag = std::stoul(msg.substr(start, at - start));
+                    msg = msg.substr(0, start) + labels[tag] + msg.substr(at);
+                }
+            }
+            if(msg.find("node ")!=std::string::npos) {
+                size_t at = msg.find("node ") + 5;
+                size_t start = at;
+                while(at < msg.length() && msg[at] != ' ') at++;
+                std::string stretch = msg.substr(start, at - start);
+                if(stretch.find('|') != std::string::npos) {
+                    Ptr p = string_to_Ptr(stretch);
+                    p.cache = &types;
+                    msg = msg.substr(0, start) + node_basic_info_with_children_and_position(Node(p)) + msg.substr(at);
+                }
+            }
+
             to_return+=red(": ")+msg;
             return to_return;
         }
 
         void catch_pass_error(Context& ctx) {
             UERROR_FLAG = true;
-            UERRORS << ERROR_MSG;
 
             ERROR_FLAG = false; 
             print(enrich_error_msg(ctx,ERROR_MSG));
+            UERRORS << ERROR_MSG;
             ERROR_MSG = "";
         }
         void end_pass(Context& ctx) {

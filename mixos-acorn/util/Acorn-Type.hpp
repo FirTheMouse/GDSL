@@ -55,12 +55,22 @@ namespace Acorn {
         #define CHECK_ERROR(...)
     #endif
 
-    uint32_t hashBytes(const void* data, uint32_t size) {
+    inline uint32_t mix32_final(uint32_t x) {
+        x ^= x >> 16;
+        x *= 0x85ebca6bU;
+        x ^= x >> 13;
+        x *= 0xc2b2ae35U;
+        x ^= x >> 16;
+        return x;
+    }
+
+    inline uint32_t hashBytes(const void* data, uint32_t size) {
         uint32_t hash = 5381;
         const uint8_t* bytes = (const uint8_t*)data;
         for(uint32_t i = 0; i < size; i++) {
             hash = ((hash << 5) + hash) + bytes[i];
         }
+        hash = mix32_final(hash);
         return hash;
     }
 
@@ -279,7 +289,6 @@ namespace Acorn {
         inline bool empty() {return size==0;}
         void reserve(uint32_t new_capacity) {
             if(new_capacity <= capacity) return;
-            
             uint8_t* newPtr = new uint8_t[new_capacity];
             if(storage) memcpy(newPtr, storage, size);
             delete[] storage;
@@ -322,10 +331,10 @@ namespace Acorn {
         inline void qset(uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[offset], element, width);}
         void removeAt(uint32_t index, uint32_t width) {
             size_t byte_start = index * width;
-            for(size_t i = byte_start; i < size - width; i++) {
-                storage[i] = storage[i + width];
-            }
-            resize(size - width);
+            size_t bytes_to_move = size - byte_start - width;
+            if(bytes_to_move > 0)
+                memmove(&storage[byte_start], &storage[byte_start + width], bytes_to_move);
+            size -= width;
         }
         void clear() {size = 0;}
         void pop(void* out, uint32_t width) {
@@ -460,20 +469,30 @@ namespace Acorn {
         QCol take_range(uint32_t from, uint32_t to) {return QCol::take_range(from, to, element_size);}
     };
 
-    struct QCellCol : QCol {
+
+    //Do not opperate on this like a normal QCol, it's meant to only ever be interacted with through a Col
+    //Size = the count of occupied slots
+    //Capacity = the total avaliable slots
+    struct QCellCol : private QCol {
         QCellCol() {}
         QCellCol(QCol q) : QCol(q) {}
         QCellCol(const QCellCol& o) : QCol() {
-            for(uint32_t i = 0; i < o.length(); i++) {
-                CCol copy(o.get(i)); 
-                push(copy);
-                copy.storage = nullptr;
+            storage = new uint8_t[o.capacity*sizeof(CCol)];
+            capacity = o.capacity;
+            size = o.size;
+            for(uint32_t i = 0; i < o.capacity; i++) {
+                if(o.get(i).storage) {
+                    CCol copy(o.get(i)); 
+                    memcpy(&storage[i*sizeof(CCol)],(void*)&copy,sizeof(CCol));
+                    copy.storage = nullptr;
+                } else {
+                    memset(&storage[i*sizeof(CCol)],0,sizeof(CCol));
+                }
             }
         }
         QCellCol& operator=(QCellCol&& o) {
             if(this == &o) return *this;
-            // destruct existing embedded CCols
-            for(uint32_t i = 0; i < length(); i++) get(i).~CCol();
+            for(uint32_t i = 0; i < capacity; i++) get(i).~CCol();
             if(storage) delete[] storage;
             storage = o.storage;
             size = o.size;
@@ -485,26 +504,169 @@ namespace Acorn {
         }
         QCellCol& operator=(const QCellCol& o) {
             if(this == &o) return *this;
-            for(uint32_t i = 0; i < length(); i++) get(i).~CCol();
+            for(uint32_t i = 0; i < capacity; i++) get(i).~CCol();
             if(storage) delete[] storage;
-            storage = nullptr; size = 0; capacity = 0;
-            for(uint32_t i = 0; i < o.length(); i++) {
-                CCol copy(o.get(i));
-                push(copy);
-                copy.storage = nullptr;
+            size = 0; capacity = 0;
+            storage = new uint8_t[o.capacity*sizeof(CCol)];
+            for(uint32_t i = 0; i < o.capacity; i++) {
+                if(o.get(i).storage) {
+                    CCol copy(o.get(i)); 
+                    memcpy(&storage[i*sizeof(CCol)],(void*)&copy,sizeof(CCol));
+                    copy.storage = nullptr;
+                } else {
+                    memset(&storage[i*sizeof(CCol)],0,sizeof(CCol));
+                }
             }
             return *this;
         }
         ~QCellCol() {
             if(!storage) return;
-            for(uint32_t i = 0; i < length(); i++) {
-                get(i).~CCol();
+            for(uint32_t i = 0; i < capacity; i++) {get(i).~CCol();}
+        }
+        uint32_t count() const {return size;}
+        uint32_t length() const {return capacity;}
+        void nullstorage() {storage = nullptr;}
+        void clear() {
+            clear();
+        }
+        bool empty() const {return size==0;}
+
+
+        void grow() {
+            uint32_t old_capacity = capacity;
+            uint32_t new_capacity = (capacity==0?4:capacity*2);
+            uint8_t* oldPtr = storage;
+            uint8_t* newPtr = new uint8_t[new_capacity*sizeof(CCol)];
+            memset(newPtr,0,new_capacity*sizeof(CCol));
+            storage = newPtr;
+            capacity = new_capacity;
+            size = 0;
+            for(int i=0;i<old_capacity;i++) {
+                CCol& c = *(CCol*)(oldPtr+(i*sizeof(CCol)));
+                if(c.storage) {
+                    scan_for_slot(c);
+                }   
+            }
+            delete[] oldPtr;
+        }
+
+        //Home = desired location in storage
+        //Pos = current location in storage
+        inline uint32_t cell_distance_from_home(uint32_t hash, uint32_t pos) {
+            uint32_t home = hash%capacity;
+            return (pos+capacity-home)%capacity;
+        }
+        uint32_t load_factor() {return (capacity==0?100:(size*100)/capacity);}
+        void scan_for_slot(CCol c) {
+            if(capacity==0||load_factor()>70) {
+                grow(); 
+                scan_for_slot(c);
+                return;
+            }
+            uint32_t home = c.hash%capacity;
+            uint32_t pos = home;
+            uint32_t traversed = 0;
+
+            while(traversed<capacity) {
+                CCol& existing = get(pos);
+                if(existing.storage==nullptr) {
+                    size++;
+                    memcpy(&storage[pos*sizeof(CCol)], (void*)&c, sizeof(CCol));
+                    c.storage = nullptr;
+                    return;
+                }
+                if(cell_distance_from_home(c.hash,pos)>cell_distance_from_home(existing.hash,pos)) {
+                    CCol copy_of_existing = existing;
+                    memcpy(&storage[pos*sizeof(CCol)], (void*)&c, sizeof(CCol));
+                    c.storage = nullptr;
+                    scan_for_slot(std::move(copy_of_existing));
+                    return;
+                }
+                traversed++;
+                pos = (pos+1)%capacity;
+            }
+            throw_error("QCellCol corrupted: scan_for_slot traversed the entirety without finding any avaliable position "
+            ,"this means either size or capacity was corrupted causing load_factor to never fire");
+        }
+
+        void set(uint32_t idx, CCol& c) {memcpy(&storage[idx*sizeof(CCol)],(void*)&c,sizeof(CCol)); c.storage = nullptr;}
+        CCol& get(uint32_t idx) const {return *(CCol*)&storage[idx*sizeof(CCol)];}
+        CCol& operator[](uint32_t idx) {return get(idx);}
+
+        //Reverse lookup by index (linear scan)
+        CCol* find_cell(uint32_t idx) {
+            for(int i=0;i<capacity;i++) {
+                CCol& c = get(i);
+                if(c.storage) {
+                    if(c.index==idx) {return &c;}
+                }
+            }
+            return nullptr;
+        }
+        uint32_t find_cell_idx(uint32_t idx) {
+            CCol* c = find_cell(idx);
+            if(c) {return (uint32_t)((uint8_t*)c-storage);}
+            else {throw_error("QCellCol:find_cell_idx no cell was found for idx ",idx); return 0;}
+        }
+
+        CCol* find_cell(const void* key, uint32_t key_size) {
+            uint32_t h = hashBytes(key, key_size);
+            uint32_t pos = h%capacity;
+            uint32_t traversed = 0;
+            while(traversed<capacity) {
+                CCol& c = get(pos);
+                if(!c.storage) {return nullptr;}
+                if(c.hash==h&&memcmp(c.storage, key, key_size)==0) {return &c;}
+                traversed++;
+                pos = (pos+1)%capacity;
+            }
+            return nullptr;
+        }
+        inline bool hasKey(const void* key, uint32_t key_size) {return find_cell(key, key_size)!=nullptr;}
+        inline CCol& get(const void* key, uint32_t key_size) {
+            CCol* cell = find_cell(key, key_size);
+            if(cell) {return *cell;}
+            else {throw_error("Key of size ",key_size," not found"); return get(0);}
+        }
+
+        void removeAtByValue(uint32_t target_index) {
+            uint32_t pos = 0;
+            bool found = false;
+            for(int i=0;i<capacity;i++) {
+                CCol& c = get(i);
+                if(c.storage) {
+                    if(c.index==target_index) {found = true; pos = i;}
+                    else if(c.index>target_index) {c.index-=1;}
+                }
+            }
+            if(!found) {return;} //Nothing corresponding to the index was found so return early
+            uint32_t traversed = 0;
+            while(traversed<capacity) {
+                uint32_t next_pos = (pos+1)%capacity;
+                CCol& next = get(next_pos);
+                if(!next.storage||cell_distance_from_home(next.hash, next_pos)==0) {return;}
+                memcpy(&storage[pos*sizeof(CCol)],(void*)&next,sizeof(CCol));
+                memset(&storage[next_pos*sizeof(CCol)],0,sizeof(CCol));
+                traversed++;
+                pos = next_pos;
             }
         }
-        CCol& get(uint32_t idx) const {return *(CCol*)qget(idx*sizeof(CCol));}
-        CCol& operator[](uint32_t idx) {return *(CCol*)qget(idx*sizeof(CCol));}
-        void push(CCol c) {QCol::push((void*)&c,sizeof(CCol)); c.storage = nullptr;}
-        uint32_t length() const {return size/sizeof(CCol);}
+
+        void removeAt(uint32_t pos) {
+            uint32_t traversed = 0;
+            get(pos).~CCol();       
+            size--;     
+            while(traversed<capacity) {
+                uint32_t next_pos = (pos+1)%capacity;
+                CCol& next = get(next_pos);
+                if(!next.storage||cell_distance_from_home(next.hash, next_pos)==0) {return;}
+                memcpy(&storage[pos*sizeof(CCol)],(void*)&next,sizeof(CCol));
+                memset(&storage[next_pos*sizeof(CCol)],0,sizeof(CCol));
+                traversed++;
+                pos = next_pos;
+            }
+            throw_error("QCellCol corrupted: removeAt traversed the entirety of capacity, meaning either capacity was corrupted or all cells were somehow set");
+        }
     };
 
     struct Col : CCol {
@@ -512,6 +674,7 @@ namespace Acorn {
         Col(uint32_t _size) :  CCol(_size) {}
         Col(const Col& o) : CCol((const CCol&)o), heterogenous(o.heterogenous), label(o.label), cells(o.cells) {}
         Col(CCol q) : CCol(q) {}
+        Col(Col&& o) noexcept : CCol(std::move(o)), heterogenous(o.heterogenous),label(std::move(o.label)), cells(std::move(o.cells)), free(std::move(o.free)) {}
         Col& operator=(Col&& o) {
             if(this == &o) return *this;
             CCol::operator=(std::move(o)); 
@@ -544,40 +707,37 @@ namespace Acorn {
             c.index = length();
             c.push(key);
             push(element);
-            cells.push(c);
+            cells.scan_for_slot(c);
         }
-        void* get(const void* key, uint32_t size) {
-            uint32_t h = hashBytes(key, size);
-            for(int i = 0; i < cells.length(); i++) {
-                CCol& c = cells[i];
-                if(c.hash == h) {
-                    if(memcmp(c.storage, key, size) == 0) { //Collison check against the stored key
-                        return sget(c.index);
-                    }
-                }
+
+        inline CCol& getOrPut(const void* key, uint32_t key_size, uint32_t key_tag) {
+            CCol* cell = cells.find_cell(key, key_size);
+            if(cell) {return *cell;}
+            else {
+                CCol c;
+                c.hash = hashBytes(key,key_size); c.element_size = key_size; 
+                c.tag = key_tag; c.index = length(); c.push(key);
+                cells.scan_for_slot(c);
+                push_default();
+                return cells.get(key,key_size);
             }
-            return nullptr;
         }
-        uint32_t getidx(const void* key, uint32_t size) {
-            uint32_t h = hashBytes(key, size);
-            for(int i = 0; i < cells.length(); i++) {
-                CCol& c = cells[i];
-                if(c.hash == h) {
-                    if(memcmp(c.storage, key, size) == 0) { //Collison check against the stored key
-                        return c.index;
-                    }
-                }
+
+        uint32_t getidx(const void* key, uint32_t key_size) {
+            CCol* c = cells.find_cell(key,key_size);
+            if(c) {return c->index;} 
+            else {
+                throw_error("Col:getidx Key not found of size ",key_size);
+                return 0;
             }
-            return 0;
         }
-        bool hasKey(const void* key, uint32_t size) {
-            uint32_t h = hashBytes(key, size);
-            for(int i = 0; i < cells.length(); i++) {
-                CCol& c = cells[i];
-                if(c.hash == h && memcmp(c.storage, key, size) == 0) return true;
-            }
-            return false;
+
+        void* get(const void* key, uint32_t key_size) {
+            uint32_t idx = getidx(key,key_size);
+            if(ERROR_FLAG) {return nullptr;}
+            else return get(idx);
         }
+        inline bool hasKey(const void* key, uint32_t key_size) {return cells.hasKey(key,key_size);}
 
         void put(const std::string& str, const void* element, uint32_t tag = 0) {qput(element,str.data(),str.length(),tag);}
         void* get(const std::string& str) {return get(str.data(), str.length());}
@@ -588,6 +748,11 @@ namespace Acorn {
         void put(Ptr p, const void* element, uint32_t tag = 0) {qput(element, (void*)&p, sizeof(Ptr), tag);}
         void* get(Ptr p) {return get((void*)&p, sizeof(Ptr));}
         bool hasKey(Ptr p) {return hasKey((void*)&p, sizeof(Ptr));}
+
+        void removeAt(uint32_t index) {
+            if(!cells.empty()) {cells.removeAtByValue(index);}
+            CCol::removeAt(index);
+        }
     };
 
     //Convience for ergonomic white/blacklist things
@@ -640,6 +805,7 @@ namespace Acorn {
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, col.hash);
+        write_raw<uint32_t>(out, col.index);
         write_raw<uint32_t>(out, col.gen);
         write_raw<bool>(out, col.live);
     }
@@ -649,29 +815,35 @@ namespace Acorn {
         col.element_size = read_raw<uint32_t>(in);
         col.tag = read_raw<uint32_t>(in);
         col.hash = read_raw<uint32_t>(in);
+        col.index = read_raw<uint32_t>(in);
         col.gen = read_raw<uint32_t>(in);
         col.live = read_raw<bool>(in);
         return col;
     }
 
     static void write_qcellcol(std::ostream& out, QCellCol& cells) {
-        write_raw<uint32_t>(out, cells.length());
-        //print("Writting qcellcol, count: ", cells.length(), " stream pos: ", out.tellp());
+        uint32_t count = 0;
+        list<CCol*> to_save;
         for(uint32_t i = 0; i < cells.length(); i++) {
-            write_ccol(out, cells.get(i));
+            if(cells.get(i).storage) {
+                count++;
+                to_save << &cells.get(i);
+            }
+        }
+        write_raw<uint32_t>(out, count);
+        for(uint32_t i = 0; i < to_save.length(); i++) {
+            CCol& c = *to_save[i];
+            write_ccol(out, *to_save[i]);
         }
     }
     
     static QCellCol read_qcellcol(std::istream& in) {
         QCellCol cells;
         uint32_t count = read_raw<uint32_t>(in);
-        //print("Reading qcellcol, count: ", count, " stream pos: ", in.tellg());
         for(uint32_t i = 0; i < count; i++) {
             CCol c = read_ccol(in);
-            // print("Key bytes: ", c.size, " storage: ", (void*)c.storage," esize ",c.element_size," tag ",c.tag);
-            // for(uint32_t b = 0; b < c.size; b++) print((char)c.storage[b]);
-            cells.push(c);
-            c.storage = nullptr;
+            c.hash = hashBytes(c.storage,c.size);
+            cells.scan_for_slot(c);
         }
         return cells;
     }
@@ -704,6 +876,7 @@ namespace Acorn {
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, col.hash);
+        write_raw<uint32_t>(out, col.index);
         write_raw<uint32_t>(out, col.gen);
         write_raw<bool>(out, col.live);
         write_raw<bool>(out, col.heterogenous);
@@ -722,6 +895,7 @@ namespace Acorn {
         col.element_size = read_raw<uint32_t>(in);
         col.tag = read_raw<uint32_t>(in);
         col.hash = read_raw<uint32_t>(in);
+        col.index = read_raw<uint32_t>(in);
         col.gen = read_raw<uint32_t>(in);
         col.live = read_raw<bool>(in);
         col.heterogenous = read_raw<bool>(in);

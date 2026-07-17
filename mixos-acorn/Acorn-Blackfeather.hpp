@@ -41,13 +41,7 @@ char read_key() {
 }
 
 
-constexpr const char* strip_path(const char* path) {
-    const char* last = path;
-    for(const char* p = path; *p; p++) {
-        if(*p == '/' || *p == '\\') last = p+1;
-    }
-    return last;
-}
+
 
 //q = -100
 //^ = 2
@@ -206,34 +200,38 @@ namespace Acorn {
                 for(int i=0;i<node.value().quals().length();i++) collect_stamps_unsorted(node.value().quals()[i],nodes);
             }
         } 
-        void collect_stamps(Node node, list<Node>& nodes, map<uint64_t,bool>& visited) {
+        void collect_stamps(Node node, list<Node>& nodes, map<uint64_t,bool>& visited, bool sort = true) {
             uint64_t key = Ptr_to_key(node);
-            if(visited.getOrDefault(key, false)) return;
+            if(visited.getOrDefault(key, false)) {return;}
             visited.put(key, true);
 
-            // if(node.z()>=0.0f&&node.z()!=at_z) {
-            //     print(node.z()," z is wrong for ",at_z," node info: ",node_info(node));
-            // }
-            
-            if(node.x()>=0.0f&&node.y()>=0.0f&&node.z()==at_z) {
-                int x = (int)node.x();
-                int y = (int)node.y();
-                int insert_at = nodes.length();
-                for(int i=0;i<nodes.length();i++) {
-                    int ny = (int)nodes[i].y();
-                    int nx = (int)nodes[i].x();
-                    if(y<ny||(y==ny&&x<nx)) {
-                        insert_at = i;
-                        break;
+            if(sort) {
+                if(node.x()>=0.0f&&node.y()>=0.0f&&node.z()==at_z) {
+                    int x = (int)node.x();
+                    int y = (int)node.y();
+                    int insert_at = nodes.length();
+                    for(int i=0;i<nodes.length();i++) {
+                        int ny = (int)nodes[i].y();
+                        int nx = (int)nodes[i].x();
+                        if(y<ny||(y==ny&&x<nx)) {
+                            insert_at = i;
+                            break;
+                        }
                     }
+                    nodes.insert(node, insert_at);
                 }
-                nodes.insert(node, insert_at);
+            } else {
+                if(node.x()>=0.0f&&node.y()>=0.0f&&node.z()==at_z) {
+                    int x = (int)node.x();
+                    int y = (int)node.y();
+                    nodes << node;
+                }
             }
-            for(int i=0;i<node.children().length();i++) collect_stamps(node.children()[i],nodes,visited);
-            for(int i=0;i<node.quals().length();i++) collect_stamps(node.quals()[i],nodes,visited);
-            for(int i=0;i<node.scopes().length();i++) if(node.scopes()[i].owner()==node) collect_stamps(node.scopes()[i],nodes,visited);
+            for(int i=0;i<node.children().length();i++) collect_stamps(node.children()[i],nodes,visited,sort);
+            for(int i=0;i<node.quals().length();i++) collect_stamps(node.quals()[i],nodes,visited,sort);
+            for(int i=0;i<node.scopes().length();i++) if(node.scopes()[i].owner()==node) collect_stamps(node.scopes()[i],nodes,visited,sort);
             if(is_live(node.value())) {
-                for(int i=0;i<node.value().quals().length();i++) collect_stamps(node.value().quals()[i],nodes,visited);
+                for(int i=0;i<node.value().quals().length();i++) collect_stamps(node.value().quals()[i],nodes,visited,sort);
             }
         }
 

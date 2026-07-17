@@ -1722,8 +1722,7 @@ namespace Acorn {
             //     print("(Implment later) Checking column through: ",Ptr_as_string(*(Ptr*)rcol[0]));
             // }   
 
-            if(lcol.tag==ptr_id&&rcol.tag==ptr_id) { //Figure out better proper Ptr assignment later
-                //This is just a kludge for now because I'm testing normalization in TwigSnap 
+            if(lcol.tag==ptr_id&&rcol.tag==ptr_id) { //Temporary kludge, figure out Ptr assignment later (this is meant for raw ptrs only, not aliases like string)
                 if(resolve_to_col(lp).heterogenous) {
                     resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),rv.size());
                 } else {
@@ -2271,12 +2270,10 @@ namespace Acorn {
                                 ctx.node().value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index]));
                             }
                         } else {
-                            print(red("r_handlers::dot_id layout of "+labels[ltype]+" does not have prop "+prop));
-                            // print(red("root is: "+labels[ctx.root().type()])); 
+                            throw_error("Layout of "+labels[ltype]+" does not have prop "+prop);
                         }
-                        //right.value(ctx.node().value());
                     } else {
-                        print(red("r_handlers::dot_id no layout found for type "+labels[ltype]));
+                        throw_error("No layout found for type "+labels[ltype]);
                     }
 
                     //This is mean to be for inline get syntax like children(0), probably going to be replaced with a proper overload in the future
@@ -2439,7 +2436,7 @@ namespace Acorn {
                 void* p1 = ctx.node().children()[0].value().get();
                 void* p2 = ctx.node().children()[1].value().get();
                 DEBUG_ONLY(if(ERROR_FLAG){return;})
-                int result =      
+                bool result =      
                     *(int*)p1
                     <
                     *(int*)p2
@@ -2457,7 +2454,7 @@ namespace Acorn {
                 void* p1 = ctx.node().children()[0].value().get();
                 void* p2 = ctx.node().children()[1].value().get();
                 DEBUG_ONLY(if(ERROR_FLAG){return;})
-                int result =      
+                bool result =      
                     *(int*)p1
                     >
                     *(int*)p2

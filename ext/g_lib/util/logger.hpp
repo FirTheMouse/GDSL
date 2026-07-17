@@ -145,6 +145,11 @@ struct Profiler {
     Log::Line timer;
     list<double> times;
 
+    double total() {
+        double sum = 0.0;
+        for(auto s : times) sum += s;
+        return sum;
+    }
     double mean() {
         double sum = 0.0;
         for(auto s : times) sum += s;
@@ -166,8 +171,10 @@ struct Profiler {
     void reset() {timer.end(); times.clear();}
 
     std::string to_string() {
+        if(times.length()==0) return "n=0, no samples";
         std::string to_return = 
         "n="+std::to_string(count())+
+        ", total="+ftime(total())+
         ", mean="+ftime(mean())+
         ", std="+ftime(stddev())+
         ", min="+ftime(min())+
@@ -271,7 +278,7 @@ public:
             profiler.end();
         }
     }
-    void end_block(const std::string& label) {start_profiler(label);}
+    void end_block(const std::string& label) {end_profiler(label);}
 
     void print_profiler(const std::string& label) {
         if (profilers.hasKey(label)) {

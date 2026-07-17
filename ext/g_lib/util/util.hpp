@@ -143,6 +143,13 @@ inline std::ofstream openWriteStream(const std::string& path) {
     return std::move(out);
 }
 
+inline constexpr const char* strip_path(const char* path) {
+    const char* last = path;
+    for(const char* p = path; *p; p++) {
+        if(*p == '/' || *p == '\\') last = p+1;
+    }
+    return last;
+}
 
   template<typename T>
   inline void write_raw(std::ostream& out, const T& val) {

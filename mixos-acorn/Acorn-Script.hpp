@@ -101,7 +101,9 @@ namespace Acorn {
                 Value v = ctx.node().children()[1].value();
                 ticket = get_ticket(pool,v.size(),v.type());
                 if(is_live(v.data_ptr())) {
-                    resolve_to_col(ticket).push(v.get());
+                    Col& c = resolve_to_col(ticket);
+                    CHECK_ERROR("Ticket did not resolve to a valid col: ",Ptr_as_string(ticket));
+                    c.push(v.get());
                 }
             } else if(ctx.node().children().length()==3) {
                 uint32_t size = ctx.node().getInt(1);
@@ -144,71 +146,86 @@ namespace Acorn {
         uint32_t suspend_unit_id = add_function("suspend_unit",[this](Context& ctx){print("Suspended unit"); suspend();});
 
 
+
         uint32_t ptr_get_id = overload_type(ptr_id,".\"get\"","PTR_GET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
             standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            Value cv = right.value();
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr get")); return;});
-            Ptr ptr = *(Ptr*)lv;
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr on left for ptr get");
             Col& col = resolve_to_col(ptr);
-            if(!right.children().empty()) {
-                cv = right.children()[0].value();
+            uint32_t right_arg_lookup_type = ctx.node().right().c0().value().type();
+
+            if(ctx.node().value().type()==0) {
+                ctx.node().value().type(col.tag);
+                ctx.node().value().size(col.element_size);
             }
-            if(cv.type()==int_id) {
-                int index = *(int*)cv.get();
+
+            if(right_arg_lookup_type==int_id) {
+                int index = ctx.node().right().getInt(0);
                 if(index<col.length()) {
                     Value value = ctx.node().value();
                     ptr.sidx = index;
                     value.data_ptr(ptr);
                 } else {
-                    print(red("ptr_get:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
+                    ctx.node().value().type(void_id);
+                    ctx.node().value().size(0);
+                    throw_error("Index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr));
                 }
-            } else if(cv.type()==string_id||cv.type()==ptr_id||cv.type()==node_id) {
-                Col& ccol = resolve_to_col(*(Ptr*)cv.get());
-                //ptr.sidx = col.getidx(ccol.storage,ccol.size);
-                //^ Don't know why cell.index isn't being propagated properly, some path (I suspect celllabel but prints there show the correct indexes) but I don't have the time to continue fixing this right now
-                //Just using positional index for now, when I turn this into a proper hashmap I'll swtich it back and also dedicate more debug time.
-                uint32_t h = hashBytes(ccol.storage,ccol.size);
-                for(int i = 0; i < col.cells.length(); i++) {
-                    CCol& c = col.cells[i];
-                    if(c.hash == h) {
-                        if(memcmp(c.storage, ccol.storage,ccol.size) == 0) { //Collison check against the stored key
-                            ptr.sidx = i;
-                            break;
-                        } 
-                    }
-                }
-                
-                if(ctx.node().value().type()==0) {
-                    ctx.node().value().type(col.tag);
-                    ctx.node().value().size(col.element_size);
-                }
+            } else if(is_ptr_alias(right_arg_lookup_type)) {
+                Col& ccol = resolve_to_col(ctx.node().right().getPtr(0));
+                ptr.sidx = col.getidx(ccol.storage,ccol.size);
+                ctx.node().value().data_ptr(ptr);
+            }
+        });
 
+        uint32_t ptr_getOrPut_id = overload_type(ptr_id,".\"getOrPut\"","PTR_GETORPUT",make_value(0),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr on left for ptr getOrPut");
+            Col& col = resolve_to_col(ptr);
+            uint32_t right_arg_lookup_type = ctx.node().right().c0().value().type();
+
+            if(ctx.node().value().type()==0) {
+                ctx.node().value().type(col.tag);
+                ctx.node().value().size(col.element_size);
+            }
+
+            if(right_arg_lookup_type==int_id) {
+                int index = ctx.node().right().getInt(0);
+                while(col.length()>=index) {
+                    col.push_default();
+                }
+                Value value = ctx.node().value();
+                ptr.sidx = index;
+                value.data_ptr(ptr);
+            } else if(is_ptr_alias(right_arg_lookup_type)) {
+                Col& ccol = resolve_to_col(ctx.node().right().getPtr(0));
+                if(!col.hasKey(ccol.storage,ccol.size)) {
+                   col.qput(malloc(col.element_size),ccol.storage,ccol.size,right_arg_lookup_type);
+                } 
+                ptr.sidx = col.getidx(ccol.storage,ccol.size);
                 ctx.node().value().data_ptr(ptr);
             }
         });
         uint32_t ptr_idxget_id = overload_type(ptr_id,"[any]","PTR_IDXGET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
             standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            Value cv = right.value();
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptridx get")); return;});
-            Ptr ptr = *(Ptr*)lv;
+            uint32_t right_arg_lookup_type = ctx.node().right().value().type();
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("No left value in ptridx get");
             Col& col = resolve_to_col(ptr);
-            if(cv.type()==int_id) {
-                int index = *(int*)cv.get();
+            if(right_arg_lookup_type==int_id) {
+                int index = ctx.node().right().getInt();
                 if(index<col.length()) {
                     Value value = ctx.node().value();
                     ptr.sidx = index;
                     value.data_ptr(ptr);
                 } else {
-                    print(red("ptr_idxget:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
+                    throw_error("ptr_idxget:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr));
                 }
-            } else if(cv.type()==string_id||cv.type()==ptr_id||cv.type()==node_id) {
-                Col& ccol = resolve_to_col(*(Ptr*)cv.get());
+            } else if(is_ptr_alias(right_arg_lookup_type)) {
+                Col& ccol = resolve_to_col(ctx.node().right().getPtr());
+                if(!col.hasKey(ccol.storage,ccol.size)) {
+                   col.qput(malloc(col.element_size),ccol.storage,ccol.size,right_arg_lookup_type);
+                } 
                 ptr.sidx = col.getidx(ccol.storage,ccol.size);
                 ctx.node().value().data_ptr(ptr);
             }
@@ -236,19 +253,15 @@ namespace Acorn {
         });
         uint32_t ptr_has_id = overload_type(ptr_id,".\"has\"","PTR_HAS",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            DEBUG_ONLY(if(ERROR_FLAG) {return;})
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
-            Ptr ptr = *(Ptr*)lv;
-            Col& col = resolve_to_col(ptr);
-            Value keyv = right.children()[0].value();
-            
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("No left value in ptr put");
+            Col& col = resolve_to_col(ptr);            
             void* key = nullptr;
             uint32_t key_size = 0;
-            if(keyv.type()==string_id||keyv.type()==ptr_id||keyv.type()==node_id) {
-                Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+            if(is_ptr_alias(ctx.node().right().c0().value().type())) {
+                Ptr temp = ctx.node().right().getPtr(0);
+                CHECK_ERROR("Invalid argument for ptr has");
+                Col& keycol = resolve_to_col(temp);
                 key = keycol.storage;
                 key_size = keycol.size;
             }
@@ -351,6 +364,45 @@ namespace Acorn {
             standard_sub_process(ctx);
             return resolve_to_pool(ctx.node().getPtr(0));
         }
+        uint32_t colcol_get_id = overload_type(colcol_id,".\"get\"","COLCOL_GET",make_value(ptr_id,sizeof(Ptr)),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr on left for colcol get");
+            ColCol& pool = resolve_to_pool(ptr);
+            uint32_t right_arg_lookup_type = ctx.node().right().c0().value().type();
+            if(right_arg_lookup_type==int_id) {
+                int index = ctx.node().right().getInt(0);
+                if(index<pool.length()) {
+                    Value value = ctx.node().value();
+                    ptr.idx = index;
+                    value.data_ptr(ptr);
+                } else {
+                    throw_error("Index "+std::to_string(index)+" out of bounds on pool "+Ptr_as_string(ptr));
+                }
+            } else if(is_ptr_alias(right_arg_lookup_type)) {
+                Col& ccol = resolve_to_col(ctx.node().right().getPtr(0));
+                ptr.idx = pool.getidx(ccol.storage,ccol.size);
+                CHECK_ERROR("Key not found");
+                ctx.node().value().data_ptr(ptr);
+            }
+        });
+        uint32_t colcol_getByLabel_id = overload_type(colcol_id,".\"getByLabel\"","COLCOL_GETBYLABEL",make_value(ptr_id,sizeof(Ptr)),[this](Context& ctx){
+            standard_sub_process(ctx);
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr on left for colcol getByLabel");
+            ColCol& pool = resolve_to_pool(ptr);
+            string qlabel = ctx.node().right().getString(0);
+            CHECK_ERROR("Invalid label argument");
+            std::string label = qlabel.to_std();
+            for(int i=0;i<pool.length();i++) {
+                if(pool[i].label.to_std()==label) {
+                    ptr.idx = i;
+                    ctx.node().value().data_ptr(ptr);
+                    return;
+                }
+            }
+            throw_error("Label not found ",label," in pool ",Ptr_as_string(ptr));
+        });
         uint32_t colcol_label_id = overload_type(colcol_id,".\"label\"","COLCOL_LABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             ColCol& col = overload_resolve_colcol(ctx);
             if(!ctx.node().right().children().empty()) {
@@ -458,9 +510,9 @@ namespace Acorn {
             ctx.node().value().set((void*)&result);
         });
         uint32_t check_greaterthan_int = overload_type(int_id,">int","CHECK_GT_INT",make_value(bool_id,1),[this](Context& ctx){
-            x_handlers.run(check_lessthan_int)(ctx);
+            standard_sub_process(ctx);
             DEBUG_ONLY(if(ERROR_FLAG) {return;});
-            bool result = !*(bool*)ctx.node().value().get();
+            bool result = (*(int*)ctx.node().children()[0].value().get() > *(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
 
@@ -1104,6 +1156,133 @@ namespace Acorn {
                 ctx.node().value().set((void*)&p);
             });
 
+            add_function("dump_unit",[this](Context& ctx){
+                standard_sub_process(ctx);
+                bool clear = ctx.node().getBool(0);
+                dump_unit(clear);
+            });
+            add_function("dump_pool",[this](Context& ctx){
+                standard_sub_process(ctx);
+                ColCol* pool = nullptr;
+                int poolid = 0;
+                if(ctx.node().left().value().type()==int_id) {
+                    poolid = ctx.node().getInt(0);
+                    CHECK_ERROR("Unable to get poolid from left");
+                    pool = &types[poolid];
+                } else if(ctx.node().left().value().type()==colcol_id) {
+                    Ptr p = ctx.node().getPtr(0);
+                    CHECK_ERROR("Unable to get pool from left");
+                    pool = &resolve_to_pool(p);
+                }
+                bool clear = ctx.node().getBool(1);
+                CHECK_ERROR("Expected a bool as second arg in dump_pool");
+                dump_pool(*pool,poolid,clear);
+            });
+            add_function("dump_pool_range",[this](Context& ctx){
+                standard_sub_process(ctx);
+                int from = ctx.node().getInt(0);
+                int to = ctx.node().getInt(1);
+                bool clear = ctx.node().getBool(2);
+                for(int i=from;i<to;i++) {
+                    dump_pool(types[i],i,(i==0?clear:false));
+                }
+            });
+
+            add_function("plen",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                Ptr pptr(&types,pool,0,0);
+                uint32_t plen = resolve_to_pool(pptr).length();
+                ctx.node().value().set((void*)&plen);
+            },4,int_id);
+
+            add_function("clen",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t col = *(int*)ctx.node().children()[1].value().get();
+                Ptr cptr(&types,pool,col,0);
+                uint32_t clen = resolve_to_col(cptr).length();
+                ctx.node().value().set((void*)&clen);
+            },4,int_id);
+
+            add_function("clabel",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = 0;
+                uint32_t col = 0;
+                if(ctx.node().children()[0].value().type()==ptr_id) {
+                    Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                    pool = p.pool; col = p.idx;
+                } else {
+                    pool = *(int*)ctx.node().children()[0].value().get();
+                    col = *(int*)ctx.node().children()[1].value().get();
+                }
+                Ptr cptr(&types,pool,col,0);
+                string output = resolve_string_ticket(ctx.node());
+                output = resolve_to_col(cptr).label.to_std();
+            },sizeof(Ptr),string_id);
+
+            add_function("csetlabel",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = 0;
+                uint32_t col = 0;
+                std::string label = "";
+                if(ctx.node().children()[0].value().type()==ptr_id) {
+                    Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                    pool = p.pool; col = p.idx;
+                    label = ((string&)*(Ptr*)ctx.node().children()[1].value().get()).to_std();
+                } else {
+                    pool = *(int*)ctx.node().children()[0].value().get();
+                    col = *(int*)ctx.node().children()[1].value().get();
+                    label = ((string&)*(Ptr*)ctx.node().children()[2].value().get()).to_std();
+                }
+                Ptr cptr(&types,pool,col,0);
+                resolve_to_col(cptr).label = label;
+            });
+
+            uint32_t ptr_celllabel_id = overload_type(ptr_id,".\"celllabel\"","PTR_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = ctx.node().getPtr(0);
+                CHECK_ERROR("Left arg of cellabel is invalid");
+                if(p.cachelevel==3) p.cache = &types;
+                if(!ctx.node().right().children().empty()) {
+                    string label = ctx.node().right().getString(0);
+                    uint32_t pooltag = resolve_to_pool(p).tag;
+                    Col& cellcol = resolve_to_col(p);
+                    CHECK_ERROR("Unable to resolve some elmenets of celllabel, label pooltag or cellcol");
+                     //We only suppourt string keys for now
+                    while(cellcol.cells.count()<=p.sidx) {
+                        CCol c; //Temporary filler
+                        char defc = ' ';
+                        c.element_size = 1; 
+                        c.tag = string_id;
+                        c.hash = hashBytes((void*)&defc, 1);
+                        c.index = cellcol.cells.count();
+                        c.push((void*)&defc);
+                        cellcol.cells.scan_for_slot(c);
+                    }
+                    CCol* cellptr = cellcol.cells.find_cell(p.sidx);
+                    if(!cellptr) {
+                        throw_error("No cell was found for sidx ",p.sidx," in celllabel of count ",cellcol.cells.count());
+                        return;
+                    }
+                    CCol& cell = *cellptr;
+                    cell.clear();
+                    cell.element_size = label.length();
+                    cell.hash = hashBytes(resolve_ptr(label), label.length());
+                    cell.index = p.sidx;
+                    cell.push(resolve_ptr(label)); 
+                } else {
+                    string output = resolve_string_ticket(ctx.node());
+                    Col& cellcol = resolve_to_col(p);
+                    CCol* cell = cellcol.cells.find_cell(p.sidx);
+                    if(cell) {
+                        output = ((QString&)*cell).to_std();
+                    } else {
+                        output = "";
+                    }
+                }
+            });
+
             add_function("take_left",[this](Context& ctx){
                 standard_sub_process(ctx); 
                 take_left(ctx.sub(),ctx.node().getInt(0));
@@ -1124,7 +1303,11 @@ namespace Acorn {
                 ctx.state(0); at_x-=1.0f; --ctx.index();
             };
 
-
+            add_function("recycle_node",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Node n = ctx.node().getNode(0);
+                recycle_node(n);
+            });
 
             add_function("newline",[this](Context& ctx){
                 uspan->newline(children_to_string(ctx,ctx.node().children()));
@@ -1134,6 +1317,12 @@ namespace Acorn {
             });
             add_function("udump",[this](Context& ctx){
                 uspan->print_all();
+            });
+            add_function("uprofilers",[this](Context& ctx){
+                uspan->print_all_profilers();
+            });
+            add_function("ureset_profilers",[this](Context& ctx){
+                uspan->profilers.clear();
             });
             add_function("ussw",[this](Context& ctx){ //uspan_setup_standard_watcher
                 setup_uspan_standard_watchers();
@@ -2113,7 +2302,13 @@ namespace Acorn {
                 },[this](Node n){
                     list<Node> stamps;
                     map<uint64_t,bool> visited;
-                    collect_stamps(n,stamps,visited);
+                    Log::Line l; l.start();
+                    collect_stamps(n,stamps,visited,false);
+                    stamps.sort([](Node a, Node b){
+                        int ay = (int)a.y(), by = (int)b.y();
+                        if(ay != by) return ay < by;
+                        return (int)a.x() < (int)b.x();
+                    });
                     return stamps;
                 }}));
                 at_z = old_at_z;
@@ -2157,7 +2352,9 @@ namespace Acorn {
         }
 
         virtual Node process(std::string path) override {
+            //Log::Line l; l.start();
             Node root = tokenize(path);
+            //print("[",at_z,"] Tokenize: ",ftime(l.end()));
             unit_root = root;
             return root;
         }
@@ -2202,10 +2399,12 @@ namespace Acorn {
 
         void compile(Node root, bool prune = true) {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+            //Log::Line l; l.start();
             start_logged_stage(a_handlers);
             standard_direct_pass(root);
+            //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
             end_logged_stage();
-
+            
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             lemmatize_stages();
             newline("Resolving keywords");
@@ -2218,21 +2417,25 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(n_handlers);
             standard_direct_pass(root);
+            //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
             end_logged_stage();
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(s_handlers);
             standard_direct_pass(root);
+            //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
             end_logged_stage();
             
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(t_handlers);
             standard_resolving_pass(root);
+            //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
             end_logged_stage();
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(r_handlers);
             standard_resolving_pass(root);
+            //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
             end_logged_stage();
 
             //No E stage for now while testing
@@ -2250,6 +2453,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             start_logged_stage(m_handlers);
             memory_backwards_pass(root);
+            //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
             end_logged_stage();
         }
     
@@ -2264,6 +2468,15 @@ namespace Acorn {
             start_logged_stage(x_handlers);
             standard_travel_pass(root);
             end_logged_stage();
+
+            ColCol& npool = types[types.length()-1];
+            auto out = openWriteStream("savetest");
+            snapshot_colcol(out,npool);
+            out.close();
+            auto in = openReadStream("savetest");
+            ColCol newpool = load_snapshot_colcol(in);
+            in.close();
+            dump_pool(newpool,0,false);
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);

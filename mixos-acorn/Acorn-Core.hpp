@@ -7,7 +7,7 @@
 #include "../mixos-acorn/util/Acorn-Type.hpp"
 #include "../ext/g_lib/core/q_object.hpp"
 
-#define NAMED_PTRS 1
+#define NAMED_PTRS 0
 
 namespace Acorn {   
     static int _ctx_dummy_index = 0;
@@ -132,7 +132,7 @@ namespace Acorn {
             if(storage && element_size != 0) {
                 for(uint32_t i = 0; i < length(); i++) get(i).~ColCol();
             }
-            ColColCol::operator=(std::move(o));
+            Col::operator=(std::move(o));
             return *this;
         }
         ~ColColCol() {
@@ -326,7 +326,6 @@ namespace Acorn {
 
     uint32_t overloads_col = ptrs_col + 1;
 
-    bool is_live(Ptr p) {return (p.pool!=0||p.idx!=0);}
     inline Col& global_resolve_to_col(const Ptr& ptr, const uint32_t& idx) {return global[ptr.pool][idx];}
 
     struct _layout {
@@ -2180,6 +2179,70 @@ namespace Acorn {
         }
         void remove_pools(ColColCol& col3, uint32_t from, uint32_t to) {ColColCol returned = take_pools(col3,from,to);}
 
+        void copy_subgraph_col(ColColCol& col3, ColColCol& subgraph, Ptr& target, map<uint32_t,uint32_t>& pool_aliases, list<map<uint32_t,uint32_t>>& col_aliases) {
+            uint32_t target_pool = target.pool;
+            uint32_t target_idx = target.idx;
+            
+            uint32_t& poolalias = target.pool;
+            uint32_t& colalias = target.idx;
+            if(pool_aliases.hasKey(target_pool)) {
+                poolalias = pool_aliases.get(target_pool);
+            } else {
+                ColCol innercopypool = col3[target_pool]; innercopypool.clear();
+                poolalias = col_aliases.length();
+                pool_aliases.put(target_pool,poolalias);
+                subgraph.push(innercopypool);
+                col_aliases.push(map<uint32_t,uint32_t>{});
+            }
+            
+            if(col_aliases[poolalias].hasKey(target_idx)) {
+                colalias = col_aliases[poolalias].get(target_idx);
+            } else {
+                Col& col = col3[target_pool][target_idx];
+                Col outercopycol = col; outercopycol.clear();
+                colalias = subgraph[poolalias].length();
+                subgraph[poolalias].push(outercopycol);
+                col_aliases[poolalias].put(target_idx,colalias);
+
+                for(int r=0;r<col.length();r++) {
+                    if(col.heterogenous) {
+                        //Add special seperate handeling later
+                    } else {
+                        void* field = col[r];
+                        if(is_ptr_alias(col.tag)) {
+                            Ptr p = *(Ptr*)field;
+                            if(is_live(p)) {
+                                copy_subgraph_col(col3,subgraph,p,pool_aliases,col_aliases);
+                            }
+                            subgraph[poolalias][colalias].push((void*)&p);
+                        } else {
+                            subgraph[poolalias][colalias].push(field);
+                        }
+                    }
+                }
+            }
+        }   
+        ColColCol copy_subgraph(ColColCol& col3, uint32_t target_pool) {
+            ColColCol to_return;
+            if(target_pool>=col3.length()) {throw_error("core:copy_subgraph target pool ",target_pool," is out of bounds for col3 len ",col3.length()); return to_return;}
+            ColCol& pool = col3[target_pool];
+            map<uint32_t,uint32_t> pool_aliases;
+            list<map<uint32_t,uint32_t>> col_aliases;
+
+            ColCol outercopypool = pool; outercopypool.clear();
+            uint32_t outerpoolalias = col_aliases.length();
+            pool_aliases.put(target_pool,outerpoolalias);
+            to_return.push(outercopypool);
+            col_aliases.push(map<uint32_t,uint32_t>{});
+
+            for(int c=0;c<pool.length();c++) {
+                Ptr target_ptr;
+                target_ptr.pool = target_pool; target_ptr.idx = c;
+                copy_subgraph_col(col3,to_return,target_ptr,pool_aliases,col_aliases);
+            }
+            return to_return;
+        }
+
         uint32_t find_pools_start(uint32_t from, uint32_t start_tag) {
             if(from==0) return 0;
             while(types[from].tag != start_tag) {
@@ -2696,99 +2759,100 @@ namespace Acorn {
 
         void test_pool_groups() {
 
-            int ITS = 100;
-            list<std::string> titles;
-            for(int i = 0; i < ITS; i++) {
-                int rl = randi(5,20);
-                std::string rstr = sgen::randsgen(sgen::TRUE_RANDOM);
-                for(int r=0;r<rl;r++) {
-                    rstr+=sgen::randsgen(sgen::TRUE_RANDOM);
-                }
-                titles << rstr;
-            }
+        //Benchmark QCellCol
+            // int ITS = 100;
+            // list<std::string> titles;
+            // for(int i = 0; i < ITS; i++) {
+            //     int rl = randi(5,20);
+            //     std::string rstr = sgen::randsgen(sgen::TRUE_RANDOM);
+            //     for(int r=0;r<rl;r++) {
+            //         rstr+=sgen::randsgen(sgen::TRUE_RANDOM);
+            //     }
+            //     titles << rstr;
+            // }
         
-            for(int i=0;i<20;i++) {
-                print(titles[i]," : ",to_bin(hashBytes(titles[i].data(),titles[i].size())));
-            }
+            // for(int i=0;i<20;i++) {
+            //     print(titles[i]," : ",to_bin(hashBytes(titles[i].data(),titles[i].size())));
+            // }
 
-            // --- Three structures under test ---
-            Col col(4); col.tag = 0; // element_size=4 (storing ints), matches CCol(uint32_t _size) ctor
-            map<std::string,int> g_map;
-            std::unordered_map<std::string,int> std_map;
+            // // --- Three structures under test ---
+            // Col col(4); col.tag = 0; // element_size=4 (storing ints), matches CCol(uint32_t _size) ctor
+            // map<std::string,int> g_map;
+            // std::unordered_map<std::string,int> std_map;
         
-            Log::rig r;
+            // Log::rig r;
         
-            // --- Cleanup, run once per pass (i==0), mirrors old bench's "clean" processes ---
-            r.add_process("clean_col",[&](int i){
-                if(i==0) { col = Col(4); col.tag = 0; }
-            },1);
-            r.add_process("clean_g_map",[&](int i){
-                if(i==0) { g_map.clear(); }
-            },1);
-            r.add_process("clean_std_map",[&](int i){
-                if(i==0) { std_map.clear(); }
-            },1);
+            // // --- Cleanup, run once per pass (i==0), mirrors old bench's "clean" processes ---
+            // r.add_process("clean_col",[&](int i){
+            //     if(i==0) { col = Col(4); col.tag = 0; }
+            // },1);
+            // r.add_process("clean_g_map",[&](int i){
+            //     if(i==0) { g_map.clear(); }
+            // },1);
+            // r.add_process("clean_std_map",[&](int i){
+            //     if(i==0) { std_map.clear(); }
+            // },1);
         
-            // --- Populate: insert ITS string-keyed int entries into each structure ---
-            r.add_process("populate_col",[&](int i){
-                int val = i;
-                col.put(titles[i], (void*)&val);
-            },1);
-            r.add_process("populate_g_map",[&](int i){
-                g_map.put(titles[i], i);
-            },1);
-            r.add_process("populate_std_map",[&](int i){
-                std_map.emplace(titles[i], i);
-            },1);
+            // // --- Populate: insert ITS string-keyed int entries into each structure ---
+            // r.add_process("populate_col",[&](int i){
+            //     int val = i;
+            //     col.put(titles[i], (void*)&val);
+            // },1);
+            // r.add_process("populate_g_map",[&](int i){
+            //     g_map.put(titles[i], i);
+            // },1);
+            // r.add_process("populate_std_map",[&](int i){
+            //     std_map.emplace(titles[i], i);
+            // },1);
         
-            // --- Access: point lookup by key, same key set used to populate ---
-            r.add_process("access_col",[&](int i){
-                volatile int a = *(int*)col.get(titles[i]);
-            },1);
-            r.add_process("access_g_map",[&](int i){
-                volatile int a = g_map.get(titles[i]);
-            },1);
-            r.add_process("access_std_map",[&](int i){
-                volatile int a = std_map.at(titles[i]);
-            },1);
+            // // --- Access: point lookup by key, same key set used to populate ---
+            // r.add_process("access_col",[&](int i){
+            //     volatile int a = *(int*)col.get(titles[i]);
+            // },1);
+            // r.add_process("access_g_map",[&](int i){
+            //     volatile int a = g_map.get(titles[i]);
+            // },1);
+            // r.add_process("access_std_map",[&](int i){
+            //     volatile int a = std_map.at(titles[i]);
+            // },1);
         
-            // --- hasKey: presence check, same key set ---
-            r.add_process("haskey_col",[&](int i){
-                volatile bool b = col.hasKey(titles[i]);
-            },1);
-            r.add_process("haskey_g_map",[&](int i){
-                volatile bool b = g_map.hasKey(titles[i]);
-            },1);
-            r.add_process("haskey_std_map",[&](int i){
-                volatile bool b = (std_map.find(titles[i]) != std_map.end());
-            },1);
+            // // --- hasKey: presence check, same key set ---
+            // r.add_process("haskey_col",[&](int i){
+            //     volatile bool b = col.hasKey(titles[i]);
+            // },1);
+            // r.add_process("haskey_g_map",[&](int i){
+            //     volatile bool b = g_map.hasKey(titles[i]);
+            // },1);
+            // r.add_process("haskey_std_map",[&](int i){
+            //     volatile bool b = (std_map.find(titles[i]) != std_map.end());
+            // },1);
         
-            r.add_comparison("populate_col","populate_g_map");
-            r.add_comparison("populate_col","populate_std_map");
-            r.add_comparison("access_col","access_g_map");
-            r.add_comparison("access_col","access_std_map");
-            r.add_comparison("haskey_col","haskey_g_map");
-            r.add_comparison("haskey_col","haskey_std_map");
+            // r.add_comparison("populate_col","populate_g_map");
+            // r.add_comparison("populate_col","populate_std_map");
+            // r.add_comparison("access_col","access_g_map");
+            // r.add_comparison("access_col","access_std_map");
+            // r.add_comparison("haskey_col","haskey_g_map");
+            // r.add_comparison("haskey_col","haskey_std_map");
         
-            r.run(1000,true,ITS);
+            // r.run(1000,true,ITS);
         
-            // --- Scale up: 100 -> 10,000 -> 1,000,000, same shape as the old bench's ITS^(i+1) loop ---
-            for(int i = 0; i < 2; i++) {
-                int new_its = (int)std::pow(ITS, i+1);
-                print("ITS: ", new_its);
+            // // --- Scale up: 100 -> 10,000 -> 1,000,000, same shape as the old bench's ITS^(i+1) loop ---
+            // for(int i = 0; i < 2; i++) {
+            //     int new_its = (int)std::pow(ITS, i+1);
+            //     print("ITS: ", new_its);
         
-                titles.clear();
-                for(int j = 0; j < new_its; j++) titles << std::to_string(j);
+            //     titles.clear();
+            //     for(int j = 0; j < new_its; j++) titles << std::to_string(j);
         
-                r.run(1000,false,new_its);
-            }
+            //     r.run(1000,false,new_its);
+            // }
         
-            print("Final col length: ", col.length());
-            print("Final g_map size: ", g_map.size());
-            print("Final std_map size: ", std_map.size());
+            // print("Final col length: ", col.length());
+            // print("Final g_map size: ", g_map.size());
+            // print("Final std_map size: ", std_map.size());
 
 
-
+        //Benchmark materialization via lowering Ptrs
             // uint32_t dataidx = types.length();
             // uint32_t storeidx = dataidx+1;
             
@@ -2915,71 +2979,97 @@ namespace Acorn {
             
             // r.run(100,true,elements);
 
+        //Testing
+            int six = 6;
+            ColColCol& main_pool = types;
+            for(uint32_t p=0;p<3;p++) {
+                ColCol subpool; 
 
-            // int six = 6;
-            // ColColCol main_pool;
-            // for(uint32_t p=0;p<3;p++) {
-            //     ColCol subpool; 
+                Col sc(sizeof(Ptr)); sc.tag = ptr_id;
+                Ptr sp(p,1,0);
+                sc.push((void*)&sp);
+                Ptr ssp((p==2?0:p+1),0,0);
+                sc.push((void*)&ssp);
+                subpool.push(sc);
 
-            //     Col sc(sizeof(Ptr)); sc.tag = ptr_id;
-            //     Ptr sp(p,1,0);
-            //     sc.push((void*)&sp);
-            //     Ptr ssp((p==2?0:p+1),1,0);
-            //     sc.push((void*)&ssp);
-            //     subpool.push(sc);
+                for(uint32_t i=0;i<3;i++) {
+                    Col c(4); c.tag = int_id;
+                    c.push((void*)&i);
+                    c.push((void*)&six);
+                    subpool.push(c);
+                }
+                main_pool.push(subpool);
+            }
+            writeFile("printout.txt","");
+            editTextFile("printout.txt",[](std::string& source){source+="\n=====MAIN POOL DUMP=====\n\n";});
+            for(int p=0;p<main_pool.length();p++) {
+                dump_pool(main_pool[p],p,false);
+            }
 
-            //     for(uint32_t i=0;i<3;i++) {
-            //         Col c(4); c.tag = int_id;
-            //         c.push((void*)&i);
-            //         c.push((void*)&six);
-            //         subpool.push(c);
-            //     }
-            //     main_pool.push(subpool);
-            // }
-            // writeFile("printout.txt","");
-            // editTextFile("printout.txt",[](std::string& source){source+="\n=====MAIN POOL DUMP=====\n\n";});
-            // for(int p=0;p<main_pool.length();p++) {
-            //     dump_pool(main_pool[p],p,false);
-            // }
-
-            // ColCol pool_a; pool_a.tag = func_call_id; pool_a.label = "data";
-            // ColCol pool_b; pool_b.tag = function_id; pool_b.label = "meta";
-            // ColCol pool_c; pool_c.tag = func_decl_id; pool_c.label = "store";
+            ColCol pool_a; pool_a.tag = func_call_id; pool_a.label = "data";
+            ColCol pool_b; pool_b.tag = function_id; pool_b.label = "meta";
+            ColCol pool_c; pool_c.tag = func_decl_id; pool_c.label = "store";
         
-            // for(uint32_t i=0;i<3;i++) {
-            //     Col col(sizeof(Ptr)); col.tag = ptr_id;
-            //     Ptr p((i==0?1:i), 1, 0);
-            //     col.push((void*)&p);
-            //     pool_a.push(col);
+            for(uint32_t i=0;i<3;i++) {
+                Col col(sizeof(Ptr)); col.tag = ptr_id;
+                Ptr p(&types,(i==0?1:i), 1, 0);
+                col.push((void*)&p);
+                pool_a.push(col);
 
-            //     Col subcol(4); subcol.tag = int_id;
-            //     subcol.push((void*)&i);
-            //     if(i==0) {
-            //         pool_a.push(subcol);
-            //     } else if(i==1) {
-            //         pool_b.push(subcol);
-            //     } else if(i==2) {
-            //         pool_c.push(subcol);
-            //     }
-            // }
+                Col subcol(4); subcol.tag = int_id;
+                subcol.push((void*)&i);
+
+                Col str_col(sizeof(Ptr)); str_col.tag = string_id;
+                Ptr strptr(&types,i,2,0); str_col.push((void*)&strptr);
+                Col char_col(1); char_col.tag = char_id;
+                std::string tstr = "test";
+                for(auto& ch : tstr) {
+                    char_col.push((void*)&ch);
+                }
+
+                if(i==0) {
+                    pool_a.push(subcol);
+                } else if(i==1) {
+                    pool_b.push(subcol);
+                    pool_b.push(str_col);
+                    pool_b.push(char_col);
+                } else if(i==2) {
+                    pool_c.push(subcol);
+                    pool_c.push(str_col);
+                    pool_c.push(char_col);
+                }
+            }
         
-            // uint32_t base = main_pool.length();
-            // print("Base offset: ", base);
+            uint32_t base = main_pool.length();
+            print("Base offset: ", base);
         
-            // list<ColCol*> group = {&pool_a, &pool_b, &pool_c};
+            list<ColCol*> group = {&pool_a, &pool_b, &pool_c};
 
-            // print("Dumping subpools");
-            // editTextFile("printout.txt",[](std::string& source){source+="\n=====SUB POOL DUMP=====\n\n";});
-            // for(int p=0;p<group.length();p++) {
-            //     dump_pool(*group[p],p,false);
-            // }
+            print("Dumping subpools");
+            editTextFile("printout.txt",[](std::string& source){source+="\n=====SUB POOL DUMP=====\n\n";});
+            for(int p=0;p<group.length();p++) {
+                dump_pool(*group[p],p,false);
+            }
 
-            // insert_pools(main_pool, group, 1);
+            insert_pools(main_pool, group, 1);
 
-            // editTextFile("printout.txt",[](std::string& source){source+="\n=====POST PUSH=====\n\n";});
-            // for(int p=0;p<main_pool.length();p++) {
-            //     dump_pool(main_pool[p],p,false);
-            // }
+            editTextFile("printout.txt",[](std::string& source){source+="\n=====POST PUSH=====\n\n";});
+            for(int p=0;p<main_pool.length();p++) {
+                dump_pool(main_pool[p],p,false);
+            }
+
+            Ptr sssp(&types,5,2,0);
+            Col ssscol(sizeof(Ptr)); ssscol.tag = ptr_id;
+            ssscol.push((void*)&sssp);
+            main_pool[1].push(ssscol);
+
+            ColColCol copyc3 = copy_subgraph(main_pool,1);
+
+            editTextFile("printout.txt",[](std::string& source){source+="\n=====DUMPING COPY=====\n\n";});
+            for(int p=0;p<copyc3.length();p++) {
+                dump_pool(copyc3[p],p,false);
+            }
+
 
             // ColColCol c3 = take_pools(main_pool,2,3);
 
@@ -2999,6 +3089,9 @@ namespace Acorn {
             // for(int p=0;p<main_pool.length();p++) {
             //     dump_pool(main_pool[p],p,false);
             // }
+
+
+
         }
 
       
@@ -3687,9 +3780,10 @@ namespace Acorn {
         return u;
     }
 
-    inline uint16_t make_unit(const ColColCol& starter) {
+    template<typename T>
+    inline g_ptr<T> make_unit(const ColColCol& starter) {
         g_ptr<Unit> u = make<Unit>(starter);
-        return u->uid;
+        return u;
     }
 
    

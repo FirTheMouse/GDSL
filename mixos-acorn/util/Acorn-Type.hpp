@@ -147,44 +147,53 @@ namespace Acorn {
     //1=sidx valid, cache is a col
     //2=idx valid, cache is a ColCol
     //3=pool valid, cache is a ColColCol
-
+    
     struct Ptr {
         Ptr(uint32_t _device, uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             device = _device; unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
+            specialization = 1;
         }
         Ptr(uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
+            specialization = 1;
         }
         Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             pool = _pool; idx = _idx; sidx = _sidx;
+            specialization = 1;
         }
         Ptr(uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             idx = _idx; sidx = _sidx;
+            specialization = 1;
         }
         Ptr(uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             sidx = _sidx;
+            specialization = 1;
         }
         Ptr(void* _cache, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             pool = _pool; idx = _idx; sidx = _sidx;
             cache = _cache; cachelevel = 3;
+            specialization = 2;
         }
         Ptr(void* _cache, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             idx = _idx; sidx = _sidx;
             cache = _cache; cachelevel = 2;
+            specialization = 2;
         }
         Ptr(void* _cache, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             sidx = _sidx;
             cache = _cache; cachelevel = 1;
+            specialization = 2;
         }
-        Ptr() { memset(this, 0, sizeof(Ptr)); }
+        Ptr() { memset(this, 0, sizeof(Ptr)); specialization = 1;}
+        Ptr(uint8_t spec) {memset(this, 0, sizeof(Ptr)); specialization = spec;}
         
         union {
             struct { 
@@ -222,6 +231,9 @@ namespace Acorn {
     };
     static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
+    const uint8_t _DEADSPEC = 0;
+    inline bool is_live(Ptr p) {return (p.specialization!=_DEADSPEC);}
+
     struct Ptr4 {
         Ptr4() {}
         Ptr4(uint32_t _midx, Ptr p) : midx(_midx), ptr(p) {}
@@ -229,8 +241,8 @@ namespace Acorn {
         Ptr ptr;
     };
 
-    static const Ptr deadptr;
-    static Ptr dead_ref;
+    static const Ptr deadptr(_DEADSPEC);
+    static Ptr dead_ref(_DEADSPEC);
 
     struct QCol {
         QCol() {}
@@ -641,6 +653,8 @@ namespace Acorn {
             }
             if(!found) {return;} //Nothing corresponding to the index was found so return early
             uint32_t traversed = 0;
+            get(pos).~CCol();
+            size--;
             while(traversed<capacity) {
                 uint32_t next_pos = (pos+1)%capacity;
                 CCol& next = get(next_pos);

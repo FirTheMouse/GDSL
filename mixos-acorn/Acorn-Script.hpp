@@ -14,8 +14,8 @@ namespace Acorn {
         //For my sanity
         string resolve_string_ticket(Node n) {
             if(is_live(n.value())) {
-                if(is_live(*(Ptr*)n.value().get())) {
-                    return (string&)*(Ptr*)n.value().get();
+                if(is_live(n.getPtr())) {
+                    return n.getString();
                 } else {
                     Ptr p = get_ticket(name_store_id,1,char_id); 
                     n.value().set((void*)&p);
@@ -991,7 +991,7 @@ namespace Acorn {
                 uint32_t idx = *(int*)ctx.node().children()[1].value().get();
                 uint32_t sidx = *(int*)ctx.node().children()[2].value().get();
                 p.pool = pool; p.idx = idx; p.sidx = sidx;
-                p.cachelevel = 3; p.cache = &types;
+                p.cachelevel = 3; p.cache = &types; p.specialization = 2;
             },sizeof(Ptr),ptr_id);
 
             add_function("value_as_string",[this](Context& ctx){
@@ -1363,9 +1363,11 @@ namespace Acorn {
                 bool b = uargs.has(arg);
                 ctx.node().set((void*)&b);
             },1,bool_id);
+
             add_function("unit_get_arg",[this](Context& ctx){
                 standard_sub_process(ctx);
                 std::string arg = ctx.node().getString(0).to_std();
+                Value n = ctx.node();
                 string output = resolve_string_ticket(ctx.node());
                 for(std::string& a : uargs) {
                     if(a.find(arg) == 0) {
@@ -1511,8 +1513,7 @@ namespace Acorn {
             };
             x_handlers[to_unary_id(star_id)] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                Node child = ctx.node().children()[0];
-                Ptr p = *(Ptr*)child.value().get();
+                Ptr p = ctx.node().getPtr(0);
                 ctx.node().value().data_ptr(p);
                 ctx.node().value().type(resolve_to_col(p).tag);
                 ctx.node().value().size(resolve_to_col(p).element_size);
@@ -2469,14 +2470,14 @@ namespace Acorn {
             standard_travel_pass(root);
             end_logged_stage();
 
-            ColCol& npool = types[types.length()-1];
-            auto out = openWriteStream("savetest");
-            snapshot_colcol(out,npool);
-            out.close();
-            auto in = openReadStream("savetest");
-            ColCol newpool = load_snapshot_colcol(in);
-            in.close();
-            dump_pool(newpool,0,false);
+            // ColCol& npool = types[types.length()-1];
+            // auto out = openWriteStream("savetest");
+            // snapshot_colcol(out,npool);
+            // out.close();
+            // auto in = openReadStream("savetest");
+            // ColCol newpool = load_snapshot_colcol(in);
+            // in.close();
+            // dump_pool(newpool,0,false);
 
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //dump_unit(true);

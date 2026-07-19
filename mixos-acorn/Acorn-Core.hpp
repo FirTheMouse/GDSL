@@ -2100,6 +2100,36 @@ namespace Acorn {
         inline list<Col*> ColCol_to_group(ColCol& col) {list<Col*> grouping; for(int c=0;c<col.length();c++){grouping << &col[c];} return grouping;}
         inline list<ColCol*> ColColCol_to_group(ColColCol& col) {list<ColCol*> grouping; for(int c=0;c<col.length();c++){grouping << &col[c];} return grouping;}
     
+
+        inline void adopt_ptrs(Col& col) {
+            if(col.heterogenous) {
+                //Add a scan over the layout and normalization for Ptr members in the future if needed
+            } else if(is_ptr_alias(col.tag)) {
+                for(int r=0;r<col.length();r++) {
+                    Ptr& ptr = *(Ptr*)col[r];
+                    if(is_live(ptr)) {
+                        if(ptr.cachelevel==3) {
+                            ptr.cache=&types;
+                        } else if(ptr.cachelevel==0) {
+                            ptr.unit = uid;
+                        } else {
+                            print(red("core:adopt_ptrs unable to adopt ptr "+Ptr_to_string(ptr,ptr.cachelevel)+" because it's cachelevel was too low or high"));
+                        }
+                    }
+                }
+            }
+        }
+        inline void adopt_ptrs(ColCol& pool) {
+            for(int i=0;i<pool.length();i++) {
+                adopt_ptrs(pool[i]);
+            }
+        }   
+        inline void adopt_ptrs(ColColCol& col3) {
+            for(int i=0;i<col3.length();i++) {
+                adopt_ptrs(col3[i]);
+            }
+        }   
+
         inline void offset_field_ptrs(Col& col, int offset, uint32_t field, uint32_t greater_than_threshold = 0) {
             if(col.heterogenous) {
                 //Add a scan over the layout and normalization for Ptr members in the future if needed

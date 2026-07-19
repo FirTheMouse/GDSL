@@ -472,6 +472,28 @@ namespace Acorn {
             ctx.node().value().set((void*)&result);
         });
 
+        uint32_t check_equality_node = overload_type(node_id,"==node","CHECK_EQUALITY_NODE",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (ctx.node().getNode(0)==ctx.node().getNode(1));
+            ctx.node().value().set((void*)&result);
+        });
+        uint32_t check_noequality_node = overload_type(node_id,"!=node","CHECK_NOEQUALITY_NODE",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (ctx.node().getNode(0)!=ctx.node().getNode(1));
+            ctx.node().value().set((void*)&result);
+        });
+
+        uint32_t check_equality_ptr = overload_type(ptr_id,"==ptr","CHECK_EQUALITY_PTR",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (ctx.node().getPtr(0)==ctx.node().getPtr(1));
+            ctx.node().value().set((void*)&result);
+        });
+        uint32_t check_noequality_ptr = overload_type(ptr_id,"!=ptr","CHECK_NOEQUALITY_PTR",make_value(bool_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool result = (ctx.node().getPtr(0)!=ctx.node().getPtr(1));
+            ctx.node().value().set((void*)&result);
+        });
+
         uint32_t check_equality_string = overload_type(string_id,"==string","CHECK_EQUALITY_STRING",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             string l(*(Ptr*)ctx.node().children()[0].value().get());
@@ -853,6 +875,7 @@ namespace Acorn {
             //overload_type(string_id,"+string",string_append_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,".\"length\"",ptr_length_id,make_value(int_id,4));
             overload_type(string_id,".\"clear\"",ptr_clear_id);
+            overload_type(string_id,".\"at\"",ptr_get_id,make_value(char_id,1));
             overload_type(string_id,".\"substr\"",string_substr_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,".\"slice\"",string_slice_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,".\"find\"",string_find_id,make_value(int_id,4));
@@ -2268,6 +2291,11 @@ namespace Acorn {
                     }
                 }
             };
+
+            add_function("this_scope",[this](Context& ctx){
+                Node inscope = ctx.node().in_scope();
+                ctx.node().value().set((void*)&inscope);
+            },sizeof(Ptr),node_id);
 
             add_function("STAMP_SOURCE",[this](Context& ctx){
 

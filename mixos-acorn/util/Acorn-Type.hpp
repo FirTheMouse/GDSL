@@ -469,12 +469,7 @@ namespace Acorn {
             DEBUG_ONLY(if(index*element_size>=size) {throw_error(red("col:sget "),"index ",index," out of bounds for size ",size,", element size is ",element_size," tag is ",tag);return nullptr;})
             return &storage[index * element_size];
         }
-        inline void* iget(uint32_t index, uint32_t offset) {
-            DEBUG_ONLY(if(index*element_size+offset>=size) {throw_error(red("col:iget "),"index ",index," plus offset ",offset," out of bounds for size ",size);return nullptr;})
-            return &storage[index * element_size + offset];
-        }
         inline void set(uint32_t index, const void* element) {memcpy(&storage[index * element_size], element, element_size);}
-        inline void iset(uint32_t index, uint32_t offset, const void* element, uint32_t width) {memcpy(&storage[index * element_size + offset], element, element_size);}
         void removeAt(uint32_t index) {QCol::removeAt(index,element_size);}
         void pop(void* out) {QCol::pop(out,element_size);}
         QCol take(uint32_t index) {return QCol::take_range(index, index+1, element_size);}

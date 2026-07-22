@@ -312,8 +312,8 @@ namespace Acorn {
                 print("GDSL::tokenize warning! No defined default function, please define one");
             }
 
-            while (index<code.length()) {
-                char c = code.at(index);
+            while (index<ctx.source().length()) {
+                char c = ctx.source().at(index);
                 Handler* func = nullptr;
                 if(ctx.state()!=0&&tokenizer_state_functions.hasKey(ctx.state())) {
                     func = &tokenizer_state_functions.get(ctx.state());
@@ -1561,7 +1561,17 @@ namespace Acorn {
 
         void sync_args(Context& ctx) {
             if(!ctx.node().scopes().empty()) {
-                DEBUG_ONLY(if(ctx.node().children().length()!=ctx.node().scopes()[0].owner().children().length()) {throw_error("Wrong number of arguments for function: ",node_to_string(ctx.node())); return;})
+
+                Node owner = ctx.node().scopes()[0].owner();
+                if(owner.type()==lambda_id&&!owner.children().empty()&&owner.children()[0].type()==to_unary_id(amp_id)) {
+                    //Special case for self refrenetial lambdas [&](){} which don't bind any arguments, until a more general solution can be found
+                    return;
+                }
+                
+                DEBUG_ONLY(if(ctx.node().children().length()!=ctx.node().scopes()[0].owner().children().length()) {
+                    throw_error("Wrong number of arguments for function:\n",node_to_string(ctx.node()),"\n",node_to_string(owner)); 
+                    return;
+                })
                 for(int i = 0; i < ctx.node().children().length(); i++) {
                     Node arg = ctx.node().children()[i];
                     if(arg.type()==equals_id) continue;
@@ -2107,7 +2117,12 @@ namespace Acorn {
                 //instantiate_template(ctx.node(),ctx.node().value().type_scope().owner(),ctx);
             };
             x_handlers[lambda_id] = [this](Context& ctx){
-                Node puppet = instantiate_function(ctx.node(),ctx); 
+                Node puppet;
+                if(!ctx.node().children().empty()&&ctx.node().children()[0].type()==to_unary_id(amp_id)) {
+                    puppet = ctx.node(); //For [&](){} type lambdas, instead of copying each time it just means direct refrence, like a statless template
+                } else {
+                    puppet = instantiate_function(ctx.node(),ctx);
+                }
                 ctx.node().value().set((void*)&puppet);
                 //print("Returned puppet: ",node_to_string(puppet));
             };

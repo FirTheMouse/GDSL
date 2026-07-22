@@ -6,6 +6,7 @@
 #include "../core/Golden.hpp"
 #include "../mixos-acorn/util/Acorn-Type.hpp"
 #include "../ext/g_lib/core/q_object.hpp"
+#include "../GDSL/ext/g_lib/core/thread.hpp"
 
 #define NAMED_PTRS 0
 
@@ -284,6 +285,10 @@ namespace Acorn {
         inline void push(char c) { col().push(&c); }
         inline void push(const char* s, uint32_t len) {for(uint32_t i = 0; i < len; i++) col().push(&s[i]);}
         inline void push(const std::string& s) { push(s.data(), s.length()); }
+        inline void insert(uint32_t idx, char c) { col().insert(idx, &c); }
+        inline void insert(uint32_t idx, const char* s, uint32_t len) { for(uint32_t i = 0; i < len; i++) col().insert(idx+i, &s[i]); }
+        inline void insert(uint32_t idx, const std::string& s) { insert(idx, s.data(), s.length()); }
+        inline void insert(uint32_t idx, string s) { insert(idx, (const char*)s.col().storage, s.length()); }
         inline void operator=(const std::string& s){ col().clear(); push(s);}
         inline void operator=(string s){ col().clear(); push((const char*)s.col().storage, s.length());}
         inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
@@ -486,6 +491,10 @@ namespace Acorn {
     uint32_t travel_pass_id = global_reg_id("TRAVEL_PASS");
     uint32_t backwards_pass_id = global_reg_id("BACKWARDS_PASS");
     uint32_t memory_backwards_pass_id = global_reg_id("MEMORY_BACKWARDS_PASS");
+
+    uint32_t headerpool_id = global_reg_id("headerpool");
+    uint32_t messagepool_id = global_reg_id("messagepool");
+    uint32_t footerpool_id = global_reg_id("footerpool");
     
     
 
@@ -1054,6 +1063,31 @@ namespace Acorn {
     }
     bool type_pool_intilized = init_type_pool();
 
+    uint32_t message_id = global_register_type_ids("message");
+    uint32_t message_from_offset = 0;
+    uint32_t message_to_offset = 0;
+    uint32_t message_status_offset = 0;
+    uint32_t message_total_size = 0;
+
+    bool init_message_type() {
+        _layout mtemp(global_add_template(message_id)); //Message template
+        message_from_offset = mtemp.add_prop(int_id, 4, "from");
+        message_to_offset = mtemp.add_prop(int_id, 4, "to");
+        message_status_offset = mtemp.add_prop(int_id, 4, "status");
+        message_total_size = mtemp.total_size;
+        return true;
+    }
+    bool message_type_ready = init_message_type();
+
+    struct Message : public Ptr {
+        Message() {}
+        Message(Ptr p) : Ptr(p) {}
+
+        uint32_t& from() {return *(uint32_t*)resolve_to_col(*this).qget(message_from_offset+(sidx*message_total_size));}
+        uint32_t& to() {return *(uint32_t*)resolve_to_col(*this).qget(message_to_offset+(sidx*message_total_size));}
+        uint32_t& status() {return *(uint32_t*)resolve_to_col(*this).qget(message_status_offset+(sidx*message_total_size));}
+    };
+
 
     using Handler = std::function<void(Context&)>;
 
@@ -1184,6 +1218,13 @@ namespace Acorn {
         bool running = true; 
         Context unit_ctx = deadptr;
 
+        g_ptr<Thread> uthread = nullptr;
+        void start_thread(std::function<void()> func) {
+            if(uthread) {uthread->end();}
+            uthread = make<Thread>();
+            uthread->run_raw(func);
+        }
+
         uint16_t derive_uid(bool init_layouts) {
             uid = (uint16_t)units.length();
 
@@ -1311,6 +1352,18 @@ namespace Acorn {
         ColColCol types;
         ColCol& operator[](uint16_t index) {return types[index];}
 
+
+        ColColCol setup_mailbox_subunit() {
+            ColColCol mailbox;
+            ColCol instr_plate; instr_plate.label = "Instructions";
+            mailbox.push(instr_plate);
+            mailbox.unlock();
+            return mailbox;
+        }
+
+        ColColCol sendunit = setup_mailbox_subunit();
+        ColColCol recvunit = setup_mailbox_subunit();
+
         virtual void init() {
            
         }
@@ -1360,6 +1413,10 @@ namespace Acorn {
         }
 
         std::string Ptr_as_string(Ptr p) {
+            if(p.specialization==_DEADSPEC) {
+                return "x|x|x";
+            }
+
             if(ERROR_FLAG) {
                 return red("ERROR_ACTIVE:"+Ptr_to_string(p));
             } else {
@@ -1697,6 +1754,7 @@ namespace Acorn {
             recycle_column(ctx);
         }
 
+
         std::string tag_to_str(uint32_t tag, void* data) {
             DEBUG_ONLY(if(ERROR_FLAG) {return "ERROR";})
             if(tag==int_id) {
@@ -1710,13 +1768,15 @@ namespace Acorn {
             } else if(tag==string_id) {
                 Ptr ptr = *(Ptr*)data;
                 if(ptr.pool>=types.length()||ptr.idx>=types[ptr.pool].length()) {
-                    return red("STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx));
+                    return "STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx);
                 }
                 std::string content = string(ptr).to_std();
                 return Ptr_as_string(ptr)+"> \""+escape_string(content,true)+"\"";
             } else if(tag==ptr_id) {
-                return Ptr_to_string(*(Ptr*)data);
-            } else if(tag==ptr_id||tag==node_id||tag==value_id||tag==context_id||tag==function_id) {
+                Ptr p = *(Ptr*)data;
+                if(p.specialization==_DEADSPEC) return "x|x|x";
+                return Ptr_to_string(p,p.cachelevel);
+            } else if(tag==node_id||tag==value_id||tag==context_id||tag==function_id) {
                 return Ptr_as_string(*(Ptr*)data);
             } else if(tag==ptr4_id) {
                 Ptr4 p = *(Ptr4*)data;
@@ -1857,6 +1917,8 @@ namespace Acorn {
                 if(line.length()>longest_row) {longest_row = line.length();}
             }
 
+            if(longest_row>50) longest_row = 50; //Truncation for large fields
+
             std::string to_return = "";
             int lpadlen = digit_count(longest_row)+1;
             for(int r=0;r<longest_row;r++) {
@@ -1903,21 +1965,30 @@ namespace Acorn {
             return to_return;
         }
 
-        std::string heterogenous_col_to_string(Col& col) {
-            std::string to_return = "";
+        list<std::string> heterogenous_col_to_lines(Col& col) {
+            list<std::string> to_return;
             if(col.heterogenous) {
                 if(layouts.hasKey(col.tag)) {
                     _layout& l = layouts.get(col.tag);
-                    for(int o=0;o<l.offsets.length();o++) {
-                        std::string line = "";
-                        line+=pad_str(l.labels[o]+": ",12);
-                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                        line+="\n";
-                        to_return+=line;
+                    for(int i=0;i<col.length();i++) {
+                        for(int o=0;o<l.offsets.length();o++) {
+                            std::string line = "";
+                            line+=pad_str(l.labels[o]+": ",12);
+                            line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]+(l.total_size*i)));
+                            to_return<<line;
+                        }
                     }
                 } else {
                     print(red("core::heterogenous_col_to_string unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
                 }
+            }
+            return to_return;
+        }
+        std::string heterogenous_col_to_string(Col& col) {
+            std::string to_return = "";
+            list<std::string> lines = heterogenous_col_to_lines(col);
+            for(int i=0;i<lines.length();i++) {
+                to_return+=lines[i]+(i==lines.length()-1?"":"\n");
             }
             return to_return;
         }
@@ -1931,17 +2002,7 @@ namespace Acorn {
                 subline << col.label.to_std()+(col.live?"":" [FREE]");
                 //print("Pushed label ",subline[0]);
                 if(col.heterogenous) {
-                    if(layouts.hasKey(col.tag)) {
-                        _layout& l = layouts.get(col.tag);
-                        for(int o=0;o<l.offsets.length();o++) {
-                            std::string line = "";
-                            line+=pad_str(l.labels[o]+": ",12);
-                            line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                            subline << line;
-                        }
-                    } else {
-                        print(red("core::type_to_string unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
-                    }
+                    subline << heterogenous_col_to_lines(col);
                 } else {
                     for(int r=0;r<col.length();r++) {
                         std::string line = "";
@@ -1960,8 +2021,9 @@ namespace Acorn {
                         subline << line;
                     }
                 }
-                //print("Pushed ",subline.length()," sublines");
                 lines << subline;
+                //print("Pushed ",subline.length()," sublines");
+
             }
             //print("Returned ",lines.length()," lines");
             return lines;
@@ -1978,17 +2040,7 @@ namespace Acorn {
                 list<std::string> subline;
                 subline << col.label.to_std();
                 if(col.heterogenous) {
-                    if(layouts.hasKey(col.tag)) {
-                        _layout& l = layouts.get(col.tag);
-                        for(int o=0;o<l.offsets.length();o++) {
-                            std::string line = "";
-                            line+=pad_str(l.labels[o]+": ",12);
-                            line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                            subline << line;
-                        }
-                    } else {
-                        print(red("core::TypeCol_to_lines unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
-                    }
+                    subline << heterogenous_col_to_lines(col);
                 } else {
                     for(int r=0;r<col.length();r++) {
                         std::string line = "";
@@ -2012,17 +2064,7 @@ namespace Acorn {
         void print_column(Col& col) {
             print("COL: ",col.label," TAG: ",labels[col.tag]," [",std::to_string(col.length()),"]");
             if(col.heterogenous) {
-                if(layouts.hasKey(col.tag)) {
-                    _layout& l = layouts.get(col.tag);
-                    for(int o=0;o<l.offsets.length();o++) {
-                        std::string line = "";
-                        line+=pad_str(l.labels[o]+": ",12);
-                        line+=tag_to_str(l.tags[o],col.qget(l.offsets[o]));
-                        print(line);
-                    }
-                } else {
-                    print(red("core::print_column unable to print heteregenous column of type "+labels[col.tag]+" because no layout was found"));
-                }
+                print(heterogenous_col_to_string(col));
             } else {
                 for(int i=0;i<col.length();i++) {
                     print(i,": ",tag_to_str(col.tag,col[i]));
@@ -2068,23 +2110,36 @@ namespace Acorn {
             });
         }
 
-        void dump_unit(bool clear_dump, std::string path = "printout.txt") {
+        void dump_unit(bool clear_dump, std::string path = "printout.txt", uint32_t from = 0, uint32_t to = 0) {
             if(clear_dump) writeFile(path,"");
 
-            for(int t=0;t<types.length();t++) {
+            if(!unit_label.empty()) {
+                editTextFile(path,[this](std::string& source){
+                    source+="UNIT: "+unit_label+"\n\n";
+                });
+            }
+            for(int t=from;t<(to==0?types.length():to);t++) {
                 std::string to_print = "";
                 to_print += "TYPE "+std::to_string(t)+" "+types[t].label.to_std()+(types[t].tag!=0?" ["+labels[types[t].tag]+"]":"")+":\n";
-                //print("PRINTING: ",t);
                 to_print += type_to_string(types[t]);
                 to_print += "\n\n\n";
-                // print("COMMITING: ",t);
-                // print("TEXT: ",to_print);
                 editTextFile(path,[to_print](std::string& source){
                     source+=to_print;
                 });
             }
+            editTextFile("printout.txt",[](std::string& source){
+                source+="SENDUNIT:\n";
+            });
+            for(int p=0;p<sendunit.length();p++) {
+                dump_pool(sendunit[p],p,false);
+            }
+            editTextFile("printout.txt",[](std::string& source){
+                source+="RECVUNIT:\n";
+            });
+            for(int p=0;p<recvunit.length();p++) {
+                dump_pool(recvunit[p],p,false);
+            }
         }
-
 
         map<uint32_t,bool> init_ptr_aliases() {
             map<uint32_t,bool> to_return;
@@ -2101,7 +2156,9 @@ namespace Acorn {
         inline list<ColCol*> ColColCol_to_group(ColColCol& col) {list<ColCol*> grouping; for(int c=0;c<col.length();c++){grouping << &col[c];} return grouping;}
     
 
-        inline void adopt_ptrs(Col& col) {
+        inline void adopt_ptrs(Col& col, ColColCol* into = nullptr) {
+            if(!into) into = &types;
+
             if(col.heterogenous) {
                 //Add a scan over the layout and normalization for Ptr members in the future if needed
             } else if(is_ptr_alias(col.tag)) {
@@ -2109,7 +2166,7 @@ namespace Acorn {
                     Ptr& ptr = *(Ptr*)col[r];
                     if(is_live(ptr)) {
                         if(ptr.cachelevel==3) {
-                            ptr.cache=&types;
+                            ptr.cache=into;
                         } else if(ptr.cachelevel==0) {
                             ptr.unit = uid;
                         } else {
@@ -2119,14 +2176,14 @@ namespace Acorn {
                 }
             }
         }
-        inline void adopt_ptrs(ColCol& pool) {
+        inline void adopt_ptrs(ColCol& pool, ColColCol* into = nullptr) {
             for(int i=0;i<pool.length();i++) {
-                adopt_ptrs(pool[i]);
+                adopt_ptrs(pool[i],into);
             }
         }   
-        inline void adopt_ptrs(ColColCol& col3) {
+        inline void adopt_ptrs(ColColCol& col3, ColColCol* into = nullptr) {
             for(int i=0;i<col3.length();i++) {
-                adopt_ptrs(col3[i]);
+                adopt_ptrs(col3[i],into);
             }
         }   
 
@@ -2138,7 +2195,7 @@ namespace Acorn {
                     Ptr& ptr = *(Ptr*)col[r];
                     if(is_live(ptr)) {
                         uint32_t val = ptr[field];
-                        if(offset < 0 && val >= greater_than_threshold && val < greater_than_threshold + (uint32_t)(-offset)) {
+                        if(offset < 0 && val >= greater_than_threshold && val < greater_than_threshold+(uint32_t)(-offset)) {
                             ptr = deadptr;
                         } else if(val >= greater_than_threshold) {
                             ptr[field] += offset;
@@ -2204,7 +2261,7 @@ namespace Acorn {
                 ColCol& cc = *(ColCol*)raw.qget(i * sizeof(ColCol));
                 to_return.push(cc);
             }
-            offset_pool_ptrs(to_return, -(int)(from+1));
+            offset_pool_ptrs(to_return, -(int)(from));
             return to_return;
         }
         void remove_pools(ColColCol& col3, uint32_t from, uint32_t to) {ColColCol returned = take_pools(col3,from,to);}
@@ -2273,9 +2330,9 @@ namespace Acorn {
             return to_return;
         }
 
-        uint32_t find_pools_start(uint32_t from, uint32_t start_tag) {
+        uint32_t find_pools_start(ColColCol& col3, uint32_t from, uint32_t start_tag) {
             if(from==0) return 0;
-            while(types[from].tag != start_tag) {
+            while(col3[from].tag != start_tag) {
                 if(from == 0) {
                     throw_error("core:find_pools_start unable to find the starting tag "+labels[start_tag]);
                     return 0;
@@ -2284,17 +2341,332 @@ namespace Acorn {
             }
             return from;
         }
-        list<ColCol*> gather_pools_from(uint32_t from, uint32_t start_tag, uint32_t end_tag) {
+        uint32_t find_pools_start(uint32_t from, uint32_t start_tag) {
+            return find_pools_start(types,from,start_tag);
+        }
+        list<ColCol*> gather_pools_from(ColColCol& col3, uint32_t from, uint32_t start_tag, uint32_t end_tag) {
             list<ColCol*> to_return;
-            if(from>=types.length()) {print(red("core:gather_pools_from from "+std::to_string(from)+" out of bounds for types length "+std::to_string(types.length()))); return to_return;}
+            if(from>=col3.length()) {print(red("core:gather_pools_from from "+std::to_string(from)+" out of bounds for col3 length "+std::to_string(col3.length()))); return to_return;}
             from = find_pools_start(from,start_tag);
-            for(int p=from;p<types.length();p++) {
-                to_return << &types[p];
-                if(types[p].tag==end_tag) {
+            for(int p=from;p<col3.length();p++) {
+                to_return << &col3[p];
+                if(col3[p].tag==end_tag) {
                     break;
                 }
             }
             return to_return;
+        }
+        list<ColCol*> gather_pools_from(uint32_t from, uint32_t start_tag, uint32_t end_tag) {
+            return gather_pools_from(types,from,start_tag,end_tag);
+        }
+
+        list<ColCol*> gather_pools(ColColCol& col3, uint32_t from, uint32_t to) {
+            list<ColCol*> to_return;
+            if(to>col3.length()) {print(red("core:gather_pools to "+std::to_string(to)+" out of bounds for col3 length "+std::to_string(col3.length()))); return to_return;}
+            for(int p=from;p<to;p++) {
+                to_return << &col3[p];
+            }
+            return to_return;
+        }
+        list<ColCol*> gather_pools(uint32_t from, uint32_t to) {
+            return gather_pools(types,from,to);
+        }
+
+        bool has_pool(list<ColCol*> pools, uint32_t tag, uint32_t nth = 0) {
+            for(int i=0;i<pools.length();i++) {
+                if(pools[i]->tag==tag) {
+                    if(nth==0) {
+                        return true;
+                    } else nth-=1;
+                }
+            }
+            return false;
+        }
+        uint32_t find_poolidx(list<ColCol*> pools, uint32_t tag, uint32_t nth = 0) {
+            for(int i=0;i<pools.length();i++) {
+                if(pools[i]->tag==tag) {
+                    if(nth==0) {
+                        return i;
+                    } else nth-=1;
+                }
+            }
+            print(red("core:find_poolidx could not find pool "+labels[tag]));
+            return 0;
+        }
+        ColCol* find_pool(list<ColCol*> pools, uint32_t tag, uint32_t nth = 0) {
+            uint32_t index = find_poolidx(pools,tag,nth);
+            return pools[index];
+        }
+
+        Message make_message(ColColCol& in, uint32_t from, uint32_t to, uint32_t status) {
+            Message m = Ptr(&in,0,push_column(in[0],message_total_size,message_id),0);
+            resolve_to_col(m).heterogenous = true;
+            m.from() = from; m.to() = to; m.status() = status;
+            return m;
+        }
+
+        void send_message(list<ColCol*> messagepools) {
+            if(sendunit.try_lock_forever()) {
+                ColCol& instrs = sendunit[0];
+                uint32_t from = sendunit.length();
+                uint32_t to = from+messagepools.length();
+                uint32_t status = 0;
+
+                ColCol* header = find_pool(messagepools,headerpool_id);
+                if(header) {
+                    Ptr refptr = *(Ptr*)header->get(0)[0]; //Getting the first Ptr from the ribbon so we know how to offset
+                    ColColCol mesagepools_copy; //If we did a proper copy out then this wouldn't be a problem
+                    for(int i=0;i<messagepools.length();i++) {
+                        ColCol msgcopy = *messagepools[i];
+                        mesagepools_copy.push(msgcopy);
+                    }
+                    offset_pool_ptrs(mesagepools_copy,-refptr.pool); //We also wouldn't need to offset
+                    adopt_ptrs(mesagepools_copy,&sendunit);
+                    push_pools(sendunit,mesagepools_copy);
+                    make_message(sendunit,from,to,status);
+                } else {
+                    throw_error("Failed to send message because there was no header pool");
+                }
+                sendunit.unlock();
+            }
+        }
+        //The pool needs to be in types
+        void send_message(uint32_t pool) {send_message({&types[pool]});}
+
+
+        uint32_t make_headerpool(std::string send_to, std::string message) {
+            uint32_t from = types.length();
+            ColCol tmsg; tmsg.tag = headerpool_id;
+            types.push(tmsg);
+            ColCol& msg = types[from];
+            add_column(msg,sizeof(Ptr),ptr_id);
+            Ptr strptr = get_ticket(from,sizeof(Ptr),string_id);
+            Ptr str = get_ticket(from,1,char_id);
+            ((string&)str) = send_to;
+            resolve_to_col(strptr).push((void*)&str);
+            msg[0].put("Send to",(void*)&strptr,string_id);
+
+            strptr = get_ticket(from,sizeof(Ptr),string_id);
+            str = get_ticket(from,1,char_id);
+            ((string&)str) = message;
+            resolve_to_col(strptr).push((void*)&str);
+            msg[0].put("Message",(void*)&strptr,string_id);
+
+            return from;
+        }
+        void send_message(std::string to, std::string message) {
+            send_message(make_headerpool(to,message));
+        }
+
+        uint32_t courier_type_id = 0;
+        void become_courier(bool auto_start = true) {
+            unit_label = "Thorn";
+            ColCol couriertype;
+            courier_type_id = types.length();
+            couriertype.label = "Leg";
+            types.push(couriertype);
+            if(auto_start) {
+                start_thread([this](){
+                    run_courier();
+                });
+            }
+        }
+
+        void courier_pick_up_messages(g_ptr<Unit> unit) {
+            if(courier_type_id==0) {
+                throw_error("Unit ",uid," is not a courier, can't pick up mesages");
+                return;
+            }
+
+            if(unit->sendunit.try_lock_for(0.005)) {
+                ColCol& instrs = unit->sendunit[0];
+
+                list<Message> messages;
+                for(int i=0;i<instrs.length();i++) {
+                    if(!instrs[i].live) continue;
+                    Message msg = Ptr(&instrs,i,0);
+                    messages.push(msg);
+                }
+                messages.sort([](Message a, Message b){return a.from()>b.from();});
+                for(int i=0;i<messages.length();i++) {
+                    // print("Courier found an instruction to iterate over in ",unit->unit_label);
+                    // unit->print_column(resolve_to_col(messages[i]));
+                    Message msg = messages[i];                
+                    if(msg.status()==0) {
+                        list<ColCol*> sample =  unit->gather_pools(unit->sendunit,msg.from(),msg.to());
+                        ColCol* header = find_pool(sample,headerpool_id);
+                        if(header) {
+                            Col& ribbon = header->get(0);
+                            if(ribbon.hasKey("Send to")) {
+                                string send_to_list = *(Ptr*)resolve_ptr(*(Ptr*)ribbon.get("Send to"));
+                                list<std::string> send_to = split_str(send_to_list.to_std(),',');
+
+                                //Has valid recipiants
+                                ColColCol group = unit->take_pools(unit->sendunit,msg.from(),msg.to());
+                                adopt_ptrs(group);
+
+                                for(int s=0;s<send_to.length();s++) {
+                                    ColCol& leg = types[courier_type_id];
+                                    Message record = deadptr;
+                                    Col* col = nullptr;
+                                    if(is_str_num(send_to[s])) {
+                                        uint32_t asnum = std::stoi(send_to[s]);
+                                        if(leg.hasKey(asnum)) {
+                                            col = (Col*)leg.Col::get((void*)&asnum,4);
+                                        }
+                                    } else {
+                                        if(leg.hasKey(send_to[s])) {
+                                            col = (Col*)leg.Col::get(send_to[s]);
+                                        }
+                                    }
+                                    if(col) {
+                                        record = Ptr(col,col->length()); col->push_default();
+                                    } else {
+                                        uint32_t ncol_at = push_column(leg,message_total_size,message_id);
+                                        leg[ncol_at].heterogenous = true;
+                                        record = Ptr(&leg,ncol_at,0);
+                                        CCol key;
+                                        if(is_str_num(send_to[s])) {
+                                            key.element_size = 4;
+                                            key.tag = int_id;
+                                            uint32_t asnum = std::stoi(send_to[s]);
+                                            key.hash = hashBytes((void*)&asnum, 4);
+                                            key.push((void*)&asnum);
+                                        } else {
+                                            key.element_size = send_to[s].length(); 
+                                            key.tag = string_id;
+                                            key.hash = hashBytes(send_to[s].data(), send_to[s].length());
+                                            key.push(send_to[s].data());
+                                        }
+                                        key.index = ncol_at;
+                                        leg.cells.scan_for_slot(key);
+                                    }     
+                                    record.from() = types.length(); record.to() = types.length()+sample.length(); record.status() = 0;
+                                    ColColCol copy_to_store = group;
+                                    push_pools(types,copy_to_store);
+                                }
+
+                                // editTextFile("printout.txt",[&](std::string& source){source+="Pickup from "+unit->unit_label+"\n";});
+                                // dump_unit(false,"printout.txt",14);
+                            } else {
+                                throw_error("core:courier_pick_up_messages encountered a message whose headerpool has no field 'Send to'!");
+                            }
+                            recycle_column(msg);
+                        } else {
+                            throw_error("core:courier_pick_up_messages encountered a message with no headerpool "
+                            "send message was bypassed or some memory was corrupted!");
+                            break;
+                        }
+                    } else {
+                        //For when I add more status codes
+                    }
+                }
+                unit->sendunit.unlock();
+            }
+        }
+        void courier_drop_off_messages(g_ptr<Unit> unit) {
+            if(courier_type_id==0) {
+                throw_error("Unit ",uid," is not a courier, can't drop off mesages");
+                return;
+            }
+
+            uint32_t asnum = unit->uid;
+            ColCol& leg = types[courier_type_id];
+            Col* col = nullptr;
+            if(leg.hasKey(unit->unit_label)) {
+                col = (Col*)leg.Col::get(unit->unit_label);
+            } else if(leg.hasKey(asnum)) {
+                col = (Col*)leg.Col::get((void*)&asnum,4);
+            }
+            if(col&&col->live&&!col->empty()) {
+                if(unit->recvunit.try_lock_for(0.005)) {
+                    list<Message> messages;
+                    for(int i=0;i<col->length();i++) {
+                        Message msg = Ptr(col,i);
+                        messages.push(msg);
+                    }
+                    messages.sort([](Message a, Message b){return a.from()>b.from();});
+                    for(int i=0;i<messages.length();i++) {
+                        Message msg = messages[i];
+                        if(msg.status()==0) {
+                            ColColCol group = take_pools(types,msg.from(),msg.to());
+
+                            uint32_t recv_at = unit->recvunit.length();
+                            unit->make_message(unit->recvunit,recv_at,recv_at+group.length(),0);
+
+                            unit->adopt_ptrs(group,&unit->recvunit);
+                            unit->push_pools(unit->recvunit,group);
+
+                            for(int t=0;t<leg.length();t++) {
+                                Col& tube = leg[t];
+                                if(tube.storage!=col->storage&&!tube.empty()&&tube.live) {
+                                    for(int m=0;m<tube.length();m++) {
+                                        Message tube_msg = Ptr(&tube,m);
+                                        uint32_t removed = msg.to() - msg.from();
+                                        if(tube_msg.from()>=msg.to()) {
+                                            tube_msg.from() -= removed;
+                                            tube_msg.to() -= removed;
+                                        } else if(tube_msg.from()>=msg.from()) {
+                                            throw_error(red("core:courier_drop_off_messages encountered a message which pointed into a taken range, corrupted!"));
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            //For when I add more status codes
+                        }
+                    }
+                    unit->recvunit.unlock();
+                }
+                col->clear();
+
+                // editTextFile("printout.txt",[&](std::string& source){source+="Drop off at "+unit->unit_label+"\n";});
+                // dump_unit(false,"printout.txt",14);
+            }
+        }
+        void run_courier() {
+            while(running) {
+                list<g_ptr<Unit>> snapshot;
+                {
+                    std::lock_guard<std::mutex> lock(units_mutex);
+                    snapshot = units;
+                }
+                for(auto& unit : snapshot) {
+                    if(unit.getPtr()==this) continue;
+                    courier_pick_up_messages(unit);
+                    courier_drop_off_messages(unit);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        }
+
+        ColColCol check_messages() {
+            if(recvunit.try_lock(0.005)) {
+                ColCol& instrs = recvunit[0];
+                for(int i=0;i<instrs.length();i++) {
+                    if(!instrs[i].live) continue;
+                    Message msg = Ptr(&instrs, i, 0);
+                    if(msg.status()==0) {
+                        ColColCol group = take_pools(recvunit,msg.from(),msg.to());
+                        recycle_column(msg);
+                        for(int t=0;t<instrs.length();t++) {
+                            if(!instrs[t].live) continue;
+                            Message instr = Ptr(&instrs,t,0);
+                            uint32_t removed = msg.to() - msg.from();
+                            if(instr.from()>=msg.to()) {
+                                instr.from() -= removed;
+                                instr.to() -= removed;
+                            } else if(instr.from()>=msg.from()) {
+                                throw_error(red("core:check_messages encountered a message which pointed into a taken range, corrupted!"));
+                            }
+                        }
+                        recvunit.unlock();
+                        return group;
+                    }                        
+                }
+                recvunit.unlock();
+            }
+            return col3_ref;
         }
 
         enum class SnapField : uint8_t {
@@ -2349,7 +2721,7 @@ namespace Acorn {
             snapshot_string(out, SnapField::Tag, labels[col.tag]);
             snapshot_field<uint32_t>(out, SnapField::Hash, col.hash);
             snapshot_field<uint32_t>(out, SnapField::Index, col.index);
-            snapshot_field<bool>(out, SnapField::Live, col.live);
+            snapshot_field<uint8_t>(out, SnapField::Live, col.live);
             snapshot_field<uint16_t>(out, SnapField::Gen, col.gen);
             snapshot_end(out);
         }        
@@ -2370,7 +2742,7 @@ namespace Acorn {
                     }
                     case SnapField::Hash:  col.hash = read_raw<uint32_t>(in); break;
                     case SnapField::Index: col.index = read_raw<uint32_t>(in); break;
-                    case SnapField::Live:  col.live = read_raw<bool>(in); break;
+                    case SnapField::Live:  col.live = read_raw<uint8_t>(in); break;
                     case SnapField::Gen:   col.gen = read_raw<uint16_t>(in); break;
                     default: in.seekg(len, std::ios::cur); break;
                 }
@@ -2467,6 +2839,34 @@ namespace Acorn {
                         uint32_t count = len;
                         for(uint32_t i = 0; i < count; i++) {
                             Col c = load_snapshot_col(in,true);
+                            col.push(c);
+                        }
+                        break;
+                    }
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+            return col;
+        }
+
+        void snapshot_colcolcol(std::ostream& out, ColColCol& col) {
+            snapshot_col(out, col, false);
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols);  write_raw<uint32_t>(out, col.length());
+            for(uint32_t i = 0; i < col.length(); i++) snapshot_colcol(out, col[i]);
+            snapshot_end(out);
+        }
+        ColColCol load_snapshot_colcolcol(std::istream& in) {
+            ColColCol col = load_snapshot_col(in,false);
+            col.clear();
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Cols: {
+                        uint32_t count = len;
+                        for(uint32_t i = 0; i < count; i++) {
+                            ColCol c = load_snapshot_colcol(in);
                             col.push(c);
                         }
                         break;
@@ -2789,6 +3189,32 @@ namespace Acorn {
 
         void test_pool_groups() {
 
+        //Test concurrency
+            // CCol desirable;
+            // list<g_ptr<Thread>> threads;
+            // for(int t=0;t<4;t++) {
+            //     g_ptr<Thread> thread = make<Thread>();
+            //     threads << thread;
+            //     thread->run([&desirable,t](){
+            //         while(true) {
+            //             uint8_t expected = 1;
+            //             if(desirable.live.compare_exchange_strong(expected, 0)) {
+            //                 print(t," claimed it");
+            //                 std::this_thread::sleep_for(std::chrono::milliseconds(randi(1,100)));
+            //                 desirable.live = 1;
+            //             }   
+            //         }
+            //     });
+            //     thread->start();
+            // }
+            // bool should_dump = false;
+            // while(!should_dump) {
+            //     should_dump = true;
+            //     for(int i=0;i<threads.length();i++) {
+            //         if(threads[i]->runningTurn) {should_dump = false;}
+            //     }
+            // }
+
         //Benchmark QCellCol
             // int ITS = 100;
             // list<std::string> titles;
@@ -3008,97 +3434,132 @@ namespace Acorn {
             // r.add_comparison("sort_cachelevel_1","sort_cachelevel_0");
             
             // r.run(100,true,elements);
+        
+        //Dump unit testing
+        // print("Producing all code");
+        //     Node the_all_code = make_node();
+        //     for(int i=0;i<100;i++) {
+        //         the_all_code.name().push(sgen::randsgen(sgen::RANDOM));
+        //     }
+        //     print("Name: ",the_all_code.name().to_std());
+
+        //     for(int i=0;i<10000;i++) {
+        //         Node node = make_node(identifier_id,sgen::randsgen(sgen::AVAL_CENTRAL_FIRST_MALE)+" "+sgen::randsgen(sgen::AVAL_CENTRAL_LAST),deadptr,deadptr);
+        //         for(int c=0;c<randi(0,6);c++) {
+        //             int r = randi(-100,100);
+        //             Node child = make_node(literal_id,std::to_string(r),make_value(int_id,4),deadptr);
+        //             child.set((void*)&r);
+        //             node.children() << child;
+        //         }
+        //     }
+        //     print("Dumping");
+        //     dump_unit(true);
+        //     print("Dumped");
+
 
         //Testing
-            int six = 6;
-            ColColCol& main_pool = types;
-            for(uint32_t p=0;p<3;p++) {
-                ColCol subpool; 
+            // int six = 6;
 
-                Col sc(sizeof(Ptr)); sc.tag = ptr_id;
-                Ptr sp(p,1,0);
-                sc.push((void*)&sp);
-                Ptr ssp((p==2?0:p+1),0,0);
-                sc.push((void*)&ssp);
-                subpool.push(sc);
+            // auto in = openReadStream("savetest");
+            // ColColCol main_pool = load_snapshot_colcolcol(in);
 
-                for(uint32_t i=0;i<3;i++) {
-                    Col c(4); c.tag = int_id;
-                    c.push((void*)&i);
-                    c.push((void*)&six);
-                    subpool.push(c);
-                }
-                main_pool.push(subpool);
-            }
-            writeFile("printout.txt","");
-            editTextFile("printout.txt",[](std::string& source){source+="\n=====MAIN POOL DUMP=====\n\n";});
-            for(int p=0;p<main_pool.length();p++) {
-                dump_pool(main_pool[p],p,false);
-            }
+            // ColColCol main_pool;
+            // for(uint32_t p=0;p<3;p++) {
+            //     ColCol subpool; 
 
-            ColCol pool_a; pool_a.tag = func_call_id; pool_a.label = "data";
-            ColCol pool_b; pool_b.tag = function_id; pool_b.label = "meta";
-            ColCol pool_c; pool_c.tag = func_decl_id; pool_c.label = "store";
+            //     Col sc(sizeof(Ptr)); sc.tag = ptr_id;
+            //     Ptr sp(p,1,0);
+            //     sc.push((void*)&sp);
+            //     Ptr ssp((p==2?0:p+1),0,0);
+            //     sc.push((void*)&ssp);
+            //     subpool.push(sc);
+
+            //     for(uint32_t i=0;i<3;i++) {
+            //         Col c(4); c.tag = int_id;
+            //         c.push((void*)&i);
+            //         c.push((void*)&six);
+            //         subpool.push(c);
+            //     }
+            //     main_pool.push(subpool);
+            // }
+            // writeFile("printout.txt","");
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====MAIN POOL DUMP=====\n\n";});
+            // for(int p=0;p<main_pool.length();p++) {
+            //     dump_pool(main_pool[p],p,false);
+            // }
+
+            // ColCol pool_a; pool_a.tag = func_call_id; pool_a.label = "data";
+            // ColCol pool_b; pool_b.tag = function_id; pool_b.label = "meta";
+            // ColCol pool_c; pool_c.tag = func_decl_id; pool_c.label = "store";
         
-            for(uint32_t i=0;i<3;i++) {
-                Col col(sizeof(Ptr)); col.tag = ptr_id;
-                Ptr p(&types,(i==0?1:i), 1, 0);
-                col.push((void*)&p);
-                pool_a.push(col);
+            // for(uint32_t i=0;i<3;i++) {
+            //     Col col(sizeof(Ptr)); col.tag = ptr_id;
+            //     Ptr p(&types,(i==0?1:i), 1, 0);
+            //     col.push((void*)&p);
+            //     pool_a.push(col);
 
-                Col subcol(4); subcol.tag = int_id;
-                subcol.push((void*)&i);
+            //     Col subcol(4); subcol.tag = int_id;
+            //     subcol.push((void*)&i);
 
-                Col str_col(sizeof(Ptr)); str_col.tag = string_id;
-                Ptr strptr(&types,i,2,0); str_col.push((void*)&strptr);
-                Col char_col(1); char_col.tag = char_id;
-                std::string tstr = "test";
-                for(auto& ch : tstr) {
-                    char_col.push((void*)&ch);
-                }
+            //     Col str_col(sizeof(Ptr)); str_col.tag = string_id;
+            //     Ptr strptr(&types,i,2,0); str_col.push((void*)&strptr);
+            //     Col char_col(1); char_col.tag = char_id;
+            //     std::string tstr = "test";
+            //     for(auto& ch : tstr) {
+            //         char_col.push((void*)&ch);
+            //     }
 
-                if(i==0) {
-                    pool_a.push(subcol);
-                } else if(i==1) {
-                    pool_b.push(subcol);
-                    pool_b.push(str_col);
-                    pool_b.push(char_col);
-                } else if(i==2) {
-                    pool_c.push(subcol);
-                    pool_c.push(str_col);
-                    pool_c.push(char_col);
-                }
-            }
+            //     if(i==0) {
+            //         pool_a.push(subcol);
+            //     } else if(i==1) {
+            //         pool_b.push(subcol);
+            //         pool_b.push(str_col);
+            //         pool_b.push(char_col);
+            //     } else if(i==2) {
+            //         pool_c.push(subcol);
+            //         pool_c.push(str_col);
+            //         pool_c.push(char_col);
+            //     }
+            // }
         
-            uint32_t base = main_pool.length();
-            print("Base offset: ", base);
+            // uint32_t base = main_pool.length();
+            // print("Base offset: ", base);
         
-            list<ColCol*> group = {&pool_a, &pool_b, &pool_c};
+            // list<ColCol*> group = {&pool_a, &pool_b, &pool_c};
 
-            print("Dumping subpools");
-            editTextFile("printout.txt",[](std::string& source){source+="\n=====SUB POOL DUMP=====\n\n";});
-            for(int p=0;p<group.length();p++) {
-                dump_pool(*group[p],p,false);
-            }
+            // print("Dumping subpools");
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====SUB POOL DUMP=====\n\n";});
+            // for(int p=0;p<group.length();p++) {
+            //     dump_pool(*group[p],p,false);
+            // }
 
-            insert_pools(main_pool, group, 1);
+            // insert_pools(main_pool, group, 1);
+            // // uint32_t oldlen = types.length();
+            // // uint32_t mainlen = main_pool.length();
+            // push_pools(types,main_pool);
+            // //list<ColCol*> subgroup; for(int i=oldlen;i<oldlen+mainlen;i++) {subgroup << &types[i];}
 
-            editTextFile("printout.txt",[](std::string& source){source+="\n=====POST PUSH=====\n\n";});
-            for(int p=0;p<main_pool.length();p++) {
-                dump_pool(main_pool[p],p,false);
-            }
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====POST PUSH=====\n\n";});
+            // dump_unit(false);
+            // // for(int p=0;p<subgroup.length();p++) {
+            // //     dump_pool(*subgroup[p],p,false);
+            // // }
 
-            Ptr sssp(&types,5,2,0);
-            Col ssscol(sizeof(Ptr)); ssscol.tag = ptr_id;
-            ssscol.push((void*)&sssp);
-            main_pool[1].push(ssscol);
+            // auto out = openWriteStream("savetest");
+            // snapshot_colcolcol(out,types);
+            // out.close();
 
-            ColColCol copyc3 = copy_subgraph(main_pool,1);
+            // Ptr sssp(&types,5,2,0);
+            // Col ssscol(sizeof(Ptr)); ssscol.tag = ptr_id;
+            // ssscol.push((void*)&sssp);
+            // main_pool[1].push(ssscol);
 
-            editTextFile("printout.txt",[](std::string& source){source+="\n=====DUMPING COPY=====\n\n";});
-            for(int p=0;p<copyc3.length();p++) {
-                dump_pool(copyc3[p],p,false);
-            }
+            // ColColCol copyc3 = copy_subgraph(main_pool,1);
+
+            // editTextFile("printout.txt",[](std::string& source){source+="\n=====DUMPING COPY=====\n\n";});
+            // for(int p=0;p<copyc3.length();p++) {
+            //     dump_pool(copyc3[p],p,false);
+            // }
 
 
             // ColColCol c3 = take_pools(main_pool,2,3);
@@ -3119,10 +3580,25 @@ namespace Acorn {
             // for(int p=0;p<main_pool.length();p++) {
             //     dump_pool(main_pool[p],p,false);
             // }
-
-
-
         }
+
+
+        void test_courier() {
+            start_thread([this](){
+                while(true) {
+                    ColColCol msgpools = check_messages();
+                    if(msgpools.empty()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    } else {
+                        adopt_ptrs(msgpools,&msgpools);
+                        ColCol& header = *find_pool(ColColCol_to_group(msgpools),headerpool_id);
+                        Col& ribbon = header[0];
+                        string msg = (string&)*(Ptr*)resolve_ptr(*(Ptr*)ribbon.get("Message"));
+                        print(unit_label," recived a message: ",msg);
+                    }
+                }
+            });
+        }   
 
       
 
@@ -3826,15 +4302,6 @@ namespace Acorn {
             return col3_ref;
         }
     }
-    // inline void* resolve_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx][ptr.sidx];}
-    // inline void* resolve_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
-    // inline Ptr& resolve_to_ptr(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][ptr.idx].get(ptr.sidx);}
-    // inline Ptr& resolve_to_ptr(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return *(Ptr*)(*units[ptr.unit])[ptr.pool][idx].get(ptr.sidx);}
-    // inline Col& resolve_to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
-    // inline Col& resolve_to_col(const Ptr& ptr, const uint32_t& idx) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][idx];}
-    // inline ColCol& resolve_to_pool(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool];}
-    // inline ColColCol& resolve_to_unit(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit]).types;}
-    // inline Col& to_col(const Ptr& ptr) {std::lock_guard<std::mutex> lock(units_mutex); return (*units[ptr.unit])[ptr.pool][ptr.idx];}
 
     inline Ptr get_ticket_from_unit(Ptr p, uint32_t type_id, uint32_t size, uint32_t tag) {
         if(p.cachelevel==3) {

@@ -74,6 +74,22 @@ namespace Acorn {
         return hash;
     }
 
+    inline uint32_t derive_offset(void* storage, void* pointer) {return (uint64_t)pointer - (uint64_t)storage;}
+    inline uint32_t derive_offset(void* storage, void* pointer, uint32_t width) {
+        DEBUG_ONLY(
+            if((uint64_t)pointer < (uint64_t)storage) {
+                throw_error("derive_offset: pointer is before storage");
+                return 0;
+            }
+            if(((uint64_t)pointer - (uint64_t)storage) % width != 0) {
+                throw_error("derive_offset: byte offset not divisible by width");
+                return 0;
+            }
+        )
+        return derive_offset(storage, pointer) / width;
+    }
+
+
     // struct Ptr {
     //     Ptr() {}
     //     Ptr(uint32_t _pool, uint32_t _idx, uint32_t _sidx, uint16_t _unit) : pool(_pool), idx(_idx), sidx(_sidx), unit(_unit) {}
@@ -423,7 +439,7 @@ namespace Acorn {
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live = o.live;
+            live.store(o.live.load());
             gen = o.gen;
         }
         CCol(CCol&& o) : QCol(std::move(o)) {
@@ -432,7 +448,7 @@ namespace Acorn {
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live = o.live;
+            live.store(o.live.load());
             gen = o.gen;
         }
         CCol& operator=(CCol&& o) {
@@ -443,7 +459,19 @@ namespace Acorn {
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live = o.live;
+            live.store(o.live.load());
+            gen = o.gen;
+            return *this;
+        }
+        CCol& operator=(const CCol& o) {
+            if(this == &o) return *this;
+            QCol::operator=(o);
+            element_size = o.element_size;
+            tag = o.tag;
+            hash = o.hash;
+            index = o.index;
+            cachelevel = o.cachelevel;
+            live.store(o.live.load());
             gen = o.gen;
             return *this;
         }
@@ -452,7 +480,7 @@ namespace Acorn {
         uint32_t hash = 0;
         uint32_t index = 0;
         uint8_t cachelevel = 0;
-        bool live = true;
+        std::atomic<uint8_t> live = true;
         uint16_t gen = 0;
 
         inline uint32_t length() const {if(element_size==0||size==0) {return 0;} else {return size / element_size;}}
@@ -474,6 +502,35 @@ namespace Acorn {
         void pop(void* out) {QCol::pop(out,element_size);}
         QCol take(uint32_t index) {return QCol::take_range(index, index+1, element_size);}
         QCol take_range(uint32_t from, uint32_t to) {return QCol::take_range(from, to, element_size);}
+
+        uint32_t indexof(void* pointer) {return derive_offset(storage,pointer,element_size);}
+
+        bool try_lock(double wait_for = 0.0) {
+            if(wait_for>0.0) {
+                Log::Line l; l.start();
+                while(l.time_s()<wait_for) {
+                    uint8_t expected = 0;
+                    if(live.compare_exchange_strong(expected, 1)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if(wait_for==0.0) {
+                uint8_t expected = 0;
+                return live.compare_exchange_strong(expected, 1);
+            } else {
+                while(true) {
+                    uint8_t expected = 0;
+                    if(live.compare_exchange_strong(expected, 1)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        bool try_lock_forever() {return try_lock(-1.0);}
+        bool try_lock_for(double wait_for) {return try_lock(wait_for);}
+        void unlock() { live = 0; }
     };
 
 
@@ -612,7 +669,7 @@ namespace Acorn {
         }
         uint32_t find_cell_idx(uint32_t idx) {
             CCol* c = find_cell(idx);
-            if(c) {return (uint32_t)((uint8_t*)c-storage);}
+            if(c) {return derive_offset(storage, (void*)c, sizeof(CCol));}
             else {throw_error("QCellCol:find_cell_idx no cell was found for idx ",idx); return 0;}
         }
 
@@ -754,6 +811,7 @@ namespace Acorn {
         void put(uint64_t u64, const void* element, uint32_t tag = 0) {qput(element,(void*)&u64,8,tag);}
         void* get(uint64_t u64) {return get((void*)&u64, 8);}
         bool hasKey(uint64_t u64) {return hasKey((void*)&u64, 8);}
+        bool hasKey(uint32_t u32) {return hasKey((void*)&u32, 4);}
         void put(Ptr p, const void* element, uint32_t tag = 0) {qput(element, (void*)&p, sizeof(Ptr), tag);}
         void* get(Ptr p) {return get((void*)&p, sizeof(Ptr));}
         bool hasKey(Ptr p) {return hasKey((void*)&p, sizeof(Ptr));}
@@ -816,7 +874,7 @@ namespace Acorn {
         write_raw<uint32_t>(out, col.hash);
         write_raw<uint32_t>(out, col.index);
         write_raw<uint32_t>(out, col.gen);
-        write_raw<bool>(out, col.live);
+        write_raw<uint8_t>(out, col.live);
     }
 
     static CCol read_ccol(std::istream& in) {
@@ -826,7 +884,7 @@ namespace Acorn {
         col.hash = read_raw<uint32_t>(in);
         col.index = read_raw<uint32_t>(in);
         col.gen = read_raw<uint32_t>(in);
-        col.live = read_raw<bool>(in);
+        col.live = read_raw<uint8_t>(in);
         return col;
     }
 
@@ -887,7 +945,7 @@ namespace Acorn {
         write_raw<uint32_t>(out, col.hash);
         write_raw<uint32_t>(out, col.index);
         write_raw<uint32_t>(out, col.gen);
-        write_raw<bool>(out, col.live);
+        write_raw<uint8_t>(out, col.live);
         write_raw<bool>(out, col.heterogenous);
         write_qcellcol(out, col.cells);
         write_qcol(out,col.label);
@@ -906,7 +964,7 @@ namespace Acorn {
         col.hash = read_raw<uint32_t>(in);
         col.index = read_raw<uint32_t>(in);
         col.gen = read_raw<uint32_t>(in);
-        col.live = read_raw<bool>(in);
+        col.live = read_raw<uint8_t>(in);
         col.heterogenous = read_raw<bool>(in);
         col.cells = read_qcellcol(in);
         col.label = read_qcol(in);

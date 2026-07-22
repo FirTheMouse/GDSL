@@ -144,6 +144,65 @@ namespace Acorn {
         });
 
         uint32_t suspend_unit_id = add_function("suspend_unit",[this](Context& ctx){print("Suspended unit"); suspend();});
+        uint32_t thread_sleep_id = add_function("thread_sleep",[this](Context& ctx){std::this_thread::sleep_for(std::chrono::milliseconds(100));});
+        uint32_t unit_sleep_id = add_function("unit_sleep",[this](Context& ctx){types.live = false;});
+        uint32_t unit_wake_id = add_function("unit_wake",[this](Context& ctx){types.live = true;});
+        uint32_t unit_index_id = add_function("unit_index",[this](Context& ctx){ctx.node().value().set((void*)&types.index);},4,int_id);
+        uint32_t unit_uid_id = add_function("unit_uid",[this](Context& ctx){uint32_t tuid = (uint32_t)uid; ctx.node().value().set((void*)&tuid);},4,int_id);
+        uint32_t unit_setindex_id = add_function("unit_setindex",[this](Context& ctx){int idx = *(int*)ctx.node().children()[0].value().get(); types.index=idx;});
+        uint32_t unit_label_id = add_function("unit_label",[this](Context& ctx){string s = resolve_string_ticket(ctx.node()); s = types.label.to_std();},sizeof(Ptr),string_id);
+
+        uint32_t unit_date_id = add_function("unit_date",[this](Context& ctx){
+            auto now = std::chrono::system_clock::now();
+            std::time_t t = std::chrono::system_clock::to_time_t(now);
+            std::tm* tm = std::localtime(&t);
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%Y-%m-%d", tm);
+            string s = resolve_string_ticket(ctx.node());
+            s = std::string(buf);
+        },sizeof(Ptr),string_id);
+        
+        uint32_t unit_time_id = add_function("unit_time",[this](Context& ctx){
+            auto now = std::chrono::system_clock::now();
+            std::time_t t = std::chrono::system_clock::to_time_t(now);
+            std::tm* tm = std::localtime(&t);
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%H:%M:%S", tm);
+            string s = resolve_string_ticket(ctx.node());
+            s = std::string(buf);
+        },sizeof(Ptr),string_id);
+
+        uint32_t unit_standard_time_id = add_function("unit_standard_time",[this](Context& ctx){
+            auto now = std::chrono::system_clock::now();
+            std::time_t t = std::chrono::system_clock::to_time_t(now);
+            std::tm* tm = std::localtime(&t);
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%a, %b %e, %I:%M %p", tm);
+            std::string result(buf);
+            auto pos = result.find("  ");
+            if(pos != std::string::npos) result.erase(pos, 1);
+            string s = resolve_string_ticket(ctx.node());
+            s = result;
+        },sizeof(Ptr),string_id);
+        
+        uint32_t unit_time_precise_id = add_function("unit_time_precise",[this](Context& ctx){
+            auto now = std::chrono::system_clock::now();
+            std::time_t t = std::chrono::system_clock::to_time_t(now);
+            std::tm* tm = std::localtime(&t);
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()) % 1000;
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03lld",
+                tm->tm_hour, tm->tm_min, tm->tm_sec, (long long)ms.count());
+            string s = resolve_string_ticket(ctx.node());
+            s = std::string(buf);
+        },sizeof(Ptr),string_id);
+
+        uint32_t unit_timestamp_id = add_function("unit_timestamp",[this](Context& ctx){
+            uint32_t ts = (uint32_t)std::time(nullptr);
+            string s = resolve_string_ticket(ctx.node());
+            s = std::to_string(ts);
+        },sizeof(Ptr),string_id);
 
 
 
@@ -311,9 +370,10 @@ namespace Acorn {
         });
 
         uint32_t ptr_label_id = overload_type(ptr_id,".\"label\"","PTR_LABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
-            Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-            if(!ctx.node().children()[1].children().empty()) {
-                string label = (string&)*(Ptr*)ctx.node().children()[1].children()[0].value().get();
+            standard_sub_process(ctx);
+            Ptr p = ctx.node().getPtr(0);
+            if(!ctx.node().right().children().empty()) {
+                string label = ctx.node().right().getString(0);
                 resolve_to_col(p).label = label.to_std();
             } else {
                 string output = resolve_string_ticket(ctx.node());
@@ -1046,6 +1106,12 @@ namespace Acorn {
                 Node owner = n.scopes()[0].owner();
                 ctx.node().value().set((void*)&owner);
             },sizeof(Ptr),node_id);
+
+            add_function("cast_to",[this](Context& ctx){
+                standard_sub_process(ctx);
+                int type = ctx.node().getInt(0);
+                ctx.node().c1().value().type(type);
+            });
             
 
             Handler discard = [this](Context& ctx){
@@ -1119,17 +1185,30 @@ namespace Acorn {
 
             r_handlers[qmark_id] = [this](Context& ctx){
                 standard_sub_process(ctx); //Because the second child is a : so  we just grab it's left value, so that other things know how to resolve against the qmark
-                Value lv = ctx.node().children()[1].children()[0].value();
+                Value lv;
+                if(ctx.node().children().length()==3) { //Case where the children are flat
+                    lv = ctx.node().children()[1].value();
+                } else if(ctx.node().children().length()==2) { //Case where we're using a : or other grouper
+                    lv = ctx.node().children()[1].children()[0].value();
+                }
                 ctx.node().value(lv); //Just the same for now, in the future we can be a bit fancier
                 resolve_overload(ctx);
             };
             x_handlers[qmark_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 if(*(bool*)ctx.node().children()[0].value().get()) {
-                    ctx.node().value(ctx.node().children()[1].children()[0].value());
+                    if(ctx.node().children().length()==3) { //Case where the children are flat
+                        ctx.node().value(ctx.node().children()[1].value());
+                    } else if(ctx.node().children().length()==2) { //Case where we're using a : or other grouper
+                        ctx.node().value(ctx.node().children()[1].children()[0].value());
+                    }
                 }
                 else {
-                    ctx.node().value(ctx.node().children()[1].children()[1].value());
+                    if(ctx.node().children().length()==3) { //Case where the children are flat
+                        ctx.node().value(ctx.node().children()[2].value());
+                    } else if(ctx.node().children().length()==2) { //Case where we're using a : or other grouper
+                        ctx.node().value(ctx.node().children()[1].children()[1].value());
+                    }
                 }
             };
 
@@ -1630,6 +1709,31 @@ namespace Acorn {
                 }
             };
 
+
+            uint32_t include_id = make_tokenized_keyword("include");
+            tokenizer_state_functions[include_id] = [this](Context& ctx){
+                char c = ctx.source().at(ctx.index());
+                if(c=='\n'||c==';') {
+                    std::string path = ctx.node().name().to_std().substr(8);
+                    try {
+                        std::string source = readFile(path);
+                        float old_at_x = at_x; float old_at_y = at_y; float old_at_z = at_z;
+                        at_x = 0.0f; at_y = 0.0f; last_z++; at_z = last_z;
+                        Node root = process(source);
+                        for(int i=0;i<root.children().length();i++) {
+                            ctx.result().push(root.children()[i]);
+                        }
+                        at_x = old_at_x; at_y = old_at_y; at_z = old_at_z;
+                    } catch(std::exception& e) {
+                        throw_error("Bad path in include: ",path);
+                    }
+                    ctx.index()--;
+                    ctx.state(0);
+                } else { //Consume the path
+                    ctx.node().name().push(c);
+                }
+            };
+
             r_handlers[to_unary_id(hash_id)] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 ctx.node().value(make_value(int_id,4));
@@ -2093,6 +2197,8 @@ namespace Acorn {
             // };
             m_handlers[precompiling_id] = [this](Context& ctx){ctx.node().scopes()[0].owner(ctx.node());}; //To restore visibility
 
+            n_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
+
             e_handlers.default_function = [this](Context& ctx){
                 if(!ctx.node().scopes().empty()&&ctx.node().scopes()[0].owner()==ctx.node()) {
                     e_scoped_handler(ctx);
@@ -2219,6 +2325,10 @@ namespace Acorn {
 
             a_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
                 print("==A STAGE==");
+                print(node_to_string(ctx.root()));
+            };
+            n_handlers[DEBUG_ROOT_id] = [this](Context& ctx){
+                print("==N STAGE==");
                 print(node_to_string(ctx.root()));
             };
             t_handlers[DEBUG_ROOT_id] = [this](Context& ctx){

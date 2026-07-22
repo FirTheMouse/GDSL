@@ -93,11 +93,14 @@ void run(std::function<void()> toRun,float speed = -1) {
     impl = std::thread(&Thread::simulationLoop, this);
 }
 
-void run_blocking(std::function<void()> func) {
+void run_raw(std::function<void()> func) {
     shouldStopThread = false;
     impl = std::thread([this, func]() {
         func();
     });
+}
+void run_blocking(std::function<void()> func) {
+    run_raw(func);
 }
 
 void pause() {

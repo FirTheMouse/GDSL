@@ -236,14 +236,18 @@ namespace Acorn {
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
         inline uint32_t& operator[](uint32_t field) {
             switch(field) {
-                case 5: return device;
                 case 4: return unit;
                 case 3: return pool;
                 case 2: return idx;
                 case 1: return sidx;
+                case 0: return device; //Kludge: device is offset
                 default: return sidx;
             }
         }
+
+        //Kludge using offset as an offset mechanism, Ptr's shape right now isn't what it's final form should be
+        //because it needs to be dynamic, it'll probably be just a list of fields like a string rather than a fixed set.
+        uint32_t& offset() { return *(uint32_t*)&device; }
     };
     static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
@@ -581,6 +585,8 @@ namespace Acorn {
                     memset(&storage[i*sizeof(CCol)],0,sizeof(CCol));
                 }
             }
+            capacity = o.capacity;
+            size = o.size;
             return *this;
         }
         ~QCellCol() {
@@ -591,7 +597,7 @@ namespace Acorn {
         uint32_t length() const {return capacity;}
         void nullstorage() {storage = nullptr;}
         void clear() {
-            clear();
+            QCol::clear();
         }
         bool empty() const {return size==0;}
 

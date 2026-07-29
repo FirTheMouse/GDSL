@@ -35,7 +35,6 @@ namespace Acorn {
             }
         }
 
-
         Ptr resolve_ticket(Node n,  uint32_t size, uint32_t type) {
             if(is_live(n.value())) {
                 if(is_live(*(Ptr*)n.value().get())) {
@@ -52,6 +51,8 @@ namespace Acorn {
         uint32_t test_id = make_tokenized_keyword("test");
         Stage& n_handlers = reg_stage("naming"); 
         
+        uint32_t query_id = make_type("Query",sizeof(Ptr));
+
         uint32_t labels_id = make_tokenized_keyword("labels");
 
         uint32_t node_block_id = reg_id("node_block");
@@ -120,21 +121,413 @@ namespace Acorn {
             ctx.node().value().set((void*)&ticket);
         },sizeof(Ptr),ptr_id);
 
-        uint32_t ptr_take_id = reg_id("PTR_TAKE");
-        uint32_t ptr_push_id = reg_id("PTR_PUSH");
-        uint32_t ptr_length_id = reg_id("PTR_LENGTH");
-        uint32_t ptr_clear_id = overload_type(ptr_id,".\"clear\"","PTR_CLEAR",deadptr,[this](Context& ctx){
+
+
+        inline Ptr YAPA_preprocess(Context& ctx) {
             standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            Col& col = resolve_to_col(*(Ptr*)left.value().get());
-            col.clear();
-        });
+            Ptr ptr = ctx.node().getPtr(0);
+            return ptr;
+        };
+
+        void script_general_get(Ptr& ptr, Col& search, uint32_t field, Node key, bool error_on_key_not_found = true) {
+            uint32_t right_arg_lookup_type = key.value().type();
+            if(right_arg_lookup_type==int_id) {
+                int index = key.getInt();
+                if(!error_on_key_not_found) {
+                    while(search.length()>=index) {
+                        search.push_default();
+                    }
+                }
+                if(index<search.length()) {
+                    ptr[field] = index;
+                } else {
+                    throw_error("script:script_general_get Index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr));
+                    ptr.specialization = _DEADSPEC;
+                }
+            } else if(is_ptr_alias(right_arg_lookup_type)) {
+                Col& ccol = resolve_to_col(key.getPtr());
+                if(!search.hasKey(ccol.storage,ccol.size)) {
+                    if(error_on_key_not_found) {
+                        throw_error("script:script_general_get Key not found");
+                        ptr.specialization = _DEADSPEC;
+                        return;
+                    } else {
+                        search.qput(malloc(search.element_size),ccol.storage,ccol.size,right_arg_lookup_type);
+                    }
+                }
+                ptr[field] = search.getidx(ccol.storage,ccol.size);
+            }
+        };
+
+        inline Col& resolve_YAPA_ptr(Ptr ptr, uint32_t YAPA_level) {
+            switch(YAPA_level) {
+                case 1: return resolve_to_col(ptr);
+                case 2: return (Col&)resolve_to_pool(ptr);
+                case 3: return (Col&)resolve_to_unit(ptr);
+                default: return col1_ref;
+            }   
+        }
+
+        uint32_t register_YAPA_type(const std::string& label, uint32_t YAPA_level, uint32_t id) {
+            Value get_value = deadptr;
+            if(YAPA_level==1) get_value = make_value(0);
+            else if(YAPA_level==2) get_value = make_value(ptr_id,sizeof(Ptr));
+            else if(YAPA_level==3) get_value = make_value(colcol_id,sizeof(Ptr));     
+
+            overload_type(id,".\"getOrPut\"",label+"_GETORPUT",get_value,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" getOrPut");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(YAPA_level==1&&ctx.node().value().type()==0) {
+                    ctx.node().value().type(col.tag);
+                    ctx.node().value().size(col.element_size);
+                }
+                script_general_get(ptr,col,YAPA_level,ctx.node().right().c0(),false);
+                if(YAPA_level>1) {
+                    ctx.node().value().set((void*)&ptr);
+                } else {
+                    ctx.node().value().data_ptr(ptr);
+                }
+            });
+            overload_type(id,"[any]",label+"_IDXGET",get_value,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" idxget");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(YAPA_level==1&&ctx.node().value().type()==0) {
+                    ctx.node().value().type(col.tag);
+                    ctx.node().value().size(col.element_size);
+                }
+                script_general_get(ptr,col,YAPA_level,ctx.node().right(),false);
+                if(YAPA_level>1) {
+                    ctx.node().value().set((void*)&ptr);
+                } else {
+                    ctx.node().value().data_ptr(ptr);
+                }
+            });
+            overload_type(id,".\"get\"",label+"_GET",get_value,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" get");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(YAPA_level==1&&ctx.node().value().type()==0) {
+                    ctx.node().value().type(col.tag);
+                    ctx.node().value().size(col.element_size);
+                }
+                script_general_get(ptr,col,YAPA_level,ctx.node().right().c0());
+                if(YAPA_level>1) {
+                    ctx.node().value().set((void*)&ptr);
+                } else {
+                    ctx.node().value().data_ptr(ptr);
+                }
+            });
+            overload_type(id,".\"take\"",label+"_TAKE",get_value,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" take");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                Value arg = ctx.node().right().c0().value();
+                if(YAPA_level==1&&ctx.node().value().type()==0) {
+                    ctx.node().value().type(col.tag);
+                    ctx.node().value().size(col.element_size);
+                }
+                if(arg.type()==int_id) {
+                    int index = *(int*)arg.get();
+                    ctx.node().value().set(col.get((uint32_t)index));
+                    col.removeAt(index);
+                }
+            });
+            overload_type(id,".\"length\"",label+"_LENGTH",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" length");
+                int len = resolve_YAPA_ptr(ptr,YAPA_level).length();
+                ctx.node().value().set((void*)&len);
+            });
+            overload_type(id,".\"has\"",label+"_HAS",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" has");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                Value keyv = ctx.node().right().c0().value();
+                CHECK_ERROR("Invalid argument for "+labels[id]+" has");
+                if(is_ptr_alias(keyv.type())) {
+                    Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+                    bool has_thing = col.hasKey(keycol.storage,keycol.size);
+                    ctx.node().value().set((void*)&has_thing);
+                } else {
+                    throw_error("script:has Type ",labels[keyv.type()]," is not a valid key type for has");
+                }
+            });
+            overload_type(id,".\"indexof\"",label+"_INDEXOF",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" length");
+                Col& owner = resolve_YAPA_ptr(ptr,YAPA_level);
+                Col& col = resolve_YAPA_ptr(ctx.node().right().getPtr(0),YAPA_level-1);
+                int index = owner.indexof(&col);
+                ctx.node().value().set((void*)&index);
+            });
+
+            overload_type(id,".\"put\"",label+"_PUT",deadptr,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" put");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                Value keyv = ctx.node().right().c0().value();
+                Value elementv = ctx.node().right().c1().value();
+                CHECK_ERROR("Invalid arguments for "+labels[id]+" put");
+                if(is_ptr_alias(keyv.type())) {
+                    Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+                    col.qput(elementv.get(),keycol.storage,keycol.size,keyv.type());
+                } else {
+                    throw_error("script:put Type ",labels[keyv.type()]," is not a valid key type for put");
+                }
+            });
+
+            overload_type(id,".\"push\"",label+"_PUSH",deadptr,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" push");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(YAPA_level>1) {
+                    Col& pushcol = resolve_YAPA_ptr(ctx.node().right().getPtr(0),YAPA_level-1);
+                    switch(YAPA_level) {
+                        case 3:{ColCol copycol = (ColCol&)pushcol; ((ColColCol&)col).push(copycol); }break;
+                        case 2:{Col copycol = pushcol; ((ColCol&)col).push(copycol); }break;
+                        default: break;
+                    }
+                } else {
+                    col.push(ctx.node().right().c0().value().get());
+                }
+            });
+            overload_type(id,"<<any",label+"_PUSH_OP",deadptr,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" push");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(YAPA_level>1) {
+                    Col& pushcol = resolve_YAPA_ptr(ctx.node().right().getPtr(),YAPA_level-1);
+                    switch(YAPA_level) {
+                        case 3:{ColCol copycol = (ColCol&)pushcol; ((ColColCol&)col).push(copycol); }break;
+                        case 2:{Col copycol = pushcol; ((ColCol&)col).push(copycol); }break;
+                        default: break;
+                    }
+                } else {
+                    col.push(ctx.node().right().value().get());
+                }
+            });
+
+            overload_type(id,".\"qset\"",label+"_QSET",deadptr,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" qset");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                void* data = ctx.node().right().get(0);
+                int width = ctx.node().right().getInt(1);
+                CHECK_ERROR("Invalid arguments for "+labels[id]+" qset");
+                col.qset(ptr.sidx,data,width);
+            });
+            overload_type(id,".\"set\"",label+"_SET",deadptr,[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" set");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                Value keyv = ctx.node().right().c0().value();
+                void* data = ctx.node().right().get(1);
+                CHECK_ERROR("Invalid arguments for "+labels[id]+" set");
+                if(keyv.type()==int_id) {
+                    uint32_t index = *(int*)keyv.get();
+                    if(index>=col.length()) {
+                        throw_error("script:set Index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr));
+                        return;
+                    }
+                    col.set(index,data);
+                } else if(is_ptr_alias(keyv.type())) {
+                    Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+                    uint32_t index = col.getidx(keycol.storage,keycol.size);
+                    CHECK_ERROR("Key not found in set");
+                    col.set(index,data);
+                }
+            });
+
+
+            overload_type(id,".\"label\"",label+"_LABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" label");
+                if(!ctx.node().right().children().empty()) {
+                    string label = ctx.node().right().getString(0);
+                    resolve_YAPA_ptr(p,YAPA_level).label = label.to_std();
+                } else {
+                    string output = resolve_string_ticket(ctx.node());
+                    output = resolve_YAPA_ptr(p,YAPA_level).label.to_std();
+                }
+            });
+            overload_type(id,".\"tag\"",label+"_TAG",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" tag");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(!ctx.node().right().children().empty()) {
+                    uint32_t tag = ctx.node().right().getInt(0);
+                    col.tag = tag;
+                } else {
+                    uint32_t tag = col.tag;
+                    ctx.node().value().set((void*)&tag);
+                }
+            });
+            overload_type(id,".\"element_size\"",label+"_ELEMENT_SIZE",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" element_size");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(!ctx.node().right().children().empty()) {
+                    uint32_t element_size = ctx.node().right().getInt(0);
+                    col.element_size = element_size;
+                } else {
+                    uint32_t element_size = col.element_size;
+                    ctx.node().value().set((void*)&element_size);
+                }
+            });
+
+            overload_type(id,".\"celllabel\"",label+"_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = ctx.node().getPtr(0);
+                CHECK_ERROR("Left arg of cellabel is invalid");
+                if(p.cachelevel==3) p.cache = &types;
+                if(!ctx.node().right().children().empty()) {
+                    string label = ctx.node().right().getString(0);
+                    Col& cellcol = resolve_YAPA_ptr(p,YAPA_level);
+                    CHECK_ERROR("Unable to resolve some elmenets of celllabel, label pooltag or cellcol");
+                     //We only suppourt string keys for now
+                    while(cellcol.cells.count()<=p.sidx) {
+                        CCol c; //Temporary filler
+                        char defc = ' ';
+                        c.element_size = 1; 
+                        c.tag = string_id;
+                        c.hash = hashBytes((void*)&defc, 1);
+                        c.index = cellcol.cells.count();
+                        c.push((void*)&defc);
+                        cellcol.cells.scan_for_slot(c);
+                    }
+                    CCol* cellptr = cellcol.cells.find_cell(p.sidx);
+                    if(!cellptr) {
+                        throw_error("No cell was found for sidx ",p.sidx," in celllabel of count ",cellcol.cells.count());
+                        return;
+                    }
+                    CCol& cell = *cellptr;
+                    cell.clear();
+                    cell.element_size = label.length();
+                    cell.hash = hashBytes(resolve_ptr(label), label.length());
+                    cell.index = p.sidx;
+                    cell.push(resolve_ptr(label)); 
+                } else {
+                    string output = resolve_string_ticket(ctx.node());
+                    Col& cellcol = resolve_YAPA_ptr(p,YAPA_level);
+                    CCol* cell = cellcol.cells.find_cell(p.sidx);
+                    if(cell) {
+                        output = ((QString&)*cell).to_std();
+                    } else {
+                        output = "";
+                    }
+                }
+            });
+
+            if(YAPA_level>1) {
+                overload_type(id,".\"getByLabel\"",label+"_GETBYLABEL",make_value(ptr_id,sizeof(Ptr)),[this,id,YAPA_level](Context& ctx){
+                    standard_sub_process(ctx);
+                    Ptr ptr = ctx.node().getPtr(0);
+                    CHECK_ERROR("Invalid Ptr for "+labels[id]+" getByLabel");
+                    string qlabel = ctx.node().right().getString(0);
+                    CHECK_ERROR("Invalid label argument");
+                    std::string label = qlabel.to_std();
+                    Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                    for(int i=0;i<col.length();i++) {
+                        std::string collabel = "";
+                        switch(YAPA_level) {
+                            case 3: collabel = ((ColColCol&)col)[i].label.to_std(); break;
+                            case 2: collabel = ((ColCol&)col)[i].label.to_std(); break;
+                            default: break;
+                        }
+                        if(collabel==label) {
+                            ptr.idx = i;
+                            ctx.node().value().data_ptr(ptr);
+                            return;
+                        }
+                    }
+                    throw_error("Label not found ",label," in pool ",Ptr_as_string(ptr));
+                });
+                overload_type(id,".\"add\"",label+"_ADD",get_value,[this,id,YAPA_level](Context& ctx){
+                    standard_sub_process(ctx);
+                    Ptr ptr = ctx.node().getPtr(0);
+                    CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
+                    Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                    Ptr p = deadptr;
+                    switch(YAPA_level) {
+                        case 3: {
+                            p = Ptr(&types,col.length(),0,0);
+                            ColCol new_col; ((ColColCol&)col).push(new_col);
+                        } break;
+                        case 2: {
+                            p = Ptr(&types,types.indexof(&col),col.length(),0);
+                            Col new_col; ((ColCol&)col).push(new_col);
+                        } break;
+                        default: break;
+                    }
+                    ctx.node().value().set((void*)&p);
+                });
+            } else {
+                overload_type(ptr_id,".\"clear\"",label+"_CLEAR",deadptr,[this,id,YAPA_level](Context& ctx){
+                    standard_sub_process(ctx);
+                    Ptr ptr = ctx.node().getPtr(0);
+                    CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
+                    Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                    col.clear();
+                });
+            }
+
+            return id;
+        }
+
+        uint32_t make_YAPA_type(const std::string& label, uint32_t YAPA_level) {
+            uint32_t id = make_type(label,sizeof(Ptr));
+            register_ptr_alias(id);
+            register_YAPA_type(label,YAPA_level,id);
+            return id;
+        }
+
+
+        uint32_t ptr_as_YAPA_id = register_YAPA_type("Ptr",1,ptr_id);
+        uint32_t colcol_as_YAPA_id = register_YAPA_type("ColCol",2,colcol_id);
+        uint32_t colcolcol_as_YAPA_id = register_YAPA_type("ColColCol",3,colcolcol_id);
+
+        uint32_t string_as_YAPA_id = register_YAPA_type("String",1,string_id);
+
         // uint32_t string_append_id = reg_id("STRING_APPEND");
         uint32_t string_substr_id = reg_id("STRING_SUBSTR");
         uint32_t string_slice_id = reg_id("STRING_SLICE");
         uint32_t string_find_id = reg_id("STRING_FIND");
         uint32_t string_find_from_id = reg_id("STRING_FIND_FROM");
+
+
+        uint32_t utypes_id = add_function("utypes",[this](Context& ctx){
+            Ptr p(&types,0,0,0); ctx.node().value().set((void*)&p);
+        },sizeof(Ptr),colcolcol_id);
+        uint32_t create_pool_id = add_function("create_pool",[this](Context& ctx){
+            Ptr p(uid,(uint32_t)types.length(),0,0);
+            ColCol new_pool; types.push(new_pool);
+            ctx.node().value().set((void*)&p);
+        },sizeof(Ptr),colcol_id);
+        uint32_t create_pool_at_id = add_function("create_pool_at",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t at = ctx.node().getInt(0);
+            Ptr p(uid,at,0,0);
+            ColCol new_pool; insert_pools(types,{&new_pool},at);
+            ctx.node().value().set((void*)&p);
+        },sizeof(Ptr),colcol_id);
+
 
         uint32_t break_id = add_function("break",[this](Context& ctx){
             ctx.state(2);
@@ -204,293 +597,82 @@ namespace Acorn {
             s = std::to_string(ts);
         },sizeof(Ptr),string_id);
 
-
-
-        uint32_t ptr_get_id = overload_type(ptr_id,".\"get\"","PTR_GET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
+        uint32_t header_ribbon_id = overload_type(header_id,".\"ribbon\"","HEADER_RIBBON",make_value(ptr_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("Invalid Ptr on left for ptr get");
-            Col& col = resolve_to_col(ptr);
-            uint32_t right_arg_lookup_type = ctx.node().right().c0().value().type();
-
-            if(ctx.node().value().type()==0) {
-                ctx.node().value().type(col.tag);
-                ctx.node().value().size(col.element_size);
+            CHECK_ERROR("Invalid ptr in header ribbon");
+            std::string ribbon_label = "";
+            if(!ctx.node().right().children().empty()) {
+                string gotstr = ctx.node().right().getString(0);
+                CHECK_ERROR("Invalid string in header ribbon");
+                ribbon_label = gotstr.to_std();
             }
-
-            if(right_arg_lookup_type==int_id) {
-                int index = ctx.node().right().getInt(0);
-                if(index<col.length()) {
-                    Value value = ctx.node().value();
-                    ptr.sidx = index;
-                    value.data_ptr(ptr);
-                } else {
-                    ctx.node().value().type(void_id);
-                    ctx.node().value().size(0);
-                    throw_error("Index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr));
-                }
-            } else if(is_ptr_alias(right_arg_lookup_type)) {
-                Col& ccol = resolve_to_col(ctx.node().right().getPtr(0));
-                ptr.sidx = col.getidx(ccol.storage,ccol.size);
-                ctx.node().value().data_ptr(ptr);
-            }
+            Header header(ptr); 
+            Col& ribbon = header.ribbon(ribbon_label);
+            CHECK_ERROR("Bad ribbon at label ",ribbon_label," in header ribbon");
+            ptr.idx = header.col().indexof(&ribbon);
+            ctx.node().value().set((void*)&ptr);
         });
-
-        uint32_t ptr_getOrPut_id = overload_type(ptr_id,".\"getOrPut\"","PTR_GETORPUT",make_value(0),[this](Context& ctx){
+        uint32_t header_col_id = overload_type(header_id,".\"col\"","HEADER_COL",make_value(colcol_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("Invalid Ptr on left for ptr getOrPut");
-            Col& col = resolve_to_col(ptr);
-            uint32_t right_arg_lookup_type = ctx.node().right().c0().value().type();
-
-            if(ctx.node().value().type()==0) {
-                ctx.node().value().type(col.tag);
-                ctx.node().value().size(col.element_size);
-            }
-
-            if(right_arg_lookup_type==int_id) {
-                int index = ctx.node().right().getInt(0);
-                while(col.length()>=index) {
-                    col.push_default();
-                }
-                Value value = ctx.node().value();
-                ptr.sidx = index;
-                value.data_ptr(ptr);
-            } else if(is_ptr_alias(right_arg_lookup_type)) {
-                Col& ccol = resolve_to_col(ctx.node().right().getPtr(0));
-                if(!col.hasKey(ccol.storage,ccol.size)) {
-                   col.qput(malloc(col.element_size),ccol.storage,ccol.size,right_arg_lookup_type);
-                } 
-                ptr.sidx = col.getidx(ccol.storage,ccol.size);
-                ctx.node().value().data_ptr(ptr);
-            }
+            CHECK_ERROR("Invalid ptr in header col");
+            ctx.node().value().set((void*)&ptr);
         });
-        uint32_t ptr_idxget_id = overload_type(ptr_id,"[any]","PTR_IDXGET",make_value(0),[this](Context& ctx){ //No value means take the subsize and subtype 
-            standard_sub_process(ctx);
-            uint32_t right_arg_lookup_type = ctx.node().right().value().type();
-            Ptr ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("No left value in ptridx get");
-            Col& col = resolve_to_col(ptr);
-            if(right_arg_lookup_type==int_id) {
-                int index = ctx.node().right().getInt();
-                if(index<col.length()) {
-                    Value value = ctx.node().value();
-                    ptr.sidx = index;
-                    value.data_ptr(ptr);
-                } else {
-                    throw_error("ptr_idxget:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr));
-                }
-            } else if(is_ptr_alias(right_arg_lookup_type)) {
-                Col& ccol = resolve_to_col(ctx.node().right().getPtr());
-                if(!col.hasKey(ccol.storage,ccol.size)) {
-                   col.qput(malloc(col.element_size),ccol.storage,ccol.size,right_arg_lookup_type);
-                } 
-                ptr.sidx = col.getidx(ccol.storage,ccol.size);
-                ctx.node().value().data_ptr(ptr);
-            }
-        });
-        uint32_t ptr_put_id = overload_type(ptr_id,".\"put\"","PTR_PUT",deadptr,[this](Context& ctx){
-            standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            DEBUG_ONLY(if(ERROR_FLAG) {return;})
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
-            Ptr ptr = *(Ptr*)lv;
-            Col& col = resolve_to_col(ptr);
-            Value keyv = right.children()[0].value();
-            Value elv = right.children()[1].value();
-            
-            void* key = nullptr;
-            uint32_t key_size = 0;
-            if(keyv.type()==string_id||keyv.type()==ptr_id||keyv.type()==node_id) {
-                Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
-                key = keycol.storage;
-                key_size = keycol.size;
-            }
-            col.qput(elv.get(),key,key_size,keyv.type());
-        });
-        uint32_t ptr_has_id = overload_type(ptr_id,".\"has\"","PTR_HAS",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t header_getString_id = overload_type(header_id,".\"getString\"","HEADER_GETSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("No left value in ptr put");
-            Col& col = resolve_to_col(ptr);            
-            void* key = nullptr;
-            uint32_t key_size = 0;
-            if(is_ptr_alias(ctx.node().right().c0().value().type())) {
-                Ptr temp = ctx.node().right().getPtr(0);
-                CHECK_ERROR("Invalid argument for ptr has");
-                Col& keycol = resolve_to_col(temp);
-                key = keycol.storage;
-                key_size = keycol.size;
+            CHECK_ERROR("Invalid ptr in header getString");
+            std::string label = "";
+            if(!ctx.node().right().children().empty()) {
+                string gotstr = ctx.node().right().getString(0);
+                CHECK_ERROR("Invalid first string in header getString");
+                label = gotstr.to_std();
             }
-            bool has_thing = col.hasKey(key,key_size);
-            ctx.node().value().set((void*)&has_thing);
-        });
-        uint32_t ptr_qset_id = overload_type(ptr_id,".\"qset\"","PTR_QSET",deadptr,[this](Context& ctx){
-            standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            DEBUG_ONLY(if(ERROR_FLAG) {return;})
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
-            Ptr ptr = *(Ptr*)lv;
-            Col& col = resolve_to_col(ptr);
-            void* data = right.children()[0].value().get();
-            int width  = *(int*)right.children()[1].value().get();
-            col.qset(ptr.sidx,data,width);
-        });
-        uint32_t ptr_set_id = overload_type(ptr_id,".\"set\"","PTR_SET",deadptr,[this](Context& ctx){
-            standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            DEBUG_ONLY(if(ERROR_FLAG) {return;})
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr put")); return;});
-            Ptr ptr = *(Ptr*)lv;
-            Col& col = resolve_to_col(ptr);
-            void* data = right.children()[1].value().get();
-            uint32_t index = 0;
-            Value cv = right.children()[0].value();
-            if(cv.type()==int_id) {
-                index = *(int*)cv.get();
-                if(index>=col.length()) {
-                    print(red("ptr_set:x_handler index "+std::to_string(index)+" out of bounds on "+Ptr_as_string(ptr)));
-                }
+            std::string ribbon_label = "";
+            if(ctx.node().right().children().length()==2) {
+                string gotstr = ctx.node().right().getString(1);
+                CHECK_ERROR("Invalid second string in header getString");
+                ribbon_label = gotstr.to_std();
             }
-            else if(cv.type()==string_id||cv.type()==ptr_id||cv.type()==node_id) {
-                void* key = nullptr;
-                uint32_t key_size = 0;
-                Col& keycol = resolve_to_col(*(Ptr*)cv.get());
-                key = keycol.storage;
-                key_size = keycol.size;
-                index = col.getidx(key,key_size);
-            }
-            col.set(index,data);
+            Header header(ptr); 
+            string data = header.getString(label,ribbon_label);
+            CHECK_ERROR("Key not found ",label," in header getString");
+            string output = resolve_string_ticket(ctx.node());
+            output = data.to_std();
         });
 
-        uint32_t ptr_label_id = overload_type(ptr_id,".\"label\"","PTR_LABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t check_messages_id = add_function("check_messages",[this](Context& ctx){
+            if(ctx.node().children().empty()) {
+                throw_error("script:check_messages no header argument was provided");
+                return;
+            }
+            standard_sub_process(ctx);
+            bool b = false;
+            ColColCol msgpools = check_messages();
+            if(msgpools.empty()) {
+                ctx.node().value().set((void*)&b);
+            } else {
+                adopt_ptrs(msgpools,&types);
+                uint32_t at = types.length();
+                push_pools(types,msgpools);
+                Header header = makePtr(types,at);
+                print("Returning a found header: ",Ptr_as_string(header));
+                ctx.node().getPtr(0) = header;
+                b = true;
+                ctx.node().value().set((void*)&b);
+            }
+        },1,bool_id);
+        uint32_t discard_message = add_function("discard_message",[this](Context& ctx){
+            if(ctx.node().children().empty()) {
+                throw_error("script:discard_message no header argument was provided");
+                return;
+            }
             standard_sub_process(ctx);
             Ptr p = ctx.node().getPtr(0);
-            if(!ctx.node().right().children().empty()) {
-                string label = ctx.node().right().getString(0);
-                resolve_to_col(p).label = label.to_std();
-            } else {
-                string output = resolve_string_ticket(ctx.node());
-                output = resolve_to_col(p).label.to_std();
-            }
+            types.removeAt(p.pool);
         });
 
-        Col& overload_resolve_col(Context& ctx) {
-            standard_sub_process(ctx);
-            return resolve_to_col(ctx.node().getPtr(0));
-        }
-        uint32_t ptr_tag_id = overload_type(ptr_id,".\"tag\"","PTR_TAG",make_value(int_id,4),[this](Context& ctx){
-            Col& col = overload_resolve_col(ctx);
-            if(!ctx.node().right().children().empty()) {
-                uint32_t tag = ctx.node().right().getInt(0);
-                col.tag = tag;
-            } else {
-                uint32_t tag = col.tag;
-                ctx.node().value().set((void*)&tag);
-            }
-        });
-        uint32_t ptr_element_size_id = overload_type(ptr_id,".\"element_size\"","PTR_ELEMENT_SIZE",make_value(int_id,4),[this](Context& ctx){
-            Col& col = overload_resolve_col(ctx);
-            if(!ctx.node().right().children().empty()) {
-                uint32_t element_size = ctx.node().right().getInt(0);
-                col.element_size = element_size;
-            } else {
-                uint32_t element_size = col.element_size;
-                ctx.node().value().set((void*)&element_size);
-            }
-        });
-
-
-        uint32_t create_pool_id = add_function("create_pool",[this](Context& ctx){
-            Ptr p(uid,(uint32_t)types.length(),0,0);
-            ColCol new_pool; types.push(new_pool);
-            ctx.node().value().set((void*)&p);
-        },sizeof(Ptr),colcol_id);
-        uint32_t create_pool_at_id = add_function("create_pool_at",[this](Context& ctx){
-            standard_sub_process(ctx);
-            uint32_t at = ctx.node().getInt(0);
-            Ptr p(uid,at,0,0);
-            ColCol new_pool; insert_pools(types,{&new_pool},at);
-            ctx.node().value().set((void*)&p);
-        },sizeof(Ptr),colcol_id);
-
-        ColCol& overload_resolve_colcol(Context& ctx) {
-            standard_sub_process(ctx);
-            return resolve_to_pool(ctx.node().getPtr(0));
-        }
-        uint32_t colcol_get_id = overload_type(colcol_id,".\"get\"","COLCOL_GET",make_value(ptr_id,sizeof(Ptr)),[this](Context& ctx){
-            standard_sub_process(ctx);
-            Ptr ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("Invalid Ptr on left for colcol get");
-            ColCol& pool = resolve_to_pool(ptr);
-            uint32_t right_arg_lookup_type = ctx.node().right().c0().value().type();
-            if(right_arg_lookup_type==int_id) {
-                int index = ctx.node().right().getInt(0);
-                if(index<pool.length()) {
-                    Value value = ctx.node().value();
-                    ptr.idx = index;
-                    value.data_ptr(ptr);
-                } else {
-                    throw_error("Index "+std::to_string(index)+" out of bounds on pool "+Ptr_as_string(ptr));
-                }
-            } else if(is_ptr_alias(right_arg_lookup_type)) {
-                Col& ccol = resolve_to_col(ctx.node().right().getPtr(0));
-                ptr.idx = pool.getidx(ccol.storage,ccol.size);
-                CHECK_ERROR("Key not found");
-                ctx.node().value().data_ptr(ptr);
-            }
-        });
-        uint32_t colcol_getByLabel_id = overload_type(colcol_id,".\"getByLabel\"","COLCOL_GETBYLABEL",make_value(ptr_id,sizeof(Ptr)),[this](Context& ctx){
-            standard_sub_process(ctx);
-            Ptr ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("Invalid Ptr on left for colcol getByLabel");
-            ColCol& pool = resolve_to_pool(ptr);
-            string qlabel = ctx.node().right().getString(0);
-            CHECK_ERROR("Invalid label argument");
-            std::string label = qlabel.to_std();
-            for(int i=0;i<pool.length();i++) {
-                if(pool[i].label.to_std()==label) {
-                    ptr.idx = i;
-                    ctx.node().value().data_ptr(ptr);
-                    return;
-                }
-            }
-            throw_error("Label not found ",label," in pool ",Ptr_as_string(ptr));
-        });
-        uint32_t colcol_label_id = overload_type(colcol_id,".\"label\"","COLCOL_LABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
-            ColCol& col = overload_resolve_colcol(ctx);
-            if(!ctx.node().right().children().empty()) {
-                string label = ctx.node().right().getString(0);
-                col.label = label.to_std();
-            } else {
-                string output = resolve_string_ticket(ctx.node());
-                output = col.label.to_std();
-            }
-        });
-        uint32_t colcol_add_id = overload_type(colcol_id,".\"add\"","COLCOL_ADD",make_value(ptr_id,sizeof(Ptr)),[this](Context& ctx){
-            ColCol& col = overload_resolve_colcol(ctx);
-            uint32_t pool_idx = &col - (ColCol*)types.storage;
-            Ptr p(&types, pool_idx, col.length(), 0);
-            p.cachelevel = 3;
-            Col new_col; col.push(new_col);
-            ctx.node().value().set((void*)&p);
-        });
-        uint32_t colcol_tag_id = overload_type(colcol_id,".\"tag\"","COLCOL_TAG",make_value(int_id,4),[this](Context& ctx){
-            ColCol& col = overload_resolve_colcol(ctx);
-            if(!ctx.node().right().children().empty()) {
-                uint32_t tag = ctx.node().right().getInt(0);
-                col.tag = tag;
-            } else {
-                uint32_t tag = col.tag;
-                ctx.node().value().set((void*)&tag);
-            }
-        });
 
         uint32_t save_pool_id = add_function("save_pool",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -609,6 +791,12 @@ namespace Acorn {
             }
         });
 
+
+        uint32_t valueGet_id = overload_type(value_id,".\"get\"","VALUE_GET",deadptr,[this](Context& ctx){
+            standard_sub_process(ctx);
+            Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
+            ctx.node().value(v);
+        });
         uint32_t valueGetStr_id = overload_type(value_id,".\"getStr\"","VALUE_GETSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
@@ -629,6 +817,10 @@ namespace Acorn {
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             void* d = ctx.node().children()[1].children()[0].value().get();
             v.set(d);
+        });
+        uint32_t give_value_id = add_function("give_value",[this](Context& ctx){
+            standard_sub_process(ctx);
+            ctx.node().getNode(0).value(ctx.node().getValue(1));
         });
 
         uint32_t node_asid_id = overload_type(node_id,".\"asID\"","NODE_ASID",make_value(int_id,4),[this](Context& ctx){
@@ -912,72 +1104,19 @@ namespace Acorn {
             }
         }
 
-        uint32_t ptr_push_op_id = overload_type(ptr_id,"<<any","PTR_PUSH_OP",deadptr,[this](Context& ctx){
-            standard_sub_process(ctx);
-            Node left = ctx.node().children()[0];
-            Node right = ctx.node().children()[1];
-            void* lv = left.value().get();
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr push op")); return;});
-            Col& col = resolve_to_col(*(Ptr*)lv);
-            col.push(right.value().get());
-        });
-
         uint32_t precompile_brace = add_token_combo("precompile_brace",'#','#');
         uint32_t comment_brace = add_token_combo("comment_brace",'/','/');
 
         void init() override {
             register_type("list",ptr_id,sizeof(Ptr));
 
-            overload_type(ptr_id,".\"push\"",ptr_push_id);
-            overload_type(ptr_id,".\"take\"",ptr_take_id,make_value());
-            overload_type(ptr_id,".\"length\"",ptr_length_id,make_value(int_id,4));
 
-            //overload_type(string_id,"+string",string_append_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
-            overload_type(string_id,".\"length\"",ptr_length_id,make_value(int_id,4));
-            overload_type(string_id,".\"clear\"",ptr_clear_id);
-            overload_type(string_id,".\"at\"",ptr_get_id,make_value(char_id,1));
             overload_type(string_id,".\"substr\"",string_substr_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,".\"slice\"",string_slice_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
             overload_type(string_id,".\"find\"",string_find_id,make_value(int_id,4));
 
             overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_value(ptr_id,sizeof(Ptr),0,int_id,4));
 
-            
-            x_handlers[ptr_take_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                Node left = ctx.node().children()[0];
-                Node right = ctx.node().children()[1];
-                Value cv = right.value();
-                Col& col = resolve_to_col(*(Ptr*)left.value().get());
-                if(!right.children().empty()) {
-                    cv = right.children()[0].value();
-                }
-                if(cv.type()==int_id) {
-                    int index = *(int*)cv.get();
-                    ctx.node().value().set(col.get((uint32_t)index));
-                    col.removeAt(index);
-                }
-            };
-            x_handlers[ptr_push_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                Node left = ctx.node().children()[0];
-                Node right = ctx.node().children()[1];
-                if(!right.children().empty()) {
-                    right = right.children()[0];
-                }
-                void* lv = left.value().get();
-                DEBUG_ONLY(if(ERROR_FLAG) {log(red("No left value in ptr push")); return;});
-                Col& col = resolve_to_col(*(Ptr*)lv);
-                col.push(right.value().get());
-            };
-            x_handlers[ptr_length_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                Node left = ctx.node().children()[0];
-                Node right = ctx.node().children()[1];
-                Col& col = resolve_to_col(*(Ptr*)left.value().get());
-                int len = col.length();
-                ctx.node().value().set((void*)&len);
-            };
             x_handlers[string_substr_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node().children()[0];
@@ -1043,6 +1182,114 @@ namespace Acorn {
                 ctx.node().value().set((void*)&found_id);
             };
 
+
+            add_function("makePtr3",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().value().get();
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t idx = *(int*)ctx.node().children()[1].value().get();
+                uint32_t sidx = *(int*)ctx.node().children()[2].value().get();
+                p.pool = pool; p.idx = idx; p.sidx = sidx;
+                p.cachelevel = 3; p.cache = &types; p.specialization = 2;
+            },sizeof(Ptr),ptr_id);
+
+
+            //Temporary kludge methods until Ptrs become proper heterogenous systems
+            add_function("getpool",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set((void*)&p.pool);
+            },4,int_id);
+            add_function("setpool",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.pool = val;
+            });
+            add_function("getidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set((void*)&p.idx);
+            },4,int_id);
+            add_function("setidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.idx = val;
+            });
+            add_function("getsidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                ctx.node().value().set((void*)&p.sidx);
+            },4,int_id);
+            add_function("setsidx",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
+                int val = *(int*)ctx.node().children()[1].value().get();
+                p.sidx = val;
+            });
+
+            uint32_t ptr_setsidx_id = add_binding_token_combo("PTR_SETSIDX_OP",8,2,'|','S','=');
+            r_handlers[ptr_setsidx_id] = [this](Context& ctx){standard_sub_process(ctx); resolve_overload(ctx);};
+            overload_type(ptr_id, "|S=int", "PTR_SETSIDX", make_value(ptr_id, sizeof(Ptr)), [this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = ctx.node().getPtr(0);
+                int val = ctx.node().getInt(1);
+                p.sidx = val;
+                ctx.node().value().set((void*)&p);
+            });
+
+            add_function("plen",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                Ptr pptr(&types,pool,0,0);
+                uint32_t plen = resolve_to_pool(pptr).length();
+                ctx.node().value().set((void*)&plen);
+            },4,int_id);
+
+            add_function("clen",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
+                uint32_t col = *(int*)ctx.node().children()[1].value().get();
+                Ptr cptr(&types,pool,col,0);
+                uint32_t clen = resolve_to_col(cptr).length();
+                ctx.node().value().set((void*)&clen);
+            },4,int_id);
+
+            add_function("clabel",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = 0;
+                uint32_t col = 0;
+                if(ctx.node().children()[0].value().type()==ptr_id) {
+                    Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                    pool = p.pool; col = p.idx;
+                } else {
+                    pool = *(int*)ctx.node().children()[0].value().get();
+                    col = *(int*)ctx.node().children()[1].value().get();
+                }
+                Ptr cptr(&types,pool,col,0);
+                string output = resolve_string_ticket(ctx.node());
+                output = resolve_to_col(cptr).label.to_std();
+            },sizeof(Ptr),string_id);
+
+            add_function("csetlabel",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t pool = 0;
+                uint32_t col = 0;
+                std::string label = "";
+                if(ctx.node().children()[0].value().type()==ptr_id) {
+                    Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
+                    pool = p.pool; col = p.idx;
+                    label = ((string&)*(Ptr*)ctx.node().children()[1].value().get()).to_std();
+                } else {
+                    pool = *(int*)ctx.node().children()[0].value().get();
+                    col = *(int*)ctx.node().children()[1].value().get();
+                    label = ((string&)*(Ptr*)ctx.node().children()[2].value().get()).to_std();
+                }
+                Ptr cptr(&types,pool,col,0);
+                resolve_to_col(cptr).label = label;
+            });
+
             add_function("resolve_as_Ptr",[this](Context& ctx){
                 standard_sub_process(ctx);
                 ctx.node().value().set(resolve_ptr(*(Ptr*)ctx.node().children()[0].value().get()));
@@ -1067,15 +1314,6 @@ namespace Acorn {
                 ctx.node().value().set((void*)&p);
             },sizeof(Ptr),ptr_id);
 
-            add_function("makePtr3",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr& p = *(Ptr*)ctx.node().value().get();
-                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
-                uint32_t idx = *(int*)ctx.node().children()[1].value().get();
-                uint32_t sidx = *(int*)ctx.node().children()[2].value().get();
-                p.pool = pool; p.idx = idx; p.sidx = sidx;
-                p.cachelevel = 3; p.cache = &types; p.specialization = 2;
-            },sizeof(Ptr),ptr_id);
 
             add_function("value_as_string",[this](Context& ctx){
                 standard_sub_process(ctx);
@@ -1086,9 +1324,10 @@ namespace Acorn {
             add_function("is_live",[this](Context& ctx){
                 standard_sub_process(ctx);
                 bool b = false;
-                if(ctx.node().children()[0].value().type()==ptr_id||ctx.node().children()[0].value().type()==node_id) {
-                    b = is_live(*(Ptr*)ctx.node().children()[0].value().get());
-                }
+                Ptr p = ctx.node().getPtr(0);
+                // print(Ptr_to_string(p,p.cachelevel),"[",(int)p.specialization,"]");
+                b = is_live(p);
+                // print(b?"Y":"N");
                 ctx.node().value().set((void*)&b);
             },1,bool_id);
 
@@ -1110,7 +1349,9 @@ namespace Acorn {
             add_function("cast_to",[this](Context& ctx){
                 standard_sub_process(ctx);
                 int type = ctx.node().getInt(0);
-                ctx.node().c1().value().type(type);
+                ctx.node().value().size(ctx.node().c1().value().size());
+                ctx.node().value().type(type);
+                ctx.node().value().data_ptr(ctx.node().c1().value().data_ptr());
             });
             
 
@@ -1213,50 +1454,6 @@ namespace Acorn {
             };
 
 
-            //Temporary kludge methods until Ptrs become proper heterogenous systems
-            add_function("getpool",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-                ctx.node().value().set((void*)&p.pool);
-            },4,int_id);
-            add_function("setpool",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
-                int val = *(int*)ctx.node().children()[1].value().get();
-                p.pool = val;
-            });
-            add_function("getidx",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-                ctx.node().value().set((void*)&p.idx);
-            },4,int_id);
-            add_function("setidx",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
-                int val = *(int*)ctx.node().children()[1].value().get();
-                p.idx = val;
-            });
-            add_function("getsidx",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-                ctx.node().value().set((void*)&p.sidx);
-            },4,int_id);
-            add_function("setsidx",[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr& p = *(Ptr*)ctx.node().children()[0].value().get();
-                int val = *(int*)ctx.node().children()[1].value().get();
-                p.sidx = val;
-            });
-
-            uint32_t ptr_setsidx_id = add_binding_token_combo("PTR_SETSIDX_OP",8,2,'|','S','=');
-            r_handlers[ptr_setsidx_id] = [this](Context& ctx){standard_sub_process(ctx); resolve_overload(ctx);};
-            overload_type(ptr_id, "|S=int", "PTR_SETSIDX", make_value(ptr_id, sizeof(Ptr)), [this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr p = ctx.node().getPtr(0);
-                int val = ctx.node().getInt(1);
-                p.sidx = val;
-                ctx.node().value().set((void*)&p);
-            });
 
             add_function("dump_unit",[this](Context& ctx){
                 standard_sub_process(ctx);
@@ -1290,101 +1487,7 @@ namespace Acorn {
                 }
             });
 
-            add_function("plen",[this](Context& ctx){
-                standard_sub_process(ctx);
-                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
-                Ptr pptr(&types,pool,0,0);
-                uint32_t plen = resolve_to_pool(pptr).length();
-                ctx.node().value().set((void*)&plen);
-            },4,int_id);
-
-            add_function("clen",[this](Context& ctx){
-                standard_sub_process(ctx);
-                uint32_t pool = *(int*)ctx.node().children()[0].value().get();
-                uint32_t col = *(int*)ctx.node().children()[1].value().get();
-                Ptr cptr(&types,pool,col,0);
-                uint32_t clen = resolve_to_col(cptr).length();
-                ctx.node().value().set((void*)&clen);
-            },4,int_id);
-
-            add_function("clabel",[this](Context& ctx){
-                standard_sub_process(ctx);
-                uint32_t pool = 0;
-                uint32_t col = 0;
-                if(ctx.node().children()[0].value().type()==ptr_id) {
-                    Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-                    pool = p.pool; col = p.idx;
-                } else {
-                    pool = *(int*)ctx.node().children()[0].value().get();
-                    col = *(int*)ctx.node().children()[1].value().get();
-                }
-                Ptr cptr(&types,pool,col,0);
-                string output = resolve_string_ticket(ctx.node());
-                output = resolve_to_col(cptr).label.to_std();
-            },sizeof(Ptr),string_id);
-
-            add_function("csetlabel",[this](Context& ctx){
-                standard_sub_process(ctx);
-                uint32_t pool = 0;
-                uint32_t col = 0;
-                std::string label = "";
-                if(ctx.node().children()[0].value().type()==ptr_id) {
-                    Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-                    pool = p.pool; col = p.idx;
-                    label = ((string&)*(Ptr*)ctx.node().children()[1].value().get()).to_std();
-                } else {
-                    pool = *(int*)ctx.node().children()[0].value().get();
-                    col = *(int*)ctx.node().children()[1].value().get();
-                    label = ((string&)*(Ptr*)ctx.node().children()[2].value().get()).to_std();
-                }
-                Ptr cptr(&types,pool,col,0);
-                resolve_to_col(cptr).label = label;
-            });
-
-            uint32_t ptr_celllabel_id = overload_type(ptr_id,".\"celllabel\"","PTR_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
-                standard_sub_process(ctx);
-                Ptr p = ctx.node().getPtr(0);
-                CHECK_ERROR("Left arg of cellabel is invalid");
-                if(p.cachelevel==3) p.cache = &types;
-                if(!ctx.node().right().children().empty()) {
-                    string label = ctx.node().right().getString(0);
-                    uint32_t pooltag = resolve_to_pool(p).tag;
-                    Col& cellcol = resolve_to_col(p);
-                    CHECK_ERROR("Unable to resolve some elmenets of celllabel, label pooltag or cellcol");
-                     //We only suppourt string keys for now
-                    while(cellcol.cells.count()<=p.sidx) {
-                        CCol c; //Temporary filler
-                        char defc = ' ';
-                        c.element_size = 1; 
-                        c.tag = string_id;
-                        c.hash = hashBytes((void*)&defc, 1);
-                        c.index = cellcol.cells.count();
-                        c.push((void*)&defc);
-                        cellcol.cells.scan_for_slot(c);
-                    }
-                    CCol* cellptr = cellcol.cells.find_cell(p.sidx);
-                    if(!cellptr) {
-                        throw_error("No cell was found for sidx ",p.sidx," in celllabel of count ",cellcol.cells.count());
-                        return;
-                    }
-                    CCol& cell = *cellptr;
-                    cell.clear();
-                    cell.element_size = label.length();
-                    cell.hash = hashBytes(resolve_ptr(label), label.length());
-                    cell.index = p.sidx;
-                    cell.push(resolve_ptr(label)); 
-                } else {
-                    string output = resolve_string_ticket(ctx.node());
-                    Col& cellcol = resolve_to_col(p);
-                    CCol* cell = cellcol.cells.find_cell(p.sidx);
-                    if(cell) {
-                        output = ((QString&)*cell).to_std();
-                    } else {
-                        output = "";
-                    }
-                }
-            });
-
+            
             add_function("take_left",[this](Context& ctx){
                 standard_sub_process(ctx); 
                 take_left(ctx.sub(),ctx.node().getInt(0));
@@ -1394,16 +1497,134 @@ namespace Acorn {
                 take_right(ctx.sub(),ctx.node().getInt(0));
             });
 
-            uint32_t query_id = make_registering_tokenized_keyword("query");
-            uint32_t queryend_id = make_tokenized_keyword("endquery");
-            uint32_t query_for_id = make_tokenized_keyword("for",reg_id("query_for"),query_id);
-            uint32_t query_in_id = make_tokenized_keyword("in",reg_id("query_in"),query_id);
+            add_function("col_by_label",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t poolidx = ctx.node().getInt(0);
+                std::string label = ctx.node().getString(1).to_std();
+                ColCol& pool = types[poolidx];
+                for(int i=0;i<pool.length();i++) {
+                    if(pool[i].label==label) {
+                        Ptr p(&types,poolidx,i,0);
+                        ctx.node().value().set((void*)&p);
+                        return;
+                    }
+                }
+            },sizeof(Ptr),ptr_id);
+
+
+            //An experiment
+                // uint32_t query_id = make_registering_tokenized_keyword("query");
+                // uint32_t queryend_id = make_tokenized_keyword("endquery");
+                // uint32_t query_for_id = make_tokenized_keyword("for",reg_id("query_for"),query_id);
+                // uint32_t query_in_id = make_tokenized_keyword("in",reg_id("query_in"),query_id);
+                
+                // tokenizer_state_functions[queryend_id] = [this](Context& ctx){
+                //     tokenized_keywords.clear(); 
+                //     for(auto& f : token_registers[0]) {f();}
+                //     ctx.state(0); at_x-=1.0f; --ctx.index();
+                // };
             
-            tokenizer_state_functions[queryend_id] = [this](Context& ctx){
-                tokenized_keywords.clear(); 
-                for(auto& f : token_registers[0]) {f();}
-                ctx.state(0); at_x-=1.0f; --ctx.index();
-            };
+            //The new form
+                register_ptr_alias(query_id);
+                add_function("makeQuery",[this](Context& ctx){
+                    standard_sub_process(ctx);
+                    Col& sortcol = ctx.node().value().data_col();
+                    sortcol.clear();
+                    Ptr target = ctx.node().getPtr(0);
+                    // print("Making a query to ",Ptr_to_string(target,3));
+                    Col& datacol = resolve_to_col(target); 
+                    uint32_t datatype = datacol.tag;
+                    for(int i=0;i<datacol.length();i++) {
+                        Ptr& dataptr = *(Ptr*)datacol[i];
+                        if(!is_live(dataptr)) continue;
+                        else if(datatype==ptr_id) datatype = resolve_to_col(dataptr).tag;
+                        Ptr sortptr = target; sortptr.sidx = i;
+                        sortcol.push((void*)&sortptr);
+                    }
+                    ctx.node().value().sub_type(datatype);
+                },sizeof(Ptr),query_id);
+
+                overload_type(query_id,".\"sort\"","QUERY_SORT",make_value(query_id,sizeof(Ptr)),[this](Context& ctx){
+                    standard_sub_process(ctx);
+                    uint32_t datatype = ctx.node().left().value().sub_type();
+                    if(datatype==0) { //Kludge
+                        Col& datacol = resolve_to_col(ctx.node().left().getPtr()); 
+                        datatype = datacol.tag;
+                        for(int i=0;i<datacol.length();i++) {
+                            Ptr& dataptr = *(Ptr*)datacol[i];
+                            if(!is_live(dataptr)) continue;
+                            else if(datatype==ptr_id) {datatype = resolve_to_col(dataptr).tag; break;}
+                        }
+                    }
+
+                    Col& sortcol = ctx.node().left().value().data_col();
+                    if(sortcol.heterogenous) {sortcol.heterogenous = false;} //No idea how this is happening when we refrence query in overloads, investigate and fix later
+                    //Okay, overloads are just broken for query, when I actually need them I'll do a deeper dive.
+                    std::string sortkind = ctx.node().right().getString(0).to_std();
+
+                    ctx.node().value(ctx.node().left().value());
+                    
+                    std::function<bool(Ptr&,Ptr&)> func = nullptr;
+
+                    if(sortkind=="asc"){
+                        if(datatype==int_id) {
+                            func = [this](Ptr& a, Ptr& b){
+                                return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b);;
+                            };
+                        } else if(datatype==float_id) {
+                            func = [this](Ptr& a, Ptr& b){
+                                return *(float*)resolve_ptr(a) < *(float*)resolve_ptr(b);;
+                            };
+                        } else if(datatype==string_id) {
+                            func = [this](Ptr& a, Ptr& b){
+                                return strcmp(
+                                    (const char*)resolve_to_col(*(Ptr*)resolve_ptr(a)).sget(a.sidx),
+                                    (const char*)resolve_to_col(*(Ptr*)resolve_ptr(b)).sget(b.sidx)
+                                ) < 0;
+                            };
+                        }
+                    }
+                    else if(sortkind=="desc"){
+                        if(datatype==int_id) {
+                            func = [this](Ptr& a, Ptr& b){
+                                return *(int*)resolve_ptr(a) > *(int*)resolve_ptr(b);
+                            };
+                        } else if(datatype==float_id) {
+                            func = [this](Ptr& a, Ptr& b){
+                                return *(float*)resolve_ptr(a) > *(float*)resolve_ptr(b);
+                            };
+                        } else if(datatype==string_id) {
+                            func = [this](Ptr& a, Ptr& b){
+                                return strcmp(
+                                    (const char*)resolve_to_col(*(Ptr*)resolve_ptr(a)).sget(a.sidx),
+                                    (const char*)resolve_to_col(*(Ptr*)resolve_ptr(b)).sget(b.sidx)
+                                ) > 0;
+                            };
+                        }
+                    } else if(sortkind=="none") {
+                        func = [this](Ptr& a, Ptr& b){
+                            return false;
+                        };
+                    }
+
+                    std::sort((Ptr*)sortcol.storage, (Ptr*)sortcol.storage + sortcol.length(),
+                    [func](Ptr& a, Ptr& b){
+                        return func(*(Ptr*)resolve_ptr(a),*(Ptr*)resolve_ptr(b));
+                    });
+                });
+
+                overload_type(query_id,".\"asIndexString\"","QUERY_ASINDEXSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+                    standard_sub_process(ctx);
+                    Col& sortcol = ctx.node().left().value().data_col();
+                    string output = resolve_string_ticket(ctx.node());
+                    output.col().clear();
+                    output.push("[");
+                    for(int i=0;i<sortcol.length();i++) {
+                        output.push(std::to_string((*(Ptr*)sortcol[i]).sidx));
+                        if(i<sortcol.length()-1) output.push(",");
+                        else output.push("]");
+                    }
+                });
 
             add_function("recycle_node",[this](Context& ctx){
                 standard_sub_process(ctx);

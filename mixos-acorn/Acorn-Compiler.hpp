@@ -2075,6 +2075,9 @@ namespace Acorn {
             register_type("void",void_id,0);
             value_printers[void_id] = [this](Context& ctx){ctx.source()="void!";};
 
+            register_type("Header",header_id,sizeof(Ptr));
+            value_printers[header_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
+
             set_binding_powers(random_combo_id,8,9);
 
             t_handlers[identifier_id] = [this](Context& ctx){resolve_identifier(ctx);};

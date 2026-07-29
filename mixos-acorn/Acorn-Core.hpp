@@ -240,9 +240,11 @@ namespace Acorn {
         switch(ptr.cachelevel) {
             case 0: case 3: {
                 ColColCol& unit = resolve_to_unit(ptr); 
-                CHECK_ERROR_VAL(col2_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to pool because it failed to resolve to a unit"); 
+                DEBUG_ONLY(if(ERROR_FLAG) {return col2_ref;});
+                //CHECK_ERROR_VAL(col2_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to pool because it failed to resolve to a unit"); 
                 ColCol& col = unit[ptr.pool];
-                CHECK_ERROR_VAL(col2_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to pool because it was out of bounds");
+                DEBUG_ONLY(if(ERROR_FLAG) {return col2_ref;});
+                //CHECK_ERROR_VAL(col2_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to pool because it was out of bounds");
                 return col;
             }
             case 2: return *(ColCol*)ptr.cache;
@@ -256,9 +258,11 @@ namespace Acorn {
         switch(ptr.cachelevel) {
             case 0: case 3: case 2: {
                 ColCol& pool = resolve_to_pool(ptr); 
-                CHECK_ERROR_VAL(col1_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to col because it failed to resolve to a pool"); 
+                DEBUG_ONLY(if(ERROR_FLAG) {return col1_ref;});
+                //CHECK_ERROR_VAL(col1_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to col because it failed to resolve to a pool"); 
                 Col& col = pool[ptr.idx];
-                CHECK_ERROR_VAL(col1_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to col because it was out of bounds");
+                DEBUG_ONLY(if(ERROR_FLAG) {return col1_ref;});
+                //CHECK_ERROR_VAL(col1_ref,"Could not resolve Ptr ",Ptr_to_string(ptr)," to col because it was out of bounds");
                 return col;
             }
             case 1: return *(Col*)ptr.cache;
@@ -267,11 +271,15 @@ namespace Acorn {
             return col1_ref;
         }
     }
-    inline void* resolve_ptr(const Ptr& ptr) {
-        return resolve_to_col(ptr)[ptr.sidx];
+    inline void* resolve_ptr(Ptr& ptr) {
+        return (uint8_t*)resolve_to_col(ptr)[ptr.sidx]+ptr.offset();
     }
     inline void* resolve_ptr(Ptr ptr, const uint32_t& idx) {ptr.idx = idx; return resolve_ptr(ptr);}
     inline Col& resolve_to_col(Ptr ptr, const uint32_t& idx) {ptr.idx = idx; return resolve_to_col(ptr);}
+
+    inline Ptr makePtr(ColColCol& unit, uint32_t pool, uint32_t idx = 0, uint32_t sidx = 0) {return Ptr(&unit,pool,idx,sidx);}
+    inline Ptr makePtr(ColColCol& unit, ColCol* pool) {return makePtr(unit,unit.indexof(pool));}
+    inline Ptr makePtr(ColColCol& unit, ColCol& pool) {return makePtr(unit,&pool);}
 
 
     inline Ptr get_ticket_from_unit(Ptr p, uint32_t type_id, uint32_t size, uint32_t tag);
@@ -474,7 +482,6 @@ namespace Acorn {
     size_t value_id = global_reg_id("value"); size_t prefix_value_id = global_reg_id("prefix_value"); size_t suffix_value_id = global_reg_id("suffix_value");
     size_t context_id = global_reg_id("context"); size_t prefix_context_id = global_reg_id("prefix_context"); size_t suffix_context_id = global_reg_id("suffix_context");
 
-
     size_t var_decl_id = global_reg_id("VAR_DECL");
     size_t func_call_id = global_reg_id("FUNC_CALL");
     size_t lambda_id = global_reg_id("LAMBDA");
@@ -492,7 +499,7 @@ namespace Acorn {
     uint32_t backwards_pass_id = global_reg_id("BACKWARDS_PASS");
     uint32_t memory_backwards_pass_id = global_reg_id("MEMORY_BACKWARDS_PASS");
 
-    uint32_t headerpool_id = global_reg_id("headerpool");
+    uint32_t headerpool_id = global_reg_id("headerpool");  uint32_t header_id = global_register_type_ids("header");
     uint32_t messagepool_id = global_reg_id("messagepool");
     uint32_t footerpool_id = global_reg_id("footerpool");
     
@@ -767,7 +774,7 @@ namespace Acorn {
         inline void* get() {
             DEBUG_ONLY(if(safety_check("value:get")){return nullptr;})
             Ptr dataptr = data_ptr();
-            return resolve_to_col(dataptr).get(dataptr.sidx);
+            return resolve_ptr(dataptr);
         }
 
         inline void* sget() {
@@ -1086,6 +1093,69 @@ namespace Acorn {
         uint32_t& from() {return *(uint32_t*)resolve_to_col(*this).qget(message_from_offset+(sidx*message_total_size));}
         uint32_t& to() {return *(uint32_t*)resolve_to_col(*this).qget(message_to_offset+(sidx*message_total_size));}
         uint32_t& status() {return *(uint32_t*)resolve_to_col(*this).qget(message_status_offset+(sidx*message_total_size));}
+    };
+
+
+    struct Header : Ptr {
+        Header() {}
+        Header(Ptr p) : Ptr(p) {}
+
+        ColCol& col() {return resolve_to_pool(*this);}
+        ColColCol& col3() {return resolve_to_unit(*this);}
+
+        uint32_t add_ribbon(std::string key = "") {
+            uint32_t at = col().length();
+            create_column(col(),sizeof(Ptr),ptr_id);
+            if(!key.empty()) {
+                col().get(at).label = key;
+                CCol c; c.index = at; c.hash = hashBytes(key.data(),key.length()); c.tag = string_id; c.size = key.length(); c.push(key.data());
+                col().cells.scan_for_slot(c);
+            } else {
+                col().get(at).label = "Ribbon";
+            }
+            return at;
+        }
+
+        Col& ribbon(std::string ribbon_label = "") {
+            if(!col().empty()) {
+                if(ribbon_label.empty()) {
+                    return col().get(0);
+                } else {
+                    void* data = col().Col::get(ribbon_label);
+                    CHECK_ERROR_VAL(col1_ref,"No ribbon found with label ",ribbon_label);
+                    return *(Col*)data;
+                }
+            } else {
+                throw_error("Header:ribbon header is empty!");
+                return col1_ref;
+            }
+        }
+        void* get(const std::string& label, std::string ribbon_label = "") {
+            Col& col = ribbon(ribbon_label);
+            CHECK_ERROR_VAL(nullptr,"Invalid ribbon in get");
+            void* data = col.get(label);
+            CHECK_ERROR_VAL(nullptr,"Label ",label," wasn't found in get");
+            Ptr p = *(Ptr*)data;
+            if(p.cachelevel==2) p.cache = this;
+            return resolve_ptr(p);
+        }
+
+        string getString(const std::string& label,std::string ribbon_label = "") {
+            void* got = get(label,ribbon_label);
+            CHECK_ERROR_VAL(deadptr,"Label ",label," wasn't found in getString");
+            return (string&)*(Ptr*)got;
+        }
+        void putString(const std::string& label, const std::string& str, std::string ribbon_label = "") {
+            Col& ribcol = ribbon(ribbon_label);
+            uint32_t col_at = col().indexof(&ribcol);
+            CHECK_ERROR("Invalid ribbon in putString");
+            uint32_t header_at = col3().indexof(&col());
+            Ptr str_ticket(&col3(),header_at,create_column(col3()[header_at],sizeof(Ptr),string_id,true),0);
+            Ptr char_ticket(&col3(),header_at,create_column(col3()[header_at],1,char_id,true),0);
+            resolve_to_col(str_ticket).push((void*)&char_ticket);
+            ((string)char_ticket) = str;
+            col().get(col_at).put(label,(void*)&str_ticket,string_id);
+        }
     };
 
 
@@ -1415,6 +1485,8 @@ namespace Acorn {
         std::string Ptr_as_string(Ptr p) {
             if(p.specialization==_DEADSPEC) {
                 return "x|x|x";
+            } else if(p.cachelevel==1||p.cachelevel==2) {
+                return Ptr_to_string(p,p.cachelevel);
             }
 
             if(ERROR_FLAG) {
@@ -1776,7 +1848,7 @@ namespace Acorn {
                 Ptr p = *(Ptr*)data;
                 if(p.specialization==_DEADSPEC) return "x|x|x";
                 return Ptr_to_string(p,p.cachelevel);
-            } else if(tag==node_id||tag==value_id||tag==context_id||tag==function_id) {
+            } else if(is_ptr_alias(tag)||tag==function_id) {
                 return Ptr_as_string(*(Ptr*)data);
             } else if(tag==ptr4_id) {
                 Ptr4 p = *(Ptr4*)data;
@@ -2146,6 +2218,7 @@ namespace Acorn {
             to_return.put(ptr_id,true); to_return.put(string_id,true); 
             to_return.put(node_id,true); to_return.put(value_id,true); to_return.put(context_id,true);
             to_return.put(col_id,true); to_return.put(colcol_id,true); to_return.put(colcolcol_id,true);
+            to_return.put(header_id,true);
             return to_return;
         }
         map<uint32_t,bool> ptr_alias_lookup = init_ptr_aliases();
@@ -2397,12 +2470,22 @@ namespace Acorn {
             uint32_t index = find_poolidx(pools,tag,nth);
             return pools[index];
         }
+        ColCol* find_pool(ColColCol& pools, uint32_t tag, uint32_t nth = 0) {
+            return find_pool(ColColCol_to_group(pools),tag,nth);
+        }
 
         Message make_message(ColColCol& in, uint32_t from, uint32_t to, uint32_t status) {
             Message m = Ptr(&in,0,push_column(in[0],message_total_size,message_id),0);
             resolve_to_col(m).heterogenous = true;
             m.from() = from; m.to() = to; m.status() = status;
             return m;
+        }
+
+        Header emplace_message(ColColCol& in, uint32_t status = 0) {
+            Header header = make_header(in);
+            header.add_ribbon();
+            make_message(in,header.pool,header.pool+1,status);
+            return header;
         }
 
         void send_message(list<ColCol*> messagepools) {
@@ -2433,29 +2516,23 @@ namespace Acorn {
         //The pool needs to be in types
         void send_message(uint32_t pool) {send_message({&types[pool]});}
 
-
-        uint32_t make_headerpool(std::string send_to, std::string message) {
-            uint32_t from = types.length();
-            ColCol tmsg; tmsg.tag = headerpool_id;
-            types.push(tmsg);
-            ColCol& msg = types[from];
-            add_column(msg,sizeof(Ptr),ptr_id);
-            Ptr strptr = get_ticket(from,sizeof(Ptr),string_id);
-            Ptr str = get_ticket(from,1,char_id);
-            ((string&)str) = send_to;
-            resolve_to_col(strptr).push((void*)&str);
-            msg[0].put("Send to",(void*)&strptr,string_id);
-
-            strptr = get_ticket(from,sizeof(Ptr),string_id);
-            str = get_ticket(from,1,char_id);
-            ((string&)str) = message;
-            resolve_to_col(strptr).push((void*)&str);
-            msg[0].put("Message",(void*)&strptr,string_id);
-
-            return from;
+        Header make_header(ColColCol& in) {
+            uint32_t at = in.length();
+            ColCol pool; pool.tag = headerpool_id;
+            in.push(pool);
+            return Ptr(&in,at,0,0);
         }
+
+        uint32_t make_headerpool(ColColCol& in, std::string send_to, std::string message) {
+            Header header = make_header(in);
+            header.add_ribbon();
+            header.putString("Send to", send_to);
+            header.putString("Message", message);
+            return header.pool;
+        }
+
         void send_message(std::string to, std::string message) {
-            send_message(make_headerpool(to,message));
+            send_message(make_headerpool(types,to,message));
         }
 
         uint32_t courier_type_id = 0;
@@ -2493,12 +2570,12 @@ namespace Acorn {
                     // unit->print_column(resolve_to_col(messages[i]));
                     Message msg = messages[i];                
                     if(msg.status()==0) {
-                        list<ColCol*> sample =  unit->gather_pools(unit->sendunit,msg.from(),msg.to());
-                        ColCol* header = find_pool(sample,headerpool_id);
-                        if(header) {
-                            Col& ribbon = header->get(0);
-                            if(ribbon.hasKey("Send to")) {
-                                string send_to_list = *(Ptr*)resolve_ptr(*(Ptr*)ribbon.get("Send to"));
+                        list<ColCol*> sample = unit->gather_pools(unit->sendunit,msg.from(),msg.to());
+                        ColCol* header_ptr = find_pool(sample,headerpool_id);
+                        if(header_ptr) {
+                            Header header = makePtr(unit->sendunit,header_ptr);
+                            if(header.ribbon().hasKey("Send to")) {
+                                string send_to_list = header.getString("Send to");
                                 list<std::string> send_to = split_str(send_to_list.to_std(),',');
 
                                 //Has valid recipiants
@@ -3591,10 +3668,8 @@ namespace Acorn {
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     } else {
                         adopt_ptrs(msgpools,&msgpools);
-                        ColCol& header = *find_pool(ColColCol_to_group(msgpools),headerpool_id);
-                        Col& ribbon = header[0];
-                        string msg = (string&)*(Ptr*)resolve_ptr(*(Ptr*)ribbon.get("Message"));
-                        print(unit_label," recived a message: ",msg);
+                        Header header = makePtr(msgpools,find_pool(msgpools,headerpool_id));
+                        print(unit_label," recived a message: ",header.getString("Message"));
                     }
                 }
             });

@@ -1,10 +1,27 @@
-ColCol pool = create_pool;
-Ptr c = pool.add; c.tag(#int); c.element_size(4);
-c.put("A",3); c.put("B",9); c.put("C",12); c.put("D",19);
+Ptr int p;
+p.put("One",1); p.put("Two",2); p.put("Three",3);
+print(p.get("One"),p.get("Three"),p.get("Two"));
 
-c.getOrPut("G") = 55;
-c.getOrPut("NUMS") = 33;
+ColColCol t = utypes;
+ColCol pool = utypes.add;
 
-DEBUG_ROOT;
+pool.label("Test Pool");
 
-dump_pool(pool,true);
+Ptr ribbon = pool.add;
+ribbon.tag(#int); ribbon.element_size(4);
+ribbon.push(6); ribbon.push(3);
+
+pool.push(p);
+
+Ptr p2 = pool.add;
+p2.tag(#int); p2.element_size(4);
+p2.put("Testing",36); p2.put("Other",99);
+
+ColCol cc = utypes.get(15);
+
+cc.get(1).label("Pushed pool");
+cc.get(2).label("Created pool");
+
+print("Indexof 1: ",pool.indexof(p2)," OR ",pool.indexof(pool.get(1)));
+
+dump_unit(true);

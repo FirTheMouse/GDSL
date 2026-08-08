@@ -163,11 +163,12 @@ namespace Acorn {
     //1=sidx valid, cache is a col
     //2=idx valid, cache is a ColCol
     //3=pool valid, cache is a ColColCol
+    //4=subunit valid, cache is a PtrColColCol
     
     struct Ptr {
-        Ptr(uint32_t _device, uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+        Ptr(uint32_t _unit, uint32_t _subunit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
-            device = _device; unit = _unit; pool = _pool; idx = _idx; sidx = _sidx;
+            unit = _unit; subunit = _subunit; pool = _pool; idx = _idx; sidx = _sidx;
             specialization = 1;
         }
         Ptr(uint32_t _unit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
@@ -189,6 +190,12 @@ namespace Acorn {
             memset(this, 0, sizeof(Ptr));
             sidx = _sidx;
             specialization = 1;
+        }
+        Ptr(void* _cache, uint32_t _subunit, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
+            memset(this, 0, sizeof(Ptr));
+            subunit = _subunit; pool = _pool; idx = _idx; sidx = _sidx;
+            cache = _cache; cachelevel = 4;
+            specialization = 2;
         }
         Ptr(void* _cache, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
@@ -221,33 +228,32 @@ namespace Acorn {
         uint16_t gen;
         uint8_t specialization; 
         uint8_t cachelevel;
-        uint32_t device; 
         uint32_t unit; 
+        uint32_t subunit; 
         uint32_t pool;
         uint32_t idx;
         uint32_t sidx;
 
         inline bool operator==(const Ptr& other) const {
             return pool == other.pool && idx == other.idx && sidx == other.sidx && 
-                unit == other.unit && device == other.device &&
+                unit == other.unit && subunit == other.subunit &&
                 cachelevel == other.cachelevel && gen == other.gen &&
                 (cachelevel == 0 ? (zone == other.zone && region == other.region) : (cache == other.cache));
         }
         inline bool operator!=(const Ptr& other) const {return !(*this == other);}
         inline uint32_t& operator[](uint32_t field) {
             switch(field) {
-                case 4: return unit;
+                case 5: return unit;
+                case 4: return subunit;
                 case 3: return pool;
                 case 2: return idx;
                 case 1: return sidx;
-                case 0: return device; //Kludge: device is offset
                 default: return sidx;
             }
         }
-
-        //Kludge using offset as an offset mechanism, Ptr's shape right now isn't what it's final form should be
-        //because it needs to be dynamic, it'll probably be just a list of fields like a string rather than a fixed set.
-        uint32_t& offset() { return *(uint32_t*)&device; }
+        uint32_t offset() {
+            return 0; //Currently not doing anything, but for future metaprogramming, left as a stub so it's easy to add when space is found.
+        }
     };
     static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
@@ -436,6 +442,7 @@ namespace Acorn {
     struct CCol : QCol {
         CCol() {}
         CCol(uint32_t _size) : element_size(_size) {}
+        CCol(uint32_t _size, uint32_t _tag) : element_size(_size), tag(_tag) {}
         CCol(QCol q) : QCol(q) {}
         CCol(const CCol& o) : QCol(o) {
             element_size = o.element_size;
@@ -597,7 +604,11 @@ namespace Acorn {
         uint32_t length() const {return capacity;}
         void nullstorage() {storage = nullptr;}
         void clear() {
+            for(uint32_t i = 0; i < capacity; i++) {get(i).~CCol();}
             QCol::clear();
+            free(storage);
+            capacity = 4;
+            storage = new uint8_t[capacity*sizeof(CCol)];
         }
         bool empty() const {return size==0;}
 
@@ -744,6 +755,7 @@ namespace Acorn {
     struct Col : CCol {
         Col() {}
         Col(uint32_t _size) :  CCol(_size) {}
+        Col(uint32_t _size, uint32_t _tag) :  CCol(_size,_tag) {}
         Col(const Col& o) : CCol((const CCol&)o), heterogenous(o.heterogenous), label(o.label), cells(o.cells) {}
         Col(CCol q) : CCol(q) {}
         Col(Col&& o) noexcept : CCol(std::move(o)), heterogenous(o.heterogenous),label(std::move(o.label)), cells(std::move(o.cells)), free(std::move(o.free)) {}
@@ -771,14 +783,24 @@ namespace Acorn {
         inline void* operator[](uint32_t index) {return get(index);}
         inline void* last() {return qget(size-(element_size));}
 
-        void qput(const void* element, const void* key, uint32_t key_size, uint32_t key_tag) {
+        CCol makecell(uint32_t idx, const void* key, uint32_t key_size, uint32_t key_tag) {
             CCol c;
             c.element_size = key_size; 
             c.tag = key_tag;
             c.hash = hashBytes(key, key_size);
-            c.index = length();
+            c.index = idx;
             c.push(key);
+            return c;
+        }
+
+        void qput(const void* element, const void* key, uint32_t key_size, uint32_t key_tag) {
+            CCol c = makecell(length(),key,key_size,key_tag);
             push(element);
+            cells.scan_for_slot(c);
+        }
+
+        void addcell(uint32_t idx, const void* key, uint32_t key_size, uint32_t key_tag) {
+            CCol c = makecell(idx,key,key_size,key_tag);
             cells.scan_for_slot(c);
         }
 

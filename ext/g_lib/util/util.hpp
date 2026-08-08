@@ -225,7 +225,9 @@ inline list<std::string> listFilesInDirectory(const std::string& path) {
         FindClose(h);
     #else
         DIR* dir = opendir(path.c_str());
-        if(!dir) { print(red("listFilesInDirectory: failed to open "+path)); return files; }
+        if(!dir) { 
+            //print(red("listFilesInDirectory: failed to open "+path)); 
+            return files; }
         struct dirent* entry;
         while((entry = readdir(dir)) != nullptr) {
             if(entry->d_type == DT_REG && entry->d_name[0] != '.')

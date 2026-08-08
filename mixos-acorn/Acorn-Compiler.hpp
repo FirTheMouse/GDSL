@@ -287,8 +287,6 @@ namespace Acorn {
         size_t comment_id = reg_id("COMMENT");
         size_t single_quote_id = add_token('\'',"SINGLE_QUOTE");
 
-        bool prevent_tokenizer_position_reset = false;
-
         Node tokenize(const std::string& code) {
 
             tokenized_keywords.clear(); 
@@ -737,6 +735,7 @@ namespace Acorn {
 
         map<char,bool> registered_opperators;
         list<uint32_t>  registered_opperator_ids;
+
         size_t add_binary_operator(char c, const std::string& f, int lbp, int rbp, int use_id = -1) {
             size_t id = use_id;
             if(id==-1) {
@@ -790,6 +789,13 @@ namespace Acorn {
             t_handlers[id] = handler;
             t_handlers[unary_id] = handler;
 
+            r_handlers[id] = [this](Context& ctx){
+                if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
+                standard_sub_process(ctx);
+                resolve_overload(ctx);
+                if(!is_live(ctx.node().value())) ctx.node().value(make_value(void_id,0));
+            };
+
             Handler shandler = [this](Context& ctx){
                 if(!ctx.node().children().empty()) {
                     standard_direct_pass(ctx.node());
@@ -833,6 +839,8 @@ namespace Acorn {
         uint32_t qmark_id = add_binary_operator('?',"QMARK",1,3);
         uint32_t property_id = add_binary_operator(':',"COLON",3,6);
         uint32_t hash_id = add_binary_operator('#',"HASH",5,3); //This may also be set in acorn_script right now because I was testing it out
+
+        uint32_t group_id = add_binary_operator('[',"GROUP",11,12,reg_id("GROUP"));
 
         uint32_t  add_binding_token_combo(const std::string& f, int lbp, int rbp, char a, char b, char c = '\0', char d = '\0') {
             uint32_t id = add_token_combo(f,a,b,c,d);
@@ -918,8 +926,8 @@ namespace Acorn {
 
             discard_types.push_if_absent(return_id);
 
-            registered_opperators['['] = true; //Does this belong here? Possibly not, possibly yes
-            registered_opperator_ids.push_if_absent(lbracket_id);
+            // registered_opperators['['] = true; //Does this belong here? Possibly not, possibly yes
+            // registered_opperator_ids.push_if_absent(lbracket_id);
             //It's so we can overload on lbrackets
 
             a_handlers.default_function = [this](Context& ctx) {
@@ -1004,7 +1012,7 @@ namespace Acorn {
                         node_col left_from = ctx.result();
                         if(i>0) {
                             on_left = ctx.result().get(i-1);
-                            while(!on_left.children().empty()&&on_left.type()!=lbracket_id&&on_left.type()!=lparen_id) {
+                            while(!on_left.children().empty()&&on_left.type()!=group_id&&on_left.type()!=lparen_id&&on_left.type()!=lbracket_id) {
                                 left_from = on_left.children();
                                 on_left = on_left.children().last();
                             }
@@ -1013,13 +1021,14 @@ namespace Acorn {
                             gathered.reverse();
 
                             if(close_id!=lparen_id||(ctx.result().length()<i+1&&ctx.result().get(i+1).type()!=rbracket_id)) { //So we can call functions inside brackets like arr[stoi(s)];
-                                if(is_live(on_left)&&on_left.type()==lbracket_id) { //For lambda arguments and lambda calls from indexed lists like arr[i](args)
+                                if(is_live(on_left)&&(on_left.type()==group_id||on_left.type()==lbracket_id)) { //For lambda arguments and lambda calls from indexed lists like arr[i](args)
                                     for(auto g : gathered) on.children() << g;
                                     if(close_id==lparen_id) {
                                         on.type(arguments_id);
                                         on_left.children().push(on_from==ctx.result()?ctx.result().take(i):on_from.pop());
                                         ctx.index(i+(on_from==ctx.result()?1:0)); //I'm not sure if this is the right index or not, it should be noticble if it causes issues though
-                                    } else if(close_id==lbracket_id) { //For nested arrays like arr[0][1][2]
+                                    } else if(close_id==lbracket_id) { //For nested arrays like arr[0][1][2] 
+                                        //^ this is probably unessecary now that we promote lbrackets to groups.
                                         on.children().insert(0, left_from==ctx.result()?ctx.result().take(i-1):left_from.pop());
                                         ctx.index(i-1);
                                     }
@@ -1047,6 +1056,8 @@ namespace Acorn {
                                 }
 
                                 on.quals() << token_on; //Copy the lparen
+                            } else {
+                                on.type(group_id); //Promote the lbracket to a group instead, so it can be bound
                             }
                             on.quals() << turn_into_token(ctx.node()); //Copy the rparen
 
@@ -1309,7 +1320,7 @@ namespace Acorn {
                     for(int c=0;c<node.children().length();c++) {
                         place_node_in_scope(node.children()[c],node.scopes()[0]);
                     }
-                } else {
+                } else if(ctx.root().type()!=dot_id) { //To stop scoped dot overloads from registering as type declerations
                     node.type(type_decl_id);
                     node.value(make_type_value(node.name().to_std(),0));
                     node.value().type_scope(node.scopes()[0]);
@@ -1445,7 +1456,7 @@ namespace Acorn {
             if(!expr.children().empty()) {
                 Node op = expr.children()[0];
                 root_type = op.type();
-                if(op.name().length()==1&&instr.length()>1&&instr.find(op.name().to_std())==0&&op.type()!=lbracket_id) {
+                if(op.name().length()==1&&instr.length()>1&&instr.find(op.name().to_std())==0&&op.type()!=group_id) {
                     root_type-=2; //Convert to normal version if it's on the left side, so +string parses as plus_unary, but is actually just normal plus
                     //Only single char ops can be unary form so token combos don't need this
                 }
@@ -1755,13 +1766,13 @@ namespace Acorn {
                             subcol.clear(); subcol.element_size = subsize; subcol.tag = subtype;
                         } else {
                             //print("Regnerating subp");
-                            subp = get_ticket(lp.pool,subsize,subtype);
+                            subp = get_ticket(lp.pool,subsize,subtype,&resolve_to_subunit(lp));
                             resolve_to_col(lp).set(lp.sidx,(void*)&subp);
                         }
                     }
                 } else if(subtype!=0&&subsize!=0) {
                     //print("Replacing subp");
-                    subp = get_ticket(lp.pool,subsize,subtype);
+                    subp = get_ticket(lp.pool,subsize,subtype,&resolve_to_subunit(lp));
                     resolve_to_col(lp).push((void*)&subp);
                 }
             }
@@ -1772,7 +1783,7 @@ namespace Acorn {
                     col.element_size = sizeof(Ptr); col.tag=alias;
                     lv.size(sizeof(Ptr)); lv.type(alias);
                     col.clear();
-                    subp = get_ticket(lp.pool,subsize,subtype);
+                    subp = get_ticket(lp.pool,subsize,subtype,&resolve_to_subunit(lp));
                     resolve_to_col(lp).push((void*)&subp);
                 } else {
                     //print("Replacing");
@@ -2055,6 +2066,7 @@ namespace Acorn {
             register_type("int",int_id,4);
             register_type("float",float_id,4);
             register_type("bool",bool_id,1);
+            register_type("char",char_id,1);
             register_type("string",string_id,sizeof(Ptr));
             register_type("Node",node_id,sizeof(Ptr));
             register_type("Value",value_id,sizeof(Ptr));
@@ -2067,6 +2079,8 @@ namespace Acorn {
             value_printers[colcol_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
             register_type("ColColCol",colcolcol_id,sizeof(Ptr));
             value_printers[colcolcol_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
+            register_type("PtrColColCol",subunit_id,sizeof(Ptr));
+            value_printers[subunit_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
 
             register_type("func",function_id,sizeof(Ptr));
             value_printers[function_id] = [this](Context& ctx){ctx.source(Ptr_as_string(*(Ptr*)ctx.value().get()));};
@@ -2099,7 +2113,7 @@ namespace Acorn {
                 fire_quals(ctx,ctx.node().value());
             };
 
-            t_handlers[lbracket_id] = [this](Context& ctx){
+            t_handlers[group_id] = [this](Context& ctx){
                 if(!ctx.node().scopes().empty()) {
                     ctx.node().type(lambda_id);
                     ctx.node().value(make_value(function_id,sizeof(Ptr)));
@@ -2209,7 +2223,13 @@ namespace Acorn {
                     Node right = ctx.node().children()[1];
                     Value rv = right.value();
                     Value lv = left.value();
-                    assign(lv,rv);
+                    if(left.type()==to_decl_id(amp_id)) {
+                        left.value().data_ptr(right.value().data_ptr());
+                    } else if(left.type()==var_decl_id&&right.value().type()!=string_id) {
+                        left.set(right.get());
+                    } else {
+                        assign(lv,rv);
+                    }
                     // DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
                     
                     // //Col& lcol = resolve_to_col(lp);
@@ -2425,6 +2445,9 @@ namespace Acorn {
                     Node closer = copy_as_token(ctx.node().quals()[0]);
                     closer.x(at_x); closer.y(at_y);
                     ctx.node().quals() << closer;
+                    if(ctx.node().name().length()==1) {
+                        ctx.node().type(char_id);
+                    }
                 } else if(c == '\\' && ctx.index()+1<ctx.source().length()) {
                     char next = ctx.source().at(ctx.index() + 1);
                     switch(next) {

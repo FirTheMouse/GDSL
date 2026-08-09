@@ -605,10 +605,12 @@ namespace Acorn {
         void nullstorage() {storage = nullptr;}
         void clear() {
             for(uint32_t i = 0; i < capacity; i++) {get(i).~CCol();}
-            QCol::clear();
-            free(storage);
+            delete[] storage;  // free the buffer once
+            storage = nullptr;
+            size = 0;
             capacity = 4;
             storage = new uint8_t[capacity*sizeof(CCol)];
+            memset(storage, 0, capacity*sizeof(CCol));
         }
         bool empty() const {return size==0;}
 
@@ -625,7 +627,7 @@ namespace Acorn {
             for(int i=0;i<old_capacity;i++) {
                 CCol& c = *(CCol*)(oldPtr+(i*sizeof(CCol)));
                 if(c.storage) {
-                    scan_for_slot(c);
+                    scan_for_slot(std::move(c));
                 }   
             }
             delete[] oldPtr;
@@ -658,6 +660,7 @@ namespace Acorn {
                 }
                 if(cell_distance_from_home(c.hash,pos)>cell_distance_from_home(existing.hash,pos)) {
                     CCol copy_of_existing = existing;
+                    get(pos).~CCol();
                     memcpy(&storage[pos*sizeof(CCol)], (void*)&c, sizeof(CCol));
                     c.storage = nullptr;
                     scan_for_slot(std::move(copy_of_existing));

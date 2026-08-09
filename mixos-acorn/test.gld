@@ -1,27 +1,68 @@
-Ptr int p;
-p.put("One",1); p.put("Two",2); p.put("Three",3);
-print(p.get("One"),p.get("Three"),p.get("Two"));
+##
+    Ptr string abbv;
+    abbv.push("TX"); abbv.push("GA"); abbv.push("FL");
 
-ColColCol t = utypes;
-ColCol pool = utypes.add;
+    Ptr int tally_by_state;
+    global void compute_tally_by_state(int depth) {
+        print(depth," BEFORE: ");
+        print_col(abbv);
+        if(depth>3) {return;}
+        else {compute_tally_by_state(depth+1);}
+        for(int i=0;i<abbv.length;i++) {
+            string abvr = abbv[i];
+            if(tally_by_state.has(abvr)) {
+                print("Tally by state has ",abvr,": ",tally_by_state[abvr]);
+            } else {
+                print("Added tally ",abvr,": ",3-i);
+                tally_by_state.put(abvr,3-i);
+            }
+        }
+        print(depth," AFTER: ");
+        print_col(abbv);
+    }
 
-pool.label("Test Pool");
+    global void test_string_recursion(int depth) {
+        print(depth," BEFORE: ");
+        string s;
+        s+="W";
+        print(cast_to(#ptr,s),"> ",s);
+        if(depth>3) {return;}
+        else {test_string_recursion(depth+1);}
+        s+="U";
+        print(depth," AFTER: ");
+        print(cast_to(#ptr,s),"> ",s);
+    }
 
-Ptr ribbon = pool.add;
-ribbon.tag(#int); ribbon.element_size(4);
-ribbon.push(6); ribbon.push(3);
+    Ptr char wub = "WUB";
+    global void test_string_overwritting(int depth) {
+        print(depth," BEFORE: ");
+        print(wub);
+        if(depth>2) {return;}
+        else {test_string_overwritting(depth+1);}
+        if(true) {
+            print(wub[0]);
+            DEBUG_ROOT_X_BRIEF;
+        }
+        print(depth," AFTER: ");
+        print(wub);
+    }
 
-pool.push(p);
+    global int test_func {
+        print("You called the test func!");
+        return 6;
+    }
+    global int test_func_two {
+        print("You called the second test func!");
+        return 9;
+    }
+##
 
-Ptr p2 = pool.add;
-p2.tag(#int); p2.element_size(4);
-p2.put("Testing",36); p2.put("Other",99);
-
-ColCol cc = utypes.get(15);
-
-cc.get(1).label("Pushed pool");
-cc.get(2).label("Created pool");
-
-print("Indexof 1: ",pool.indexof(p2)," OR ",pool.indexof(pool.get(1)));
-
-dump_unit(true);
+if(true) {
+    print(test_func);
+    Ptr Ptr tfuncs;
+    tfuncs.push(~&test_func); tfuncs.push(~&test_func_two); 
+    DEBUG_ROOT_X_BRIEF;
+    print(tfuncs[0].asTID);  print(tfuncs[1].asTID);
+    string s = ~&test_func_two.asTID;
+    print(s);
+}

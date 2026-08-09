@@ -35,7 +35,7 @@ char read_key() {
         return ' ';
     #else
         char c;
-        read(STDIN_FILENO, &c, 1);
+        ssize_t t = read(STDIN_FILENO, &c, 1);
         return c;
     #endif
 }
@@ -57,8 +57,8 @@ int read_arrow() {
         char c = read_key();
         if(c == '\x1b') {
             char seq[2];
-            read(STDIN_FILENO, &seq[0], 1);
-            read(STDIN_FILENO, &seq[1], 1);
+            ssize_t r1 = read(STDIN_FILENO, &seq[0], 1);
+            ssize_t r2 = read(STDIN_FILENO, &seq[1], 1);
             if(seq[0]=='[') {
                 if(seq[1]=='C') return 1; //>
                 if(seq[1]=='D') return -1; //<
@@ -165,7 +165,7 @@ namespace Acorn {
 
                 if((node.x()<0.0f||node.y()<0.0f)&&!node.quals().empty()) {
                     Node q = node.quals()[0];
-                    reversions.put(key,std::make_pair<float,float>(node.x(),node.y()));
+                    reversions.put(key,std::make_pair(node.x(),node.y()));
                     node.x(q.x());
                     node.y(q.y());
                 }

@@ -334,3 +334,33 @@ query;
 endquery;
 
 DEBUG_ROOT_X_BRIEF;
+
+Test 11 standard data structure testing:
+
+Ptr int p;
+p.put("One",1); p.put("Two",2); p.put("Three",3);
+print(p.get("One"),p.get("Three"),p.get("Two"));
+
+ColColCol t = utypes;
+ColCol pool = utypes.add;
+
+pool.label("Test Pool");
+
+Ptr ribbon = pool.add;
+ribbon.tag(#int); ribbon.element_size(4);
+ribbon.push(6); ribbon.push(3);
+
+pool.push(p);
+
+Ptr p2 = pool.add;
+p2.tag(#int); p2.element_size(4);
+p2.put("Testing",36); p2.put("Other",99);
+
+ColCol cc = utypes.get(15);
+
+cc.get(1).label("Pushed pool");
+cc.get(2).label("Created pool");
+
+print("Indexof 1: ",pool.indexof(p2)," OR ",pool.indexof(pool.get(1)));
+
+dump_unit(true);

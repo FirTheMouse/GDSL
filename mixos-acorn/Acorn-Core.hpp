@@ -1931,7 +1931,7 @@ namespace Acorn {
                 return std::string(1,*(char*)data);
             } else if(tag==string_id) {
                 Ptr ptr = *(Ptr*)data;
-                if(ptr.pool>=types.length()||ptr.idx>=types[ptr.pool].length()) {
+                if(ptr.pool>=resolve_to_subunit(ptr).length()||ptr.idx>=resolve_to_subunit(ptr)[ptr.pool].length()) {
                     return "STRING ERROR "+std::to_string(ptr.pool)+"|"+std::to_string(ptr.idx)+"|"+std::to_string(ptr.sidx);
                 }
                 std::string content = string(ptr).to_std();
@@ -2231,7 +2231,17 @@ namespace Acorn {
                 print(heterogenous_col_to_string(col));
             } else {
                 for(int i=0;i<col.length();i++) {
-                    print(i,": ",tag_to_str(col.tag,col[i]));
+                    std::string line = "";
+                    CCol* cell = col.cells.find_cell(i);
+                    if(cell) {
+                        if(cell->tag==string_id) {
+                            line += "["+((QString&)*cell).to_std()+"] ";
+                        } else {
+                            line += "["+labels[cell->tag]+"?] ";
+                        }
+                    }
+                    line += tag_to_str(col.tag,col[i]);
+                    print(i,": ",line);
                 }
             }
         }
@@ -4020,15 +4030,18 @@ namespace Acorn {
         map<uint32_t,Handler> value_printers; 
 
         std::string value_as_string(Value v) {
-            Context ctx = make_context(); ctx.value(v);
-            if(value_printers.hasKey(v.type())) {
-                value_printers[v.type()](ctx);
-            } else {
-                return "(add value printer for "+labels[v.type()]+")";
+            if(is_live(v)) {
+                Context ctx = make_context(); ctx.value(v);
+                if(value_printers.hasKey(v.type())) {
+                    value_printers[v.type()](ctx);
+                } else {
+                    return "(add value printer for "+labels[v.type()]+")";
+                }
+                std::string str = ctx.source().to_std();
+                deep_recycle_context(ctx);
+                return str;
             }
-            std::string str = ctx.source().to_std();
-            deep_recycle_context(ctx);
-            return str;
+            return  "[DEAD VALUE]";
         }
 
         std::string value_as_string(Ptr dataptr) {
@@ -4107,7 +4120,8 @@ namespace Acorn {
 
         std::string enrich_error_msg(Context& ctx, std::string& msg) {
             std::string to_return = "";
-            to_return += context_trace_to_string(ctx);
+            //to_return += context_trace_to_string(ctx);
+            to_return += context_info(ctx); //Less verbose form for when I'm working in TwigSnap
             to_return+=red("\nERROR IN "+labels[ctx.pass()]);
             float x = -1.0f; float y = -1.0f;
             if (node_source_position(ctx.node(), x, y)) {

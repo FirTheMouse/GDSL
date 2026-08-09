@@ -834,6 +834,7 @@ namespace Acorn {
         size_t slash_id = add_binary_operator('/',"SLASH", 4, 5);
         size_t caret_id = add_binary_operator('^',"CARET", 8, 4);
         size_t amp_id = add_binary_operator('&',"AMPERSAND", 4, 8);
+        size_t tilde_id = add_binary_operator('~', "TILDE", 4, 8);
         size_t dot_id = add_binary_operator('.', "DOT", 8, 9);
         size_t pipe_id = add_binary_operator('|', "PIPE", 9, 8);
         uint32_t qmark_id = add_binary_operator('?',"QMARK",1,3);
@@ -882,6 +883,7 @@ namespace Acorn {
         uint32_t amp_amp_id =  add_binding_token_combo("AMP_AMP",3,3,'&','&');
         uint32_t pipe_pipe_id =  add_binding_token_combo("PIPE_PIPE",2,2,'|','|');
 
+        uint32_t tilde_amp_id = add_binding_token_combo("TILDE_AMP",9,10,'~','&');
         uint32_t random_combo_id = add_token_combo("RANDOM",'|','*','^','+');
 
         uint32_t arguments_id = reg_id("ARGUMENTS"); //For function calls
@@ -912,6 +914,8 @@ namespace Acorn {
             }
         }
 
+        map<uint32_t,bool> intentional_unary;
+
         void init_stage_a() {
             discard_types.push_if_absent(undefined_id);
             discard_types.push_if_absent(end_id);
@@ -926,9 +930,7 @@ namespace Acorn {
 
             discard_types.push_if_absent(return_id);
 
-            // registered_opperators['['] = true; //Does this belong here? Possibly not, possibly yes
-            // registered_opperator_ids.push_if_absent(lbracket_id);
-            //It's so we can overload on lbrackets
+            intentional_unary[tilde_amp_id] = true;
 
             a_handlers.default_function = [this](Context& ctx) {
                 int left_bp = left_binding_power.getOrDefault(ctx.node().type(), -1);
@@ -945,7 +947,7 @@ namespace Acorn {
 
                     //LOG_W(ctx,"ON "+ctx.node().name().to_std());
                     
-                    if(!ctx.left().children().empty()) {
+                    if(!ctx.left().children().empty()&&!intentional_unary.getOrDefault(ctx.left().type(),false)) {
                         if(ctx.left().children().length()==1) {
                             should_steal = true;
                         }
@@ -1492,12 +1494,14 @@ namespace Acorn {
             print(bold_str(ctx.node().name().to_std()),": I see my root is ",green(ctx.root().name().to_std()),", my value type is ",blue(labels[ctx.node().value().type()])," and to my left is ",yellow(is_live(ctx.left())?ctx.left().name().to_std():"nothing"));
         }
 
-        void resolve_overload(Context& ctx) {
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to resolve overloads while another error was flagged")); return;})
+        void resolve_overload(Context& ctx, bool do_subprocess = true) {
+            CHECK_ERROR("Attempted to resolve overloads while another error was flagged");
             if(!is_node_opperator(ctx.root())) return;
             //LOG_W(ctx," resolving overloads");
             // print("RESOLVING: ",node_to_string(ctx.node()));
-            standard_sub_process(ctx); //Consider not doing this
+            if(do_subprocess) {
+                standard_sub_process(ctx); //Consider not doing this
+            }
             if(ctx.index()==0&&is_live(ctx.node().value())) { //If we're the left term
                 if(layouts.hasKey(ctx.node().value().type())) {
                     _layout& l = layouts[ctx.node().value().type()];
@@ -1512,7 +1516,7 @@ namespace Acorn {
                             //print("Deriving value from right_type");
                             right_type = ctx.result().get(1).value().type();
                         } else {
-                            log(yellow("resolve_overload: right term has a dead value: "),node_info(ctx.result().get(1)));
+                            //log(yellow("resolve_overload: right term has a dead value: "),node_info(ctx.result().get(1)));
                             //print(span->on_line->parent->to_string());
                         }
                     } else {
@@ -1565,6 +1569,7 @@ namespace Acorn {
                     }
                 }
             }
+            CHECK_ERROR("An error occured while resolving overloads");
         }
 
         uint32_t static_qual = add_qual("static");
@@ -1601,7 +1606,7 @@ namespace Acorn {
                 if(c.type()==capture_id||c.type()==lambda_id) continue;
                 if(is_live(c.value())) {
                     for(int n=0;n<subvals.length();n++) {
-                        if(subvals.get(n).idx==c.value().idx) goto skipatom;
+                        if(subvals.get(n)==c.value()) goto skipatom;
                     }
                     subvals.push(c.value());
                 }
@@ -1610,10 +1615,23 @@ namespace Acorn {
             }
             for(int s=0;s<scope.scopes().length();s++) {
                 Node subscope = scope.scopes()[s];
-                if(!is_live(subscope.owner())||subscope.owner().idx==scope.idx) {
+                if(!is_live(subscope.owner())||subscope.owner()==scope) {
                     gather_all_values_in_scope(subvals,subscope);
                 }
             }
+        }
+
+        bool data_ptr_is_stackable(Ptr& p) {
+            if(p.cachelevel==3) {
+                return (p.cache==&types)&&p.pool==data_store_id;
+            } else if(p.cachelevel==2) {
+                return p.cache==(&types[data_store_id]);
+            } else if(p.cachelevel==4) {
+                return (p.cache==this)&&p.subunit==0&&p.pool==data_store_id;
+            } else if(p.cachelevel>4) {
+                return p.unit==uid&&p.subunit==0&&p.pool==data_store_id;
+            }
+            return false;
         }
 
         //Add another row to each data column for function calls
@@ -1627,7 +1645,7 @@ namespace Acorn {
                 Value sval = subvals.get(i); //Static values just stay where they are, they don't descend and ascend
                 if(is_live(sval.data_ptr())&&!sval.has_qual(static_qual)) { //This ceremony is becuse if we just did col.push(col.get(0) it would invalidate the column as we push thus breaking the get, so we have to save as temps
                     Ptr dataptr = sval.data_ptr();
-                    if(dataptr.pool!=data_store_id) continue;
+                    if(!data_ptr_is_stackable(dataptr)) continue;
                     uint32_t elem_size = resolve_to_col(dataptr).element_size;
                     list<uint8_t> temp(elem_size);
                     if(resolve_to_col(dataptr).empty()) {
@@ -1666,7 +1684,7 @@ namespace Acorn {
                 Value sval = subvals.get(i);
                 if(is_live(sval.data_ptr())&&!sval.has_qual(static_qual)) {
                     Ptr newptr = sval.data_ptr();
-                    if(newptr.pool!=data_store_id) continue;
+                    if(!data_ptr_is_stackable(newptr)) continue;
                     newptr.sidx = loc;
                     resolve_to_col(sval).qset(value_data_offset,(void*)&newptr,sizeof(Ptr));
                 }
@@ -2038,7 +2056,13 @@ namespace Acorn {
             for(int i=0;i<ctx.node().children().length();i++) {
                 Node c = ctx.node().children()[i];
                 process_node(ctx,c);
-                to_print += value_as_string(c.value());
+                if(is_live(c.value())) {
+                    to_print += value_as_string(c.value());
+                } else {
+                    print(red("compiler:children_to_string Can not print dead value: "));
+                    print(node_to_string(c,1,0,1));
+                    CHECK_ERROR_VAL(to_print,"crash during debug print");
+                }
             }
             return to_print;
         }
@@ -2309,9 +2333,11 @@ namespace Acorn {
                             }
                         } else {
                             throw_error("Layout of "+labels[ltype]+" does not have prop "+prop);
+                            return;
                         }
                     } else {
-                        throw_error("No layout found for type "+labels[ltype]);
+                        //throw_error("No layout found for type "+labels[ltype]);
+                        return;
                     }
 
                     //This is mean to be for inline get syntax like children(0), probably going to be replaced with a proper overload in the future
@@ -2343,10 +2369,10 @@ namespace Acorn {
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
                 Value value = ctx.node().value();
-                if(right.type()==identifier_id) {
+                if(right.type()==identifier_id&&is_live(value)) {
                     Ptr ptr = deadptr;
                     uint32_t rvt = left.value().type();
-                    if(rvt==ptr_id||rvt==node_id||rvt==value_id||rvt==context_id||rvt==string_id) {
+                    if(is_ptr_alias(rvt)) {
                         void* p = left.value().get();
                         DEBUG_ONLY(if(ERROR_FLAG) {return;});
                         ptr = *(Ptr*)p;
@@ -2636,6 +2662,19 @@ namespace Acorn {
                 ctx.node().value().set((void*)&neg);
             };
 
+            r_handlers[tilde_amp_id] = [this](Context& ctx){
+                if(!is_live(ctx.node().value())) ctx.node().value(make_value(node_id,sizeof(Ptr)));
+                else return;
+                resolve_overload(ctx);
+            };
+            x_handlers[tilde_amp_id] = [this](Context& ctx){
+                Node n = deadptr;
+                if(is_live(ctx.node().c0().scope())) {
+                    n = ctx.node().c0().scope().owner();
+                }
+                CHECK_ERROR("Error in tilde_amp");
+                ctx.node().value().set((void*)&n);
+            };
 
             r_handlers[amp_amp_id] = [this](Context& ctx){
                 standard_sub_process(ctx);

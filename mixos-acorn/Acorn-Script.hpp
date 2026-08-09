@@ -176,6 +176,7 @@ namespace Acorn {
                 if(YAPA_level==1&&ctx.node().value().type()==0) {
                     ctx.node().value().type(col.tag);
                     ctx.node().value().size(col.element_size);
+                    resolve_overload(ctx,false);
                 }
                 script_general_get(ptr,col,YAPA_level,ctx.node().right().c0(),false);
                 if(YAPA_level>1) {
@@ -195,6 +196,7 @@ namespace Acorn {
                 if(YAPA_level==1&&ctx.node().value().type()==0) {
                     ctx.node().value().type(col.tag);
                     ctx.node().value().size(col.element_size);
+                    resolve_overload(ctx,false);
                 }
                 script_general_get(ptr,col,YAPA_level,ctx.node().right(),false);
                 if(YAPA_level>1) {
@@ -214,6 +216,7 @@ namespace Acorn {
                 if(YAPA_level==1&&ctx.node().value().type()==0) {
                     ctx.node().value().type(col.tag);
                     ctx.node().value().size(col.element_size);
+                    resolve_overload(ctx,false);
                 }
                 script_general_get(ptr,col,YAPA_level,ctx.node().right().c0());
                 if(YAPA_level>1) {
@@ -231,6 +234,7 @@ namespace Acorn {
                 if(YAPA_level==1&&ctx.node().value().type()==0) {
                     ctx.node().value().type(col.tag);
                     ctx.node().value().size(col.element_size);
+                    resolve_overload(ctx,false);
                 }
                 if(arg.type()==int_id) {
                     int index = *(int*)arg.get();
@@ -312,7 +316,12 @@ namespace Acorn {
                     }
                 } else {
                     if(col.tag==char_id) { //Improve later when I have a proper coercsion system
-                        col.push(ctx.node().right().getString(0).col()[0]);
+                        string str = ctx.node().right().getString(0);
+                        col.reserve(col.length()+str.length());
+                        for(int i=0;i<str.length();i++) {
+                            char c = str.at(i);
+                            col.push((void*)&c);
+                        }
                     } else {
                         col.push(ctx.node().right().c0().value().get());
                     }
@@ -924,7 +933,7 @@ namespace Acorn {
             Col& data = resolve_to_col(ctx.node().getPtr());
             data.clear(); data.cells.clear(); //Later I can do some caching, but for now it's not really going to save any performance over correctness
 
-            QCellCol& cells = resolve_to_pool(ptr).cells;
+            QCellCol& cells = resolve_to_pool(ptr).cells; //Copy
             for(int i=0;i<cells.length();i++) {
                 CCol& cell = cells.get(i);
                 if(cell.storage) {
@@ -1176,6 +1185,14 @@ namespace Acorn {
             uint32_t id = (*(Ptr*)ctx.node().children()[0].value().get()).idx;
             ctx.node().value().set((void*)&id);
         });
+        uint32_t node_astid_id = overload_type(node_id,".\"asTID\"","NODE_ASTID",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+            standard_sub_process(ctx);
+            string output = resolve_string_ticket(ctx.node());
+            Node n = ctx.node().getNode(0);
+            CHECK_ERROR("Bad Node in node_asTID");
+            output = n.name().to_std()+"_"+std::to_string(n.idx);
+        });
+
 
         uint32_t std_sub_proccess_id = add_function("subprocess",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -1776,6 +1793,17 @@ namespace Acorn {
                 Ptr p = string_to_Ptr(s.to_std());
                 ctx.node().value().set((void*)&p);
             },sizeof(Ptr),ptr_id);
+            add_function("capture_node",[this](Context& ctx){
+                string output = resolve_string_ticket(ctx.node());
+                Node n = deadptr;
+                if(ctx.node().c0().type()==func_call_id) {
+                    n = ctx.node().c0().scope().owner();
+                } else {
+                    standard_sub_process(ctx);
+                    n = ctx.node().getNode(0);
+                }
+                output = n.name().to_std()+"_"+std::to_string(n.idx);
+            },sizeof(Ptr),string_id);
 
             add_function("C0",[this](Context& ctx){
                 Node c0 = ctx.sub().node().children()[0];
@@ -1865,6 +1893,11 @@ namespace Acorn {
                 for(int i=from;i<to;i++) {
                     dump_pool(types[i],i,(i==0?clear:false));
                 }
+            });
+            add_function("print_col",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                print_column(resolve_to_col(ptr));
             });
 
             
@@ -2247,7 +2280,7 @@ namespace Acorn {
             x_handlers[to_prefix_id(ptr_id)] = [this](Context& ctx){
                 if(is_live(ctx.value())) {
                     if(ctx.value().sub_type()!=0) {
-                        Ptr ticket = get_ticket(data_store_id,ctx.value().sub_size(),ctx.value().sub_type());
+                        Ptr ticket = get_ticket(name_store_id,ctx.value().sub_size(),ctx.value().sub_type());
                         ctx.value().set((void*)&ticket);
                     }
                 }

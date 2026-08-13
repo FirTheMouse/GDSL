@@ -88,7 +88,7 @@ namespace Acorn {
                     ctx.value().sub_type(ctx.qual().sub_type());
                     ctx.value().type(ctx.qual().type());
                     ctx.value().size(ctx.qual().value().size());
-                    if(is_live(ctx.qual().value().type_scope()))
+                    if(is_live(ctx.qual().value().type_scope())) //<- not sure what this is for, it could screw with type scopes role in provenace, this was written before the new meaning for type scope in 0.7.1
                         ctx.value().type_scope(ctx.qual().value().type_scope());
                 }
             };
@@ -106,6 +106,7 @@ namespace Acorn {
                     ctx.value().size(layouts.get(ctx.value().type()).total_size);
                 }
             };
+            //v this is probably what was causing problems with query, very suspect, investigate later!
             x_handlers[prefix_type] = [this](Context& ctx){
                 if(is_live(ctx.value())&&ctx.value().quals()[0].type()!=ptr_id) { //Beause Ptrs store subtypes in their quals
                     ctx.value().data_col().push_default();
@@ -120,9 +121,11 @@ namespace Acorn {
             return  val;
         }
 
+        map<uint32_t,bool> typeless_quals;
         uint32_t add_qual(const std::string& f, uint32_t size = 0) {
             Value val = make_qual_value(f,size);
             keywords.put(f,val);
+            typeless_quals[val.type()]=true;
             return val.type();
         }
 
@@ -334,7 +337,8 @@ namespace Acorn {
             }
             endline();
             #endif
-            deep_recycle_context(ctx);
+            recycle_column(ctx.source_ptr());
+            recycle_context(ctx);
             return root;
         }
 
@@ -688,7 +692,6 @@ namespace Acorn {
                     n.scopes() << news;
                     //print("Deep copying as ",news.idx);
                     if(n.type()==func_decl_id) {
-                        n.value().type_scope(n.scopes()[i]);
                         n.scopes()[i].owner(n);
                         value_alias_table.put(o.value().idx, n.value());
                         node_alias_table.put(o.scopes()[i].idx, n.scopes()[i]);
@@ -733,6 +736,12 @@ namespace Acorn {
             right_binding_power[id] = rbp;
         }
 
+        void declare_variable(Node node, Value decl_value) {
+            decl_value.sub_type(0);
+            node.value(distribute_value(node.in_scope(), node.name().to_std(), decl_value, node.count_qual(hoisted_id)));
+            node.value().type_scope(node.in_scope()); //The intent here is to provide provenace information, unsure if this should go before the distirbution or afer, and, if it should opperate on decl_value or not.
+        }
+
         map<char,bool> registered_opperators;
         list<uint32_t>  registered_opperator_ids;
 
@@ -767,8 +776,7 @@ namespace Acorn {
                         ctx.node().value().quals().push(value_to_qual(type_term.value()));
                         ctx.node().name(id_term.name().to_std());
                         if(id_term.value().type()==0) { //If this is a decleration
-                            ctx.node().value().sub_type(0);
-                            ctx.node().value(distribute_value(ctx.node().in_scope(), ctx.node().name().to_std(),ctx.node().value(),ctx.node().count_qual(hoisted_id)));
+                            declare_variable(ctx.node(),ctx.node().value());
                             ctx.node().children().clear();
                         } else { //If this is a reinterpret like for a cast
                             ctx.node().children().removeAt(0);
@@ -1142,6 +1150,7 @@ namespace Acorn {
                                 Node newscope = was_on.children().take(c);
                                 was_on.scopes() << newscope;
                                 newscope.owner(was_on);
+                                newscope.name() = was_on.name().to_std();
                                 for(int n=0;n<newscope.children().length();n++){
                                    place_node_in_scope(newscope.children()[n],newscope);
                                 }
@@ -1228,6 +1237,18 @@ namespace Acorn {
             }; 
         }
 
+        //Scan for if this qual is the first one that's a type stamper (or rather, not a typeless)
+        bool is_first_type_qual(Context& ctx) {
+            for(uint32_t i=0;i<ctx.value().quals().length();i++){
+                Node q = ctx.value().quals()[i];
+                if(q==ctx.qual()) {
+                    return true;
+                } //v if it isn't a qual like static, hoisted, or global that doesn't imbue a type.
+                if(!typeless_quals.hasKey(q.type())) return false;
+            }
+            return false;
+        }
+
         void resolve_identifier(Context& ctx) {
             Node node = ctx.node();
             
@@ -1293,7 +1314,6 @@ namespace Acorn {
             fire_quals(ctx, decl_value);
 
             bool has_scope = !node.scopes().empty();
-            bool has_type_scope = is_live(node.value().type_scope());
             bool has_sub_type = node.value().sub_type() != 0;
             
             if(has_scope) {
@@ -1302,9 +1322,8 @@ namespace Acorn {
                 if(has_sub_type) {
                     node.type(func_decl_id);
                     node.scopes()[0] = distribute_node(node.in_scope(),node.name().to_std(),node.scopes()[0],node.count_qual(hoisted_id));
-                    node.value().type_scope(node.scopes()[0]);
-                    node.value().sub_type(0);
-                    node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value(),node.count_qual(hoisted_id)));
+                    declare_variable(node,node.value());
+                    // node.value().type_scope(node.scopes()[0]); <- I don't belive the return value of functions should be descendable by that function, since the return is typically temporary
                     if(node.in_scope().type()==type_scope_id) {
                         std::string nname = node.name().to_std();
                         bool has_opp = false;
@@ -1325,8 +1344,9 @@ namespace Acorn {
                 } else if(ctx.root().type()!=dot_id) { //To stop scoped dot overloads from registering as type declerations
                     node.type(type_decl_id);
                     node.value(make_type_value(node.name().to_std(),0));
-                    node.value().type_scope(node.scopes()[0]);
-                    node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value(), node.count_qual(hoisted_id)));
+                    declare_variable(node,node.value()); //<- this may not be the same as v this, unsure
+                    // node.value().type_scope(node.scopes()[0]);
+                    // node.value(distribute_value(node.in_scope(),node.name().to_std(),node.value(), node.count_qual(hoisted_id)));
                     node.scopes()[0].type(type_scope_id);
                     add_template(node.value().type());
                     keywords.put(node.name().to_std(),node.value());
@@ -1360,15 +1380,16 @@ namespace Acorn {
                             node.in_scope().value_table().put(node.name().to_std(), decl_value); //So we don't distribute into function bodies, we need to alias later via this, as it's per instance
                             layouts[node.in_scope().owner().value().type()].add_prop(node.value().type(),node.value().size(),node.name().to_std(),0,0,decl_value);
                         } else {
-                            node.value(distribute_value(node.in_scope(), node.name().to_std(), decl_value, node.count_qual(hoisted_id)));
+                            declare_variable(node,decl_value);
                         }
                     }
                     node.value().sub_type(0);
                 } else if(has_scope) {
                     node.type(func_call_id);
-                    find_value_in_scope(node); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
-                    if(is_live(node.value().type_scope()))
-                        node.scopes()[0] = node.value().type_scope(); //Swap to the type scope
+                    node.value(node.scope().owner().value());
+                    // find_value_in_scope(node); //Retrive our return value (could probably just do 'found_a_value' skips decl set...)
+                    // if(is_live(node.value().type_scope()))
+                    //     node.scopes()[0] = node.value().type_scope(); //Swap to the type scope
                     // if(!node->children.empty()) {
                     //     node->name.append("(");
                     //     for(auto c : node->children) {node->name.append(c->name+(c!=node->children.last()?",":")"));}
@@ -1418,7 +1439,7 @@ namespace Acorn {
                             //print(yellow("DUCK EQUALS: "),node_to_string(ctx.root()));
                             node.type(var_decl_id);
                             decl_value.type(duck_id);
-                            node.value(distribute_value(node.in_scope(), node.name().to_std(), decl_value, node.count_qual(hoisted_id)));
+                            declare_variable(node,decl_value);
                         } else {
                             //print(magenta("NO  DUCK EQUALS: "),node_info(node));
                         }
@@ -1621,15 +1642,36 @@ namespace Acorn {
             }
         }
 
-        bool data_ptr_is_stackable(Ptr& p) {
+        bool data_ptr_is_in_my(Ptr& p, uint32_t type_id) {
             if(p.cachelevel==3) {
-                return (p.cache==&types)&&p.pool==data_store_id;
+                return (p.cache==&types)&&p.pool==type_id;
             } else if(p.cachelevel==2) {
-                return p.cache==(&types[data_store_id]);
+                return p.cache==(&types[type_id]);
             } else if(p.cachelevel==4) {
-                return (p.cache==this)&&p.subunit==0&&p.pool==data_store_id;
+                return (p.cache==this)&&p.subunit==0&&p.pool==type_id;
             } else if(p.cachelevel>4) {
-                return p.unit==uid&&p.subunit==0&&p.pool==data_store_id;
+                return p.unit==uid&&p.subunit==0&&p.pool==type_id;
+            }
+            return false;
+        }
+        bool data_ptr_is_stackable(Ptr& p) {
+            return data_ptr_is_in_my(p,data_store_id);
+        }
+        bool data_ptr_is_in_names(Ptr& p) {
+            return data_ptr_is_in_my(p,name_store_id);
+        }
+
+        bool value_is_descendable(Value sval, Node scope) {
+            if(is_live(sval.type_scope())) { //Only variables with a type scope need to be analyzed, everything else is local and temporary
+                if(is_live(sval.data_ptr())&&!sval.has_qual(static_qual)) { //Static values just stay where they are, they don't descend and ascend
+                    Node climb = sval.type_scope().owner(); //Discern if the variable decleration is inside of this function decleration
+                    while(is_live(climb)) { //Possibly break on another func decl, might cause confusion with closures, experiment with this later.
+                        if(climb.scope()==scope) {
+                           return true;
+                        }
+                        climb = climb.climb();
+                    }
+                }
             }
             return false;
         }
@@ -1641,35 +1683,17 @@ namespace Acorn {
             sv.loc(loc);
             value_col subvals = sv.sub_values();
             if(subvals.empty()) {gather_all_values_in_scope(subvals,scope);}
-            for(int i=0;i<subvals.length();i++) {
+            for(uint32_t i=0;i<subvals.length();i++) {
                 Value sval = subvals.get(i); //Static values just stay where they are, they don't descend and ascend
-                if(is_live(sval.data_ptr())&&!sval.has_qual(static_qual)) { //This ceremony is becuse if we just did col.push(col.get(0) it would invalidate the column as we push thus breaking the get, so we have to save as temps
-                    Ptr dataptr = sval.data_ptr();
-                    if(!data_ptr_is_stackable(dataptr)) continue;
-                    uint32_t elem_size = resolve_to_col(dataptr).element_size;
-                    list<uint8_t> temp(elem_size);
-                    if(resolve_to_col(dataptr).empty()) {
-                        if(resolve_to_col(dataptr).element_size == 0) continue; //Skip uninitialized cols
-                        resolve_to_col(dataptr).push_default();
+                if(value_is_descendable(sval,scope)) {
+                    Ptr& dataptr = sval.data_ptr();
+                    if(data_ptr_is_stackable(dataptr)) {
+                        Col& datacol = resolve_to_col(dataptr);
+                        if(datacol.length()<=loc) {
+                            datacol.push_default(); //Make space on the stack for this value by descending it's column
+                        } 
+                        dataptr.sidx = loc;
                     }
-                    memcpy(temp.data(), resolve_to_col(dataptr).get((uint32_t)0), elem_size);
-                    if(resolve_to_col(dataptr).length() <= loc) {
-                        //These shouldn't be getting out of sync in the first place, in the future investigate this deeper
-                        int depth_check = 0;
-                        //This could be due to us trying this on other func calls, perhaps replace loc with the return of the data ptr to make this work?
-                        while(resolve_to_col(dataptr).length() <= loc && depth_check++ < 100) {
-                            resolve_to_col(dataptr).push(temp.data());
-                        }
-                        if(depth_check>=90) {
-                            print(red("Infinite loop in loc catchup on "+Ptr_as_string(dataptr)+": this shouldn't even be happening in the first place!"));
-                        }
-                    } else {
-                        resolve_to_col(dataptr).set(loc, temp.data());
-                    }
-                    dataptr.sidx = loc;
-                    resolve_to_col(sval).qset(value_data_offset,(void*)&dataptr,sizeof(Ptr));
-                } else {
-                    log(yellow(Ptr_as_string(sval)+" is not live, and can not be descended"));
                 }
             }
             return loc;
@@ -1682,34 +1706,49 @@ namespace Acorn {
             value_col subvals = sv.sub_values();
             for(int i=0;i<subvals.length();i++) {
                 Value sval = subvals.get(i);
-                if(is_live(sval.data_ptr())&&!sval.has_qual(static_qual)) {
-                    Ptr newptr = sval.data_ptr();
+                if(value_is_descendable(sval,scope)) {
+                    Ptr& newptr = sval.data_ptr();
                     if(!data_ptr_is_stackable(newptr)) continue;
                     newptr.sidx = loc;
-                    resolve_to_col(sval).qset(value_data_offset,(void*)&newptr,sizeof(Ptr));
                 }
             }
         }
 
-        void call_func(Context& ctx, Node scope) {
-            list<list<uint8_t>> temps;
-            for(int i=0;i<ctx.node().children().length();i++) {
-                Node rightterm = ctx.node().children()[i].children()[1];
-                process_node(ctx, rightterm);
-                Value rv = rightterm.value();
-                list<uint8_t> snap; snap.resize(rv.size());
-                memcpy(snap.data(), rv.get(), rv.size());
-                temps << snap;
+        void ascend_all_values(Node n, Node scope, list<Value>& ascended) {
+            if(is_live(n.value())) {
+                if(!ascended.has(n.value())&&value_is_descendable(n.value(),scope)) {
+                    n.value().data_ptr().sidx-=1;
+                    ascended << n.value();
+                }
             }
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("ABORTING FUNCTION CALL BEFORE DESCENT")); return;})
-            //print("RUNNING: ",node_to_string(ctx.node()));
+            for(uint32_t i=0;i<n.children().length();i++) {
+                ascend_all_values(n.children()[i],scope,ascended);
+            }
+        }
+
+        void call_func(Context& ctx, Node scope) {
             int stack_depth = descend_call_scope(ctx,scope);
             DEBUG_ONLY(if(stack_depth>500) {throw_error("Stack overflow on function call: ",node_info(ctx.node())); return;})
             for(int i=0;i<ctx.node().children().length();i++) {
-                Node leftterm = ctx.node().children()[i].children()[0];
-                leftterm.value().set(temps[i].data());
+                Node c = ctx.node().children()[i];
+                list<Value> ascended;
+                ascend_all_values(c.right(),scope,ascended);
+                if(ascended.empty()||!ascended.has(c.left().value())) {
+                    process_node(ctx,c);
+                } else { //If we're assigning the same value back into itself we need to grab a version of it that's at the newely descended location and then take the ascended version and assign in from that.
+                    process_node(ctx,c.left());
+                    Value copyval = make_value();
+                    copyval.copy(c.left().value(),false);
+                    copyval.data_ptr().sidx+=1;
+                    process_node(ctx,c.right());
+                    assign(copyval,c.right().value());
+                    recycle_value(copyval,false);
+                }
+                for(uint32_t j=0;j<ascended.length();j++) {
+                    ascended[j].data_ptr().sidx+=1;
+                }
             }
-            DEBUG_ONLY(if(ERROR_FLAG) {log(red("ABORTING FUNCTION CALL BEFORE PASS")); return;})
+            CHECK_ERROR("ABORTING FUNCTION CALL BEFORE PASS");
             if(!standard_travel_pass(scope,ctx.sub())) { //If the return didn't already ascend
                 ascend_call_scope(scope);
             }
@@ -1771,8 +1810,11 @@ namespace Acorn {
             }
 
             Ptr subp = deadptr;
-            if(lcol.tag==ptr_id||lcol.tag==string_id) {
+            if(lcol.tag==ptr_id||lcol.tag==string_id||(lcol.heterogenous&&(lv.type()==string_id||lv.type()==ptr_id))) { //Properly fix heterogenaity's interaction with assignment later
                 if(!lcol.empty()) {
+                    if(!lcol.heterogenous&&lp.sidx>=lcol.length()) {
+                        throw_error("compiler:assign left value sidx is out of bounds for col length, L: ",value_info(lv)," R: ",value_info(rv)); return;
+                    }
                     subp = *(Ptr*)lcol.get(lp.sidx); //The Ptr currently stored to the other collection
                     if(subtype==0||subsize==0&&is_live(subp)) { //Free the subptr if we're realiasing to a scalar
                         //print("Recycling subp");
@@ -1796,7 +1838,7 @@ namespace Acorn {
             }
             Col& col = resolve_to_col(lp); //Realias because the push may have invalidated it earlier
             if(subtype!=0&&subsize!=0) { //If right is a pointer to a collection
-                if(col.tag!=alias) {
+                if(!col.heterogenous&&col.tag!=alias) { //This was accidentally firing on contexts
                     //print("Realiasing");
                     col.element_size = sizeof(Ptr); col.tag=alias;
                     lv.size(sizeof(Ptr)); lv.type(alias);
@@ -1831,6 +1873,17 @@ namespace Acorn {
                         col.set(lp.sidx,rv.get());
                     }
                 }
+            }
+        }
+        void assign(Node left, Node right) {
+            Value rv = right.value();
+            Value lv = left.value();
+            if(left.type()==to_decl_id(amp_id)) {
+                left.value().data_ptr(right.value().data_ptr());
+            } else if(left.type()==var_decl_id&&right.value().type()!=string_id) {
+                left.set(right.get());
+            } else {
+                assign(lv,rv);
             }
         }
 
@@ -2071,6 +2124,9 @@ namespace Acorn {
             print(children_to_string(ctx,ctx.node().children()));
         });
         uint32_t return_id = make_tokenized_keyword("return");
+        uint32_t stageprint_id = add_function("stageprint",[this](Context& ctx){ 
+            print("[",active_stage->label,"] ",children_to_string(ctx,ctx.node().children()));
+        });
 
         uint32_t true_id = add_function("true",[this](Context& ctx){
             bool t = true;
@@ -2123,7 +2179,13 @@ namespace Acorn {
 
             t_handlers.default_function = [this](Context& ctx){if(ctx.node().scopes().empty()) {standard_sub_process(ctx);}}; //Because resolving passes will already cover the sub process for scoped nodes
             r_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
-            x_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
+            x_handlers.default_function = [this](Context& ctx){};
+            x_handlers[0] = [this](Context& ctx){ //For roots and such
+                standard_sub_process(ctx);
+            };
+            x_handlers[scope_id] = [this](Context& ctx){ //For scopes
+                standard_sub_process(ctx);
+            };
 
             r_handlers[func_decl_id] = [this](Context& ctx) {
                 fire_quals(ctx,ctx.node().value());
@@ -2186,7 +2248,7 @@ namespace Acorn {
                         return;
                     }
                 }
-
+                fire_quals(ctx,ctx.node().value());
                 Node scope = ctx.node().scopes()[0];
                 //print("Calling function");
                 call_func(ctx,scope);
@@ -2221,16 +2283,17 @@ namespace Acorn {
                 }
             };  
             x_handlers[return_id] = [this](Context& ctx){
+                //uspan->log("BEFORE:\n",node_to_string(ctx.node()));
                 standard_sub_process(ctx);
+                //uspan->log("AFTER SUB PROCESS:\n",node_to_string(ctx.node()));
                 if(is_live(ctx.node().parent())) {
                     if(!ctx.node().children().empty()) {
-                        void* snap = ctx.node().children()[0].value().get();
-                        ascend_call_scope(ctx.node().parent().scopes()[0]);
-                        ctx.node().value().set(snap);
-                    } else {
-                        ascend_call_scope(ctx.node().parent().scopes()[0]);
+                        assign(ctx.node(),ctx.node().left());
+                        //uspan->log("AFTER ASSIGN:\n",node_to_string(ctx.node()));
                     }
+                    ascend_call_scope(ctx.node().parent().scopes()[0]);
                 }
+                //uspan->log("AFTER:\n",node_to_string(ctx.node()));
                 ctx.state(1);
                 return;
             };
@@ -2243,53 +2306,9 @@ namespace Acorn {
                 if(ctx.node().children().length()==2) {
                     backwards_sub_process(ctx);
                     DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute equals while another error was flagged")); return;})
-                    Node left = ctx.node().children()[0];
-                    Node right = ctx.node().children()[1];
-                    Value rv = right.value();
-                    Value lv = left.value();
-                    if(left.type()==to_decl_id(amp_id)) {
-                        left.value().data_ptr(right.value().data_ptr());
-                    } else if(left.type()==var_decl_id&&right.value().type()!=string_id) {
-                        left.set(right.get());
-                    } else {
-                        assign(lv,rv);
-                    }
-                    // DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
-                    
-                    // //Col& lcol = resolve_to_col(lp);
-                    // if(resolve_to_col(lp).heterogenous) {
-                    //     resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
-                    // } else {
-                    //     resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
-                    // }
+                    assign(ctx.node().left(),ctx.node().right());
                 }
             };
-
-            //Stricter equals with no duck typing or reassignment
-                // x_handlers[equals_id] = [this](Context& ctx){
-                //     if(ctx.node().children().length()==2) {
-                //         backwards_sub_process(ctx);
-                //         DEBUG_ONLY(if(ERROR_FLAG){log(red("Attempted to execute equals while another error was flagged")); return;})
-                //         Node left = ctx.node().children()[0];
-                //         Node right = ctx.node().children()[1];
-
-                //         Ptr lp = left.value().data_ptr();
-                //         Ptr rp = right.value().data_ptr();
-
-                        
-
-                //         if(!is_live(lp)) return; //Normally caused by something being delcared but never used, and thus missed by the m pass
-                //         DEBUG_ONLY(if(!is_live(rp)) {throw_error("right term of equals is invalid"); return;})
-                //         DEBUG_ONLY(if(left.value().size()!=right.value().size()) {throw_error("Mismatched sizes for assignment from:\n",node_to_string(ctx.node())); return;})
-                        
-                //         //Col& lcol = resolve_to_col(lp);
-                //         if(resolve_to_col(lp).heterogenous) {
-                //             resolve_to_col(lp).qset(lp.sidx,resolve_ptr(rp),right.value().size());
-                //         } else {
-                //             resolve_to_col(lp).set(lp.sidx,resolve_ptr(rp));
-                //         }
-                //     }
-                // };
 
             make_tokenized_keyword("any",any_id);
             make_tokenized_keyword("null",null_id);
@@ -2306,12 +2325,15 @@ namespace Acorn {
                 ctx.node().value().set((void*)&b);
             };
 
-            // add_gather_token('#', hash_id, identifier_id, identifier_id); //REMEMBER TO FIX ## AS WELL LATER!
-
             r_handlers[identifier_id] = [this](Context& ctx){
-                resolve_overload(ctx);
+                standard_sub_process(ctx); //This may be why resolve_overload had a standard sub process in the first place, I think I forgot to include it here on identifer when I first wrote it!
+                //So I just gave it to identifer and disabled the sub process on resolve overload.
+                resolve_overload(ctx,false);
             };
             r_handlers[literal_id] = r_handlers[identifier_id];
+            x_handlers[identifier_id] = [this](Context& ctx){
+                standard_sub_process(ctx);
+            };
 
             r_handlers[dot_id] = [this](Context& ctx){
                 if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
@@ -2359,7 +2381,7 @@ namespace Acorn {
                     node_col args = ctx.node().children()[1].children();
                     ctx.node().children(args);
                     ctx.node().children().insert(0,amp);
-                    ctx.node().scopes().push(ctx.node().value().type_scope());
+                    ctx.node().scopes().push(ctx.node().value().type_scope()); //<- REVIST THIS LATER! Type scope's meaning was changed to mean where a variable was declared, so this is going to be broken
                     sync_args(ctx);
                     ctx.node().value(ctx.node().value().type_scope().owner().value());
                 }

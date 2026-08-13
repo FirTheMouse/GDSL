@@ -565,6 +565,7 @@ namespace Acorn {
     size_t method_id = global_reg_id("METHOD");
     size_t func_decl_id = global_reg_id("FUNC_DECL");
     size_t type_decl_id = global_reg_id("TYPE_DECL");
+    uint32_t hide_block_id = global_reg_id("HIDE_BLOCK");
 
     uint32_t sub_pass_id = global_reg_id("SUB_PASS");
     uint32_t process_node_pass_id = global_reg_id("PROCESS_NODE");
@@ -773,7 +774,7 @@ namespace Acorn {
         inline bool hasKey(const std::string& key) {DEBUG_ONLY(if(safety_check("col_ptr:hasKey")){return false;}) return col().hasKey(key);}
         inline T get(const std::string& key) {DEBUG_ONLY(if(safety_check("col_ptr:get_key")){return T(deadptr);}) return T(*(Ptr*)col().get(key));}
         inline T operator[](const std::string& key) {return get(key);}
-        inline void put(const std::string& key, T t) {DEBUG_ONLY(if(safety_check("col_ptr:put")){return;}) col().put(key, (void*)&t);}
+        inline void put(const std::string& key, T t) {DEBUG_ONLY(if(safety_check("col_ptr:put")){return;}) col().put(key, (void*)&t, string_id);}
     };
     using node_col  = col_Ptr<Node>;
     using value_col = col_Ptr<Value>;
@@ -849,7 +850,12 @@ namespace Acorn {
         inline void* get() {
             DEBUG_ONLY(if(safety_check("value:get")){return nullptr;})
             Ptr dataptr = data_ptr();
-            return resolve_ptr(dataptr);
+            if(is_live(dataptr)) {
+                return resolve_ptr(dataptr);
+            } else {
+                throw_error("core:value:get this value has no dataptr");
+                return nullptr;
+            }
         }
 
         inline void* sget() {
@@ -1471,7 +1477,7 @@ namespace Acorn {
                 if(is_live(ctx.qual())) {
                     uspan->newline(active_stage->label+": "+labels[ctx.qual().type()]+" in "+ctx.node().name().to_std());
                 } else {
-                    uspan->newline(active_stage->label+": "+node_basic_info(ctx.node()));
+                    uspan->newline(active_stage->label+": "+node_basic_info_with_position(ctx.node()));
                 }
             };
             def.suffix = [this](Context& ctx){
@@ -1481,6 +1487,28 @@ namespace Acorn {
             };
             def.stagend = [this](Context& ctx){
                 uspan->endline();
+            };
+            watchers << def;
+        }
+
+        void setup_crash_watchers() {
+            Watcher def("crash");
+            def.stagestart = [this](Context& ctx){
+                if(active_stage) {
+                    print("STARTING STAGE: ",active_stage->label);
+                }
+            };
+            def.passstart = [this](Context& ctx){
+                if(ctx.pass()!=0) {
+                    print("  ",labels[ctx.pass()]+" over "+std::to_string(ctx.result().length())+" nodes");
+                }
+            };
+            def.prefix = [this](Context& ctx){
+                if(is_live(ctx.qual())) {
+                    print("    "+active_stage->label+": "+labels[ctx.qual().type()]+" in "+ctx.node().name().to_std());
+                } else {
+                    print("    "+active_stage->label+": "+node_basic_info_with_children_and_position(ctx.node()));
+                }
             };
             watchers << def;
         }
@@ -1787,6 +1815,7 @@ namespace Acorn {
                     //print("DATA PTR: ",Ptr_to_string(v.data_ptr()));
                     recycle_column(v.data_ptr());
                 }
+                recycle_column(v);
             }
         }
     
@@ -1913,8 +1942,8 @@ namespace Acorn {
             recycle_column(ctx);
         }
         void deep_recycle_context(Context ctx) {
-            // recycle_column(ctx.result_ptr()); //Because this is often somebodies children
-            // recycle_column(ctx.source_ptr());
+            recycle_column(ctx.result_ptr());
+            recycle_column(ctx.source_ptr());
             recycle_column(ctx);
         }
 
@@ -2225,10 +2254,10 @@ namespace Acorn {
             return lines;
         }
 
-        void print_column(Col& col) {
-            print("COL: ",col.label," TAG: ",labels[col.tag]," [",std::to_string(col.length()),"]");
+        std::string column_to_string(Col& col) {
+            std::string to_return = "COL: "+col.label.to_std()+" TAG: "+labels[col.tag]+" ["+std::to_string(col.length())+"]\n";
             if(col.heterogenous) {
-                print(heterogenous_col_to_string(col));
+                to_return+=heterogenous_col_to_string(col);
             } else {
                 for(int i=0;i<col.length();i++) {
                     std::string line = "";
@@ -2241,9 +2270,15 @@ namespace Acorn {
                         }
                     }
                     line += tag_to_str(col.tag,col[i]);
-                    print(i,": ",line);
+                    to_return+=std::to_string(i)+": "+line;
+                    if(i<col.length()-1) to_return+="\n";
                 }
             }
+            return to_return;
+        }
+
+        void print_column(Col& col) {
+            print(column_to_string(col));
         }
 
         std::string pool_info(uint32_t poolid) {
@@ -2348,7 +2383,18 @@ namespace Acorn {
             if(!into) into = &types;
 
             if(col.heterogenous) {
-                //Add a scan over the layout and normalization for Ptr members in the future if needed
+                if(!layouts.hasKey(col.tag)) return;
+                _layout& l = layouts.get(col.tag);
+                for(uint32_t row = 0; row < col.length(); row++) {
+                    for(uint32_t f = 0; f < l.offsets.length(); f++) {
+                        if(!is_ptr_alias(l.tags[f])) continue;
+                        Ptr& ptr = *(Ptr*)col.qget(row * l.total_size + l.offsets[f]);
+                        if(is_live(ptr)) {
+                            if(ptr.cachelevel==3) ptr.cache = into;
+                            else if(ptr.cachelevel==0) ptr.unit = uid;
+                        }
+                    }
+                }
             } else if(is_ptr_alias(col.tag)) {
                 for(int r=0;r<col.length();r++) {
                     Ptr& ptr = *(Ptr*)col[r];
@@ -2377,7 +2423,22 @@ namespace Acorn {
 
         inline void offset_field_ptrs(Col& col, int offset, uint32_t field, uint32_t greater_than_threshold = 0) {
             if(col.heterogenous) {
-                //Add a scan over the layout and normalization for Ptr members in the future if needed
+                if(!layouts.hasKey(col.tag)) return;
+                _layout& l = layouts.get(col.tag);
+                for(uint32_t row = 0; row < col.length(); row++) {
+                    for(uint32_t f = 0; f < l.offsets.length(); f++) {
+                        if(!is_ptr_alias(l.tags[f])) continue;
+                        Ptr& ptr = *(Ptr*)col.qget(row * l.total_size + l.offsets[f]);
+                        if(is_live(ptr)) {
+                            uint32_t val = ptr[field];
+                            if(offset < 0 && val >= greater_than_threshold && val < greater_than_threshold+(uint32_t)(-offset)) {
+                                ptr = deadptr;
+                            } else if(val >= greater_than_threshold) {
+                                ptr[field] += offset;
+                            }
+                        }
+                    }
+                }
             } else if(is_ptr_alias(col.tag)) {
                 for(int r=0;r<col.length();r++) {
                     Ptr& ptr = *(Ptr*)col[r];
@@ -2413,6 +2474,17 @@ namespace Acorn {
         }
         void offset_pool_ptrs(ColColCol& cols, int offset, uint32_t greater_than_threshold = 0) {offset_pool_ptrs(ColColCol_to_group(cols),offset,greater_than_threshold);}
     
+        void offset_subunit_ptrs(list<ColCol*> pools, int offset, uint32_t greater_than_threshold = 0) {
+            for(int p=0;p<pools.length();p++) {
+                for(int c=0;c<pools[p]->length();c++) {
+                    Col& col = pools[p]->get(c);
+                    offset_field_ptrs(col,offset,4,greater_than_threshold);
+                }
+            }
+        }
+        void offset_subunit_ptrs(ColColCol& cols, int offset, uint32_t greater_than_threshold = 0) {offset_subunit_ptrs(ColColCol_to_group(cols),offset,greater_than_threshold);}
+    
+
         void insert_pools(ColColCol& col3, list<ColCol*> cols, uint32_t at) {
             offset_pool_ptrs(col3,cols.length(),at);
             offset_pool_ptrs(cols,at);
@@ -3204,8 +3276,12 @@ namespace Acorn {
             + (value.sub_type()==0?"":green(":"+labels[value.sub_type()])) + (value.sub_size()!=0?green("["+std::to_string(value.sub_size())+"]"):"");
             if(is_live(value.data_ptr())) { //For post-mortems we want to see the adress, so it needs to be computed first, before the error
                 std::string ptr_addr = Ptr_as_string(value.data_ptr());
-                if(resolve_to_col(value.data_ptr()).empty()) {
+                Col& datacol = resolve_to_col(value.data_ptr());
+                CHECK_ERROR_VAL(to_return," failed to resolve value's dataptr");
+                if(datacol.empty()) {
                     to_return += " "+gray("empty")+" @"+ptr_addr;
+                } else if(!datacol.heterogenous&&datacol.length()<=value.data_ptr().sidx) {
+                    to_return += " "+gray("out of bounds")+" @"+ptr_addr;
                 } else {
                     std::string tagstr = tag_to_str(value.type(),value.get());
                     if(value.type()==string_id) { //Just making it strings for now
@@ -3213,13 +3289,13 @@ namespace Acorn {
                     }
                     to_return += " "+gray(tagstr)+" @"+ptr_addr;
                 }
-                DEBUG_ONLY(if(ERROR_FLAG) {log(red("Attempted to print info of "),cyan(Ptr_to_string(value)),red(" but the value was invalid")); return to_return;})
+                CHECK_ERROR_VAL(to_return,"Attempted to print info of ",cyan(Ptr_to_string(value))," but the value was invalid");
             }
             to_return += (value.reg()!=-1?", reg: "+std::to_string(value.reg()):"")
-            + (is_live(value.type_scope())?", type_scope: "+blue(Ptr_as_string(value.type_scope())):"")
             + (value.address()!=0?", address: "+std::to_string(value.address()):"")
             + (value.loc()!=-1?", loc: "+std::to_string(value.loc()):"")
-            + (is_live(value.store_ptr())?", store: "+Ptr_as_string(value.store_ptr()):"");
+            + (is_live(value.store_ptr())?", store: "+Ptr_as_string(value.store_ptr()):"")
+            + (is_live(value.type_scope())?"{"+value.type_scope().name().to_std()+":"+blue(Ptr_as_string(value.type_scope()))+"}":"");
 
             #if ACORN_DISPLAY_SUB_VALUES 
                 if(!value.sub_values().empty()) {
@@ -3258,6 +3334,12 @@ namespace Acorn {
                 if(c==node.children().length()-1) {to_return+="]";}
                 else {to_return+=", ";}
             }
+            return to_return;
+        }
+
+        std::string node_basic_info_with_position(Node node) {
+            std::string to_return = node_basic_info(node);
+            to_return+=(node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"");
             return to_return;
         }
 
@@ -3339,6 +3421,8 @@ namespace Acorn {
                     if(is_live(node.children()[i])) {
                         if(node.children()[i].idx==node.idx) {
                             to_return+="\n "+indent+red("  self refrence");
+                        } else if(node.children()[i].type()==hide_block_id) {
+                            to_return += "\n "+indent+"   c"+std::to_string(i)+": HIDDEN";
                         } else {
                             to_return += "\n " + node_to_string(node.children()[i], depth + 1, i, verbosity,"c");
                         }
@@ -4239,6 +4323,7 @@ namespace Acorn {
             ctx.node(root);
             standard_sub_process(ctx);
             unit_ctx = ctx.parent();
+
             deep_recycle_context(ctx);
         }
 
@@ -4487,7 +4572,8 @@ namespace Acorn {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
             unit_ctx = unit_ctx.parent();
-            deep_recycle_context(ctx);
+            recycle_column(ctx.source());
+            recycle_context(ctx);
         }
 
         void standard_resolving_pass(Node root) {
@@ -4502,7 +4588,8 @@ namespace Acorn {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
             unit_ctx = unit_ctx.parent();
-            deep_recycle_context(ctx);
+            recycle_column(ctx.source());
+            recycle_context(ctx);
         }
 
         uint32_t standard_travel_pass(Node root, Context sub = deadptr) {
@@ -4519,7 +4606,10 @@ namespace Acorn {
             endline();
             uint32_t state = unit_ctx.state();
             unit_ctx = unit_ctx.parent();
-            deep_recycle_context(ctx);
+            if(!is_live(sub)) {
+                recycle_column(ctx.source());
+            }
+            recycle_context(ctx);
             return state;
         }
 
@@ -4536,7 +4626,8 @@ namespace Acorn {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
             unit_ctx = unit_ctx.parent();
-            deep_recycle_context(ctx);
+            recycle_column(ctx.source());
+            recycle_context(ctx);
         }
 
         void memory_backwards_pass(Node root) {
@@ -4552,7 +4643,8 @@ namespace Acorn {
             DEBUG_ONLY(for(auto& w : watchers) {if(w.suffix) w.suffix(ctx);})
             endline();
             unit_ctx = unit_ctx.parent();
-            deep_recycle_context(ctx);
+            recycle_column(ctx.source());
+            recycle_context(ctx);
         }   
 
 

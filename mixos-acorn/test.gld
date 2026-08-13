@@ -1,68 +1,25 @@
 ##
-    Ptr string abbv;
-    abbv.push("TX"); abbv.push("GA"); abbv.push("FL");
-
-    Ptr int tally_by_state;
-    global void compute_tally_by_state(int depth) {
-        print(depth," BEFORE: ");
-        print_col(abbv);
-        if(depth>3) {return;}
-        else {compute_tally_by_state(depth+1);}
-        for(int i=0;i<abbv.length;i++) {
-            string abvr = abbv[i];
-            if(tally_by_state.has(abvr)) {
-                print("Tally by state has ",abvr,": ",tally_by_state[abvr]);
-            } else {
-                print("Added tally ",abvr,": ",3-i);
-                tally_by_state.put(abvr,3-i);
-            }
+    register text;
+    "text" {
+        in naming {
+            ctx.node.children.push(ctx.result.take(ctx.index+1));
         }
-        print(depth," AFTER: ");
-        print_col(abbv);
-    }
-
-    global void test_string_recursion(int depth) {
-        print(depth," BEFORE: ");
-        string s;
-        s+="W";
-        print(cast_to(#ptr,s),"> ",s);
-        if(depth>3) {return;}
-        else {test_string_recursion(depth+1);}
-        s+="U";
-        print(depth," AFTER: ");
-        print(cast_to(#ptr,s),"> ",s);
-    }
-
-    Ptr char wub = "WUB";
-    global void test_string_overwritting(int depth) {
-        print(depth," BEFORE: ");
-        print(wub);
-        if(depth>2) {return;}
-        else {test_string_overwritting(depth+1);}
-        if(true) {
-            print(wub[0]);
-            DEBUG_ROOT_X_BRIEF;
+        in htmlemiting {
+            execut(ctx.node.children.get(0));
+            subemit("p",false,"",ctx.node.children.get(0).value.getStr);
         }
-        print(depth," AFTER: ");
-        print(wub);
     }
-
-    global int test_func {
-        print("You called the test func!");
-        return 6;
-    }
-    global int test_func_two {
-        print("You called the second test func!");
-        return 9;
+    register emit_block;
+    "emit_block" {
+        in executing {
+            ctx.source.append("<html>");
+            subemit("body",false,"","");
+            ctx.source.append("</html>");
+            print(ctx.source);
+        }
     }
 ##
 
-if(true) {
-    print(test_func);
-    Ptr Ptr tfuncs;
-    tfuncs.push(~&test_func); tfuncs.push(~&test_func_two); 
-    DEBUG_ROOT_X_BRIEF;
-    print(tfuncs[0].asTID);  print(tfuncs[1].asTID);
-    string s = ~&test_func_two.asTID;
-    print(s);
+emit_block {
+    text "hey";
 }

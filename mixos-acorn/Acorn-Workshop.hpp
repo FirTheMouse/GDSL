@@ -34,11 +34,69 @@ namespace Acorn {
     struct Workshop_Unit : public virtual Acorn_Script {
         Workshop_Unit(uint16_t _uid) : Unit(_uid) {init();}
         Workshop_Unit() {init();}
-
-     
        
+        ColCol& resolve_pool_refrence(Node n) {
+            if(n.value().type()==int_id) {
+                return types[n.getInt()];
+            } else if(is_ptr_alias(n.value().type())) {
+                return resolve_to_pool(n.getPtr());
+            }
+            return col2_ref;
+        }
+
+
+
         void init() override {
-          
+
+            add_function("test_overload",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t type = ctx.node().getInt(0);
+                std::string instr = ctx.node().getString(1).to_std();
+                uint32_t overload_to = ctx.node().getInt(2);
+                Value value = deadptr;
+                if(ctx.node().children().length()>3) {
+                    value = ctx.node().getValue(3);
+                }
+                overload_type(type,instr,overload_to,value);
+            });
+            add_function("derive_signature",[this](Context& ctx){
+                standard_sub_process(ctx);
+                list<std::string> sigs = derive_signatures(ctx.node().c0());
+                for(int i=0;i<sigs.length();i++) {
+                    print(i,": ",sigs[i]);
+                }
+            });
+
+            add_function("overload_signature",[this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_overload(ctx.node().getContext(0));
+            });
+
+            add_function("cleanup",[this](Context& ctx){
+                standard_sub_process(ctx);
+                if(ctx.node().children().length()>0) {
+                    if(ctx.node().children()[0].value().type()==node_id) {
+                        Stage& previous_stage = *active_stage;
+                        Node outer_node = ctx.node();
+                        walk_handlers.default_function = [this,&outer_node](Context& ctx) {
+                            standard_sub_process(ctx);
+                            if(is_live(ctx.node().value())) {
+                                Node ts = ctx.node().value().type_scope();
+                                if(is_live(ts)) {
+                                    print(node_info(ts)," ",ts.z()," VS ",outer_node.z());
+                                }
+                                if(is_live(ts) && ts.z()!=outer_node.z()) {
+                                    ctx.node().value(deadptr);
+                                }
+                            }
+                        };
+                        start_stage(walk_handlers);
+                        standard_backwards_pass(ctx.node().getNode(0));
+                        start_stage(previous_stage);
+                        recycle_node(ctx.node().getNode(0));
+                    }
+                }
+            });
         }
     };
 }

@@ -75,11 +75,14 @@ int read_arrow() {
 
 namespace Acorn {
 
+    inline thread_local bool SHUTDOWN_FLAG = false;
+
     #ifdef _WIN32
         void setup_signals() {}
     #else
         void signal_handler(int signal) {
             print("\nRECIVED SIGNAL: ",signal);
+            //SHUTDOWN_FLAG = true;
             if(ERROR_FLAG) {
                 std::abort();
             }

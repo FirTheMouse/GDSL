@@ -90,12 +90,18 @@ static inline  std::string to_hex(uint32_t n) {
 
 static std::string ftime(double t) 
 {
-  if(t >= 100000000) {
-      return red(std::to_string(t/1000000000.0)+"s");
-  } else if(t >= 100000) {
+  if(t < 100000) {
+      return green(std::to_string(t/1000.0)+"ns");
+  } else if(t < 100000000) {
       return yellow(std::to_string(t/1000000.0)+"ms");
-  } else { 
-      return  green(std::to_string(t/1000.0)+"ns");
+  } else if(t < 60000000000.0) {
+      return red(std::to_string(t/1000000000.0)+"s");
+  } else if(t < 3600000000000.0) {
+      return red(std::to_string(t/60000000000.0)+"min");
+  } else if(t < 86400000000000.0) {
+      return yellow(std::to_string(t/3600000000000.0)+"h");
+  } else {
+      return green(std::to_string(t/86400000000000.0)+"d");
   } 
 }
 
@@ -106,9 +112,9 @@ static std::string fmem(uint64_t m)
         int frac = (int)((d - whole) * 100);
         return std::to_string(whole) + "." + (frac < 10 ? "0" : "") + std::to_string(frac);
     };
-    if(m >= 10 * 1024 * 1024) {
+    if(m >= 1 * 1024 * 1024) {
         return red(trim(m / (1024.0 * 1024.0)) + "mb");
-    } else if(m >= 10 * 1024) {
+    } else if(m >= 1 * 1024) {
         return yellow(trim(m / 1024.0) + "kb");
     } else { 
         return green(std::to_string(m) + "b");

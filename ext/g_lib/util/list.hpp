@@ -184,6 +184,12 @@ public:
         capacity_ = 0;
     }
 
+    void nullstorage() {
+        ptr = nullptr;
+        size_ = 0;
+        capacity_ = 0;
+    }
+
     void clear() {
         if constexpr (std::is_trivially_destructible_v<T>) {
             size_ = 0;

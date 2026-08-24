@@ -170,7 +170,7 @@ namespace Acorn {
             else if(YAPA_level==3) get_value = make_value(colcol_id,sizeof(Ptr));     
             else if(YAPA_level==4) get_value = make_value(colcolcol_id,sizeof(Ptr));  
 
-            overload_type(id,".\"getOrPut\"",label+"_GETORPUT",get_value,[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'getOrPut'(any,any)",label+"_GETORPUT",get_value,[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" getOrPut");
@@ -227,7 +227,7 @@ namespace Acorn {
                     ctx.node().value().data_ptr(ptr);
                 }
             });
-            overload_type(id,".\"take\"",label+"_TAKE",get_value,[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'take'(any)",label+"_TAKE",get_value,[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" take");
@@ -244,7 +244,7 @@ namespace Acorn {
                     col.removeAt(index);
                 }
             });
-            overload_type(id,".\"pop\"",label+"_POP",deadptr,[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'pop'",label+"_POP",deadptr,[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" pop");
@@ -259,14 +259,14 @@ namespace Acorn {
                 // col.pop(data);
                 //ctx.node().value().set(data);
             });
-            overload_type(id,".\"length\"",label+"_LENGTH",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'length'",label+"_LENGTH",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" length");
                 int len = resolve_YAPA_ptr(ptr,YAPA_level).length();
                 ctx.node().value().set((void*)&len);
             });
-            overload_type(id,".\"has\"",label+"_HAS",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'has'(any)",label+"_HAS",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" has");
@@ -281,7 +281,7 @@ namespace Acorn {
                     throw_error("script:has Type ",labels[keyv.type()]," is not a valid key type for has");
                 }
             });
-            overload_type(id,".\"indexof\"",label+"_INDEXOF",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'indexof'(any)",label+"_INDEXOF",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" length");
@@ -361,7 +361,7 @@ namespace Acorn {
                     col.push(ctx.node().right().value().get());
                 }
             });
-            overload_type(id,".\"push_default\"",label+"_PUSH_DEFAULT",deadptr,[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'push_default'",label+"_PUSH_DEFAULT",deadptr,[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" push_default");
@@ -416,77 +416,84 @@ namespace Acorn {
                 string label = ctx.node().right().getString(0);
                 resolve_YAPA_ptr(p,YAPA_level).label = label.to_std();
             });
-            overload_type(id,".\"tag\"",label+"_TAG",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'tag'",label+"_TAG",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" tag");
                 Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
-                if(!ctx.node().right().children().empty()) {
-                    uint32_t tag = ctx.node().right().getInt(0);
-                    col.tag = tag;
-                } else {
-                    uint32_t tag = col.tag;
-                    ctx.node().value().set((void*)&tag);
-                }
+                uint32_t tag = col.tag;
+                ctx.node().value().set((void*)&tag);
             });
-            overload_type(id,".\"element_size\"",label+"_ELEMENT_SIZE",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'tag'(int)",label+"_TAG_SET",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" tag set");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                uint32_t tag = ctx.node().right().getInt(0);
+                col.tag = tag;
+            });
+            overload_type(id,".'element_size'",label+"_ELEMENT_SIZE",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" element_size");
                 Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
-                if(!ctx.node().right().children().empty()) {
-                    uint32_t element_size = ctx.node().right().getInt(0);
-                    col.element_size = element_size;
-                } else {
-                    uint32_t element_size = col.element_size;
-                    ctx.node().value().set((void*)&element_size);
-                }
+                uint32_t element_size = col.element_size;
+                ctx.node().value().set((void*)&element_size);
+            });
+            overload_type(id,".'element_size'(int)",label+"_ELEMENT_SIZE_SET",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" element_size set");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                uint32_t element_size = ctx.node().right().getInt(0);
+                col.element_size = element_size;
             });
 
-            overload_type(id,".\"celllabel\"",label+"_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'celllabel'",label+"_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr p = ctx.node().getPtr(0);
                 CHECK_ERROR("Left arg of cellabel is invalid");
-
-                if(!ctx.node().right().children().empty()) {
-                    string label = ctx.node().right().getString(0);
-                    Col& cellcol = resolve_YAPA_ptr(p,YAPA_level);
-                    CHECK_ERROR("Unable to resolve some elmenets of celllabel, label pooltag or cellcol");
-                     //We only suppourt string keys for now
-                    while(cellcol.cells.count()<=p.sidx) {
-                        CCol c; //Temporary filler
-                        char defc = ' ';
-                        c.element_size = 1; 
-                        c.tag = string_id;
-                        c.hash = hashBytes((void*)&defc, 1);
-                        c.index = cellcol.cells.count();
-                        c.push((void*)&defc);
-                        cellcol.cells.scan_for_slot(c);
-                    }
-                    CCol* cellptr = cellcol.cells.find_cell(p.sidx);
-                    if(!cellptr) {
-                        throw_error("No cell was found for sidx ",p.sidx," in celllabel of count ",cellcol.cells.count());
-                        return;
-                    }
-                    CCol& cell = *cellptr;
-                    cell.clear();
-                    cell.element_size = label.length();
-                    cell.hash = hashBytes(resolve_ptr(label), label.length());
-                    cell.index = p.sidx;
-                    cell.push(resolve_ptr(label)); 
+                string output = resolve_string_ticket(ctx.node());
+                Col& cellcol = resolve_YAPA_ptr(p,YAPA_level);
+                CCol* cell = cellcol.cells.find_cell(p.sidx);
+                if(cell) {
+                    output = ((QString&)*cell).to_std();
                 } else {
-                    string output = resolve_string_ticket(ctx.node());
-                    Col& cellcol = resolve_YAPA_ptr(p,YAPA_level);
-                    CCol* cell = cellcol.cells.find_cell(p.sidx);
-                    if(cell) {
-                        output = ((QString&)*cell).to_std();
-                    } else {
-                        output = "";
-                    }
+                    output = "";
                 }
             });
+            overload_type(id,".'celllabel'(string)",label+"_CELLLABEL_SET",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr p = ctx.node().getPtr(0);
+                CHECK_ERROR("Left arg of cellabel is invalid");
+                string label = ctx.node().right().getString(0);
+                Col& cellcol = resolve_YAPA_ptr(p,YAPA_level);
+                CHECK_ERROR("Unable to resolve some elmenets of celllabel, label pooltag or cellcol");
+                    //We only suppourt string keys for now
+                while(cellcol.cells.count()<=p.sidx) {
+                    CCol c; //Temporary filler
+                    char defc = ' ';
+                    c.element_size = 1; 
+                    c.tag = string_id;
+                    c.hash = hashBytes((void*)&defc, 1);
+                    c.index = cellcol.cells.count();
+                    c.push((void*)&defc);
+                    cellcol.cells.scan_for_slot(c);
+                }
+                CCol* cellptr = cellcol.cells.find_cell(p.sidx);
+                if(!cellptr) {
+                    throw_error("No cell was found for sidx ",p.sidx," in celllabel of count ",cellcol.cells.count());
+                    return;
+                }
+                CCol& cell = *cellptr;
+                cell.clear();
+                cell.element_size = label.length();
+                cell.hash = hashBytes(resolve_ptr(label), label.length());
+                cell.index = p.sidx;
+                cell.push(resolve_ptr(label)); 
+            });
 
-            overload_type(id, ".\"iter\"", label+"_ITER", deadptr, [this,id,YAPA_level](Context& ctx){
+            overload_type(id, ".'iter'(any,int)", label+"_ITER", deadptr, [this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr& ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" iter");
@@ -518,7 +525,7 @@ namespace Acorn {
                 }
             });
 
-            overload_type(id, ".\"cells\"", label+"_CELLS", deadptr, [this,id,YAPA_level](Context& ctx){
+            overload_type(id, ".'cells'(string,any)", label+"_CELLS", deadptr, [this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr& ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" cells");
@@ -556,7 +563,7 @@ namespace Acorn {
                 
             });
             
-            overload_type(id,".\"clear\"",label+"_CLEAR",deadptr,[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'clear'",label+"_CLEAR",deadptr,[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
@@ -564,28 +571,33 @@ namespace Acorn {
                 col.clear();
             });
 
-            overload_type(id,".\"unlock\"",label+"_UNLOCK",deadptr,[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'unlock'",label+"_UNLOCK",deadptr,[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" unlock");
                 Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
                 col.unlock();
             });
-            overload_type(id,".\"try_lock\"",label+"_TRY_LOCK",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'try_lock'",label+"_TRY_LOCK",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" try_lock");
                 Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
                 bool b = false;
-                if(ctx.node().right().children().empty()) {
-                    b = col.try_lock();
-                } else {
-                    float wait = ctx.node().right().getFloat(0);
-                    b = col.try_lock(wait);
-                }
+                b = col.try_lock();
                 ctx.node().value().set((void*)&b);
             });
-            overload_type(id,".\"try_lock_forever\"",label+"_TRY_LOCK_FOREVER",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'try_lock'(float)",label+"_TRY_LOCK_TIME",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" try_lock time");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                bool b = false;
+                float wait = ctx.node().right().getFloat(0);
+                b = col.try_lock(wait);
+                ctx.node().value().set((void*)&b);
+            });
+            overload_type(id,".'try_lock_forever'",label+"_TRY_LOCK_FOREVER",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" try_lock_forever");
@@ -594,21 +606,26 @@ namespace Acorn {
                 ctx.node().value().set((void*)&b);
             });
 
-            overload_type(id,".\"try_read\"",label+"_TRY_READ",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'try_read'",label+"_TRY_READ",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" try_read");
                 Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
                 bool b = false;
-                if(ctx.node().right().children().empty()) {
-                    b = col.try_read();
-                } else {
-                    float wait = ctx.node().right().getFloat(0);
-                    b = col.try_read(wait);
-                }
+                b = col.try_read();
                 ctx.node().value().set((void*)&b);
             });
-            overload_type(id,".\"try_read_forever\"",label+"_TRY_READ_FOREVER",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+            overload_type(id,".'try_read'(float)",label+"_TRY_READ_TIME",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+                standard_sub_process(ctx);
+                Ptr ptr = ctx.node().getPtr(0);
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" try_read");
+                Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+                bool b = false;
+                float wait = ctx.node().right().getFloat(0);
+                b = col.try_read(wait);
+                ctx.node().value().set((void*)&b);
+            });
+            overload_type(id,".'try_read_forever'",label+"_TRY_READ_FOREVER",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr ptr = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" try_red_forever");
@@ -618,7 +635,7 @@ namespace Acorn {
             });
 
             if(YAPA_level==3) {
-                overload_type(id,".\"acquire\"",label+"_ACQUIRE",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'acquire'",label+"_ACQUIRE",make_value(bool_id,1),[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" acquire");
@@ -628,7 +645,7 @@ namespace Acorn {
                     ctx.node().value().set((void*)&b);
                 });
 
-                overload_type(id,".\"save\"",label+"_SAVE",deadptr,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'save'",label+"_SAVE",deadptr,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" save");
@@ -636,7 +653,7 @@ namespace Acorn {
                     CHECK_ERROR("Failed to resolve Ptr to subunit in save");
                     save_subunit(&subunit);
                 });
-                overload_type(id,".\"bounce\"",label+"_BOUNCE",deadptr,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'bounce'",label+"_BOUNCE",deadptr,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" bounce");
@@ -644,7 +661,7 @@ namespace Acorn {
                     CHECK_ERROR("Failed to resolve Ptr to subunit in bounce");
                     bounce_subunit(&subunit);
                 });
-                overload_type(id,".\"load\"",label+"_LOAD",deadptr,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'load'",label+"_LOAD",deadptr,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" load");
@@ -652,7 +669,7 @@ namespace Acorn {
                     CHECK_ERROR("Failed to resolve Ptr to subunit in load");
                     load_subunit(&subunit);
                 });
-                overload_type(id,".\"reload\"",label+"_RELOAD",deadptr,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'reload'",label+"_RELOAD",deadptr,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" reload");
@@ -660,7 +677,7 @@ namespace Acorn {
                     CHECK_ERROR("Failed to resolve Ptr to subunit in reload");
                     load_subunit(&subunit,true);
                 });
-                overload_type(id,".\"adopt\"",label+"_ADOPT",deadptr,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'adopt'(any)",label+"_ADOPT",deadptr,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" adopt");
@@ -673,7 +690,7 @@ namespace Acorn {
             }
 
             if(YAPA_level>1) {
-                overload_type(id,".\"getByTag\"",label+"_GETBYTAG",get_value,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'getByTag'(int)",label+"_GETBYTAG",get_value,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" getByTag");
@@ -697,7 +714,7 @@ namespace Acorn {
                     }
                     ctx.node().value().set((void*)&deadptr);
                 });
-                overload_type(id,".\"getByLabel\"",label+"_GETBYLABEL",get_value,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'getByLabel'(string)",label+"_GETBYLABEL",get_value,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" getByLabel");
@@ -721,7 +738,7 @@ namespace Acorn {
                     }
                     throw_error("Label not found ",label," in pool ",Ptr_as_string(ptr));
                 });
-                overload_type(id,".\"add\"",label+"_ADD",get_value,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,{".'add'", ".'add'(any)", ".'add'(any,any)"},label+"_ADD",get_value,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
@@ -793,7 +810,7 @@ namespace Acorn {
                     ctx.node().value().set((void*)&p);
                 });
             } else {
-                overload_type(id,".\"retype\"",label+"_RETYPE",deadptr,[this,id,YAPA_level](Context& ctx){
+                overload_type(id,".'retype'(any)",label+"_RETYPE",deadptr,[this,id,YAPA_level](Context& ctx){
                     standard_sub_process(ctx);
                     Ptr ptr = ctx.node().getPtr(0);
                     CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
@@ -824,7 +841,7 @@ namespace Acorn {
         uint32_t string_as_YAPA_id = register_YAPA_type("string",1,string_id);
         uint32_t header_as_YAPA_id = register_YAPA_type("Header",2,header_id);
 
-        uint32_t c3_header_id = overload_type(colcolcol_id,".\"header\"","ColColCol_HEADER",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t c3_header_id = overload_type(colcolcol_id,list<std::string>{".'header'",".'header'(int)"},"ColColCol_HEADER",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             ColColCol& col = resolve_to_subunit(ptr);
@@ -855,9 +872,6 @@ namespace Acorn {
         });
 
         // uint32_t string_append_id = reg_id("STRING_APPEND");
-        uint32_t string_substr_id = reg_id("STRING_SUBSTR");
-        uint32_t string_slice_id = reg_id("STRING_SLICE");
-        uint32_t string_find_id = reg_id("STRING_FIND");
         uint32_t string_find_from_id = reg_id("STRING_FIND_FROM");
 
 
@@ -1005,7 +1019,7 @@ namespace Acorn {
             s = std::to_string(ts);
         },sizeof(Ptr),string_id);
 
-        uint32_t header_ribbonT_id = overload_type(header_id,".\"ribbonT\"","HEADER_RIBBONT",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_ribbonT_id = overload_type(header_id,list<std::string>{".'ribbonT'",".'ribbonT'(string)"},"HEADER_RIBBONT",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header ribbon");
@@ -1037,7 +1051,7 @@ namespace Acorn {
                     Node c = scope.children()[i];
                     if(i%2==0) {label = c.getString().to_std();}
                     else {
-                        if(c.value().type()==string_id) {
+                        if(is_live(c.value())&&c.value().type()==string_id) {
                             header.putString(label,c.getString().to_std());  
                         } else if(c.type()==group_id) {
                             if(!c.children().empty()) {
@@ -1050,13 +1064,14 @@ namespace Acorn {
                                 resolve_to_col(ptr).put(label,(void*)&ticket,string_id);
                             }
                         }
-                    }                 
+                    }  
+                    CHECK_ERROR("Error while processing term ",node_basic_info_with_children_and_position(c)," in ribbonT");              
                 }
             }
             ctx.node().value().set((void*)&ptr);
         });
 
-        uint32_t header_ribbon_id = overload_type(header_id,".\"ribbon\"","HEADER_RIBBON",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_ribbon_id = overload_type(header_id,list<std::string>{".'ribbon'",".'ribbon'(string)"},"HEADER_RIBBON",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header ribbon");
@@ -1078,7 +1093,7 @@ namespace Acorn {
             }
             ctx.node().value().set((void*)&ptr);
         });
-        uint32_t header_ribbons_id = overload_type(header_id,".\"ribbons\"","HEADER_RIBBONS",make_value(ptr_id,sizeof(Ptr),0,ptr_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_ribbons_id = overload_type(header_id,".'ribbons'","HEADER_RIBBONS",make_value(ptr_id,sizeof(Ptr),0,ptr_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header ribbons");
@@ -1098,13 +1113,13 @@ namespace Acorn {
             }
         });
 
-        uint32_t header_col_id = overload_type(header_id,".\"col\"","HEADER_COL",make_value(colcol_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_col_id = overload_type(header_id,".'col'","HEADER_COL",make_value(colcol_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header col");
             ctx.node().value().set((void*)&ptr);
         });
-        uint32_t header_getString_id = overload_type(header_id,".\"getString\"","HEADER_GETSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t header_getString_id = overload_type(header_id,list<std::string>{".'getString'",".'getString'(string)",".'getString'(string, string)"},"HEADER_GETSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header getString");
@@ -1126,7 +1141,7 @@ namespace Acorn {
             string output = resolve_string_ticket(ctx.node());
             output = data.to_std();
         });
-        uint32_t header_putString_id = overload_type(header_id,".\"putString\"","HEADER_PUTSTRING",deadptr,[this](Context& ctx){
+        uint32_t header_putString_id = overload_type(header_id,list<std::string>{".'putString'",".'putString'(string)",".'putString'(string, string)",".'putString'(string, string, string)"},"HEADER_PUTSTRING",deadptr,[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header putString");
@@ -1302,28 +1317,28 @@ namespace Acorn {
         });
 
 
-        uint32_t valueGet_id = overload_type(value_id,".\"get\"","VALUE_GET",deadptr,[this](Context& ctx){
+        uint32_t valueGet_id = overload_type(value_id,".'get'","VALUE_GET",deadptr,[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
-        uint32_t valueGetStr_id = overload_type(value_id,".\"getStr\"","VALUE_GETSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t valueGetStr_id = overload_type(value_id,".'getStr'","VALUE_GETSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
             resolve_string_ticket(ctx.node());
         });
-        uint32_t valueGetNode_id = overload_type(value_id,".\"getNode\"","VALUE_GETNODE",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t valueGetNode_id = overload_type(value_id,".'getNode'","VALUE_GETNODE",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Node v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
-        uint32_t valueGetInt_id = overload_type(value_id,".\"getInt\"","VALUE_GETINT",make_value(int_id,4),[this](Context& ctx){
+        uint32_t valueGetInt_id = overload_type(value_id,".'getInt'","VALUE_GETINT",make_value(int_id,4),[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
-        uint32_t value_set_id = overload_type(value_id,".\"set\"","VALUE_SET",deadptr,[this](Context& ctx){
+        uint32_t value_set_id = overload_type(value_id,".'set'(any)","VALUE_SET",deadptr,[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             void* d = ctx.node().children()[1].children()[0].value().get();
@@ -1334,19 +1349,19 @@ namespace Acorn {
             ctx.node().getNode(0).value(ctx.node().getValue(1));
         });
 
-        uint32_t node_asid_id = overload_type(node_id,".\"asID\"","NODE_ASID",make_value(int_id,4),[this](Context& ctx){
+        uint32_t node_asid_id = overload_type(node_id,".'asID'","NODE_ASID",make_value(int_id,4),[this](Context& ctx){
             standard_sub_process(ctx);
             uint32_t id = (*(Ptr*)ctx.node().children()[0].value().get()).idx;
             ctx.node().value().set((void*)&id);
         });
-        uint32_t node_astid_id = overload_type(node_id,".\"asTID\"","NODE_ASTID",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t node_astid_id = overload_type(node_id,".'asTID'","NODE_ASTID",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             string output = resolve_string_ticket(ctx.node());
             Node n = ctx.node().getNode(0);
             CHECK_ERROR("Bad Node in node_asTID");
             output = n.name().to_std()+"_"+std::to_string(n.idx);
         });
-        uint32_t node_has_qual_id = overload_type(node_id,".\"has_qual\"","NODE_HAS_QUAL",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t node_has_qual_id = overload_type(node_id,".'has_qual'(int)","NODE_HAS_QUAL",make_value(bool_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Node n = ctx.node().getNode(0);
             CHECK_ERROR("Bad Node in node_has_qual");
@@ -1392,7 +1407,7 @@ namespace Acorn {
             ctx.node().value(ctx.node().left().value());
         });
 
-        uint32_t string_func_append_id = overload_type(string_id,".\"append\"","STRING_FUNC_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t string_func_append_id = overload_type(string_id,".'append'(string)","STRING_FUNC_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Node left = ctx.node().children()[0]; Node right = ctx.node().children()[1];
             DEBUG_ONLY(if(ERROR_FLAG) return;)
@@ -1659,14 +1674,7 @@ namespace Acorn {
         void init() override {
             register_type("list",ptr_id,sizeof(Ptr));
 
-
-            overload_type(string_id,".\"substr\"",string_substr_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
-            overload_type(string_id,".\"slice\"",string_slice_id,make_value(string_id,sizeof(Ptr),0,char_id,1));
-            overload_type(string_id,".\"find\"",string_find_id,make_value(int_id,4));
-
-            overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_value(ptr_id,sizeof(Ptr),0,int_id,4));
-
-            x_handlers[string_substr_id] = [this](Context& ctx){
+            overload_type(string_id,list<std::string>{".'substr'(any)", ".'substr'(any,any)"},"STRING_SUBSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                 standard_sub_process(ctx);
                 string output = resolve_string_ticket(ctx.node());
                 string str = ctx.node().getString(0);
@@ -1680,8 +1688,8 @@ namespace Acorn {
                 for(int i=from;i<from+to;i++) {
                     output.push(str.at(i));
                 }
-            };
-            x_handlers[string_slice_id] = [this](Context& ctx){
+            });
+            overload_type(string_id,list<std::string>{".'slice'(any,any)", ".'slice'(any,any,any)", ".'slice'(any,any,any,any)"},"STRING_SLICE",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
@@ -1707,8 +1715,8 @@ namespace Acorn {
                 for(int i=from;i<to;i++) {
                     target.push(*(char*)resolve_to_col(ptr)[i]);
                 }
-            };
-            x_handlers[string_find_id] = [this](Context& ctx){
+            });
+            overload_type(string_id,list<std::string>{".'find'(any)", ".'find'(any,any)", ".'find'(any,any,any)"},"STRING_FIND",make_value(int_id,4),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
@@ -1726,7 +1734,9 @@ namespace Acorn {
                 }
                 int found_id = string(ptr).find(refstr,start_at,nth_of);
                 ctx.node().value().set((void*)&found_id);
-            };
+            });
+
+            overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_value(ptr_id,sizeof(Ptr),0,int_id,4));
 
 
             add_function("makePtr3",[this](Context& ctx){
@@ -2059,13 +2069,13 @@ namespace Acorn {
                 ctx.node().value().set((void*)&c1);
             },sizeof(Ptr),node_id);
     
-            overload_type(node_id,".\"c0\"","NODE_c0",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            overload_type(node_id,".'c0'","NODE_c0",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
                 Node c0 = n.children()[0];
                 ctx.node().value().set((void*)&c0);
             });
-            overload_type(node_id,".\"c1\"","NODE_c1",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            overload_type(node_id,".'c1'","NODE_c1",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
                 Node c1 = n.children()[1];
@@ -2211,7 +2221,7 @@ namespace Acorn {
                     ctx.node().value().sub_type(datatype);
                 },sizeof(Ptr),query_id);
 
-                overload_type(query_id,".\"sort\"","QUERY_SORT",make_value(query_id,sizeof(Ptr)),[this](Context& ctx){
+                overload_type(query_id,".'sort'(string)","QUERY_SORT",make_value(query_id,sizeof(Ptr)),[this](Context& ctx){
                     standard_sub_process(ctx);
                     uint32_t datatype = ctx.node().left().value().sub_type();
                     if(datatype==0) { //Kludge
@@ -2280,7 +2290,7 @@ namespace Acorn {
 
                 });
 
-                overload_type(query_id,".\"asIndexString\"","QUERY_ASINDEXSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+                overload_type(query_id,".'asIndexString'","QUERY_ASINDEXSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                     standard_sub_process(ctx);
                     Col& sortcol = ctx.node().left().value().data_col();
                     string output = resolve_string_ticket(ctx.node());

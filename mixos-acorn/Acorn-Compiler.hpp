@@ -1473,13 +1473,13 @@ namespace Acorn {
 
 
 
-        void standard_direct_walk(Node root) {
+        void standard_travel_walk(Node root) {
             Stage* old_stage = active_stage;
             if(!walk_handlers.default_function) {
                 walk_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
             }
             start_stage(walk_handlers);
-            standard_direct_pass(root);
+            standard_travel_pass(root);
             walk_handlers.handlers.clear();
             walk_handlers.default_function = nullptr;
             start_stage(old_stage);
@@ -1499,12 +1499,6 @@ namespace Acorn {
                 signature+=")";
             }
         }
-        map<uint32_t,bool> init_signature_transparent_ops(){
-            map<uint32_t,bool> to_return;
-            to_return.put(group_id,true); to_return.put(property_id,true); 
-            return to_return;
-        }
-        map<uint32_t,bool> signature_transparent_ops = init_signature_transparent_ops();
 
         void overload_type(uint32_t type, const std::string& instr, uint32_t overload_to, Value value = deadptr) {
             float old_at_x = at_x; float old_at_y = at_y;
@@ -1523,7 +1517,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 ctx.node().type(identifier_id);
             };
-            standard_direct_walk(expr);
+            standard_travel_walk(expr);
             std::string signature = "";
             walk_handlers.default_function = [this,&signature](Context& ctx) {
                 open_signature(signature);
@@ -1537,7 +1531,7 @@ namespace Acorn {
                 signature+="'"+ctx.node().name().to_std()+"'";
                 continue_signature(ctx,signature);
             };
-            standard_direct_walk(expr);
+            standard_travel_walk(expr);
             start_stage(old_stage);
             registered_operator_ids[overload_to] = true;
             overloaded_operator_ids[overload_to] = true;
@@ -1607,36 +1601,52 @@ namespace Acorn {
             return id;
         }
 
+        uint32_t overload_type(uint32_t type, list<std::string> instrs, const std::string& f, Value value, Handler xhandler) {
+            uint32_t id = reg_id(f);
+            for(int i=0;i<instrs.length();i++) {
+                overload_type(type,instrs[i],id,value);
+            }
+            x_handlers[id] = xhandler;
+            return id;
+        }
+
         void what_I_see(Context& ctx) {
             print(bold_str(ctx.node().name().to_std()),": I see my root is ",green(ctx.root().name().to_std()),", my value type is ",blue(labels[ctx.node().value().type()])," and to my left is ",yellow(is_live(ctx.left())?ctx.left().name().to_std():"nothing"));
+        }
+
+        map<uint32_t,bool> init_signature_transparent_ids(){
+            map<uint32_t,bool> to_return;
+            to_return.put(group_id,true); to_return.put(property_id,true); 
+            to_return.put(identifier_id,true); to_return.put(literal_id,true); 
+            return to_return;
+        }
+        map<uint32_t,bool> signature_transparent_ids = init_signature_transparent_ids();
+        inline bool is_signature_transparent(uint32_t type) {
+            return signature_transparent_ids.getOrDefault(type,false);
         }
 
         list<std::string> derive_signatures(Node root) { 
             list<std::string> signatures;
             signatures << labels[root.type()]+"(";
             walk_handlers.default_function = [this,&signatures,&root](Context& ctx) {
-                bool is_transparent = signature_transparent_ops.getOrDefault(ctx.node().type(),false);
-                bool is_opp = is_operator(ctx.node().type());
                 list<std::string> next;
                 for(int i=0;i<signatures.length();i++) {
                     std::string base = signatures[i];
                     std::string opened = base+(base.empty()||base.back()==','||base.back()==';'||base.back()=='('||base.back()==')'?"":"-");
 
-                    if(is_transparent) {
-                        next << opened+labels[ctx.node().type()];
-                    } else {
-                        bool is_not_left = ctx.root()!=root||ctx.index()>0;
-                        if(is_not_left) {
-                            if(ctx.node().type()==identifier_id||(!is_opp&&ctx.node().type()!=literal_id)) {
-                                next << opened+"'"+ctx.node().name().to_std()+"'";
-                            }
-                        } 
-                        if(is_live(ctx.node().value())) {next << opened+labels[ctx.node().value().type()];} else {next<<opened+"UNDEFINED";}
-                        if(is_not_left) {next << opened+"any";}
-                    }
+                    bool is_not_left = ctx.root()!=root||ctx.index()>0;
+                    if(is_not_left) {
+                        if(ctx.node().type()==identifier_id) {
+                            next << opened+"'"+ctx.node().name().to_std()+"'";
+                        } else if(ctx.node().type()!=literal_id) {
+                            next << opened+labels[ctx.node().type()];
+                        }
+                    } 
+                    if(is_live(ctx.node().value())) {next << opened+labels[ctx.node().value().type()];} else {next<<opened+"UNDEFINED";}
+                    if(is_not_left) {next << opened+"any";}
                 }
                 signatures = next;
-                if((is_transparent||!is_opp)&&!ctx.node().children().empty()) {
+                if(is_signature_transparent(ctx.node().type())&&!ctx.node().children().empty()) {
                     for(int i=0;i<signatures.length();i++) signatures[i]+="(";
                     standard_sub_process(ctx);
                     for(int i=0;i<signatures.length();i++) signatures[i]+=")";
@@ -1648,10 +1658,11 @@ namespace Acorn {
                     for(int i=0;i<signatures.length();i++) signatures[i]+=";";
                 }
             };
-            standard_direct_walk(root);
+            standard_travel_walk(root);
             for(int i=0;i<signatures.length();i++) {
                 signatures[i]+=")";
             }
+            CHECK_ERROR_VAL(signatures," error while deriving signatures for ",node_basic_info_with_children_and_position(root));
             return signatures;
         }
         
@@ -1696,12 +1707,22 @@ namespace Acorn {
                     root.type(tnv.type);
                     if(is_live(tnv.value)) {
                         Value value = tnv.value;
-                        Value copy = root.value();
-                        if(!is_live(copy)) {
-                            copy = make_value();
-                            root.value(copy);
+                        if(value.type()!=0) {
+                            Value copy = root.value();
+                            if(!is_live(copy)) {
+                                copy = make_value();
+                                root.value(copy);  
+                            }
+                            copy.copy(value,true);
+                        } else {
+                            // if(root.sub_type()==0) {
+                            //     fire_quals(ctx,root.value());
+                            // } 
+                            root.value(make_value(
+                                root.left().value().sub_type(),
+                                root.left().value().sub_size()
+                            ));
                         }
-                        copy.copy(value,true);
                     }
                     break;
                 }
@@ -1805,7 +1826,7 @@ namespace Acorn {
                 })
                 for(int i = 0; i < ctx.node().children().length(); i++) {
                     Node arg = ctx.node().children()[i];
-                    if(arg.type()==equals_id) continue;
+                    if(arg.type()==equals_id||arg.sub_type()==equals_id) continue;
                     Node param = ctx.node().scopes()[0].owner().children()[i];
                     Node assignment = make_node(equals_id);
                     assignment.children().push(param);
@@ -2574,7 +2595,12 @@ namespace Acorn {
                                 ctx.node().value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index]));
                             }
                         } else {
-                            throw_error("Layout of "+labels[ltype]+" does not have prop "+prop);
+                            list<std::string> sigs = derive_signatures(ctx.node());
+                            std::string error_str = "Layout of "+labels[ltype]+" does not have prop "+prop+" Signatures: ";
+                            for(int i=0;i<sigs.length();i++) {
+                                error_str+="\n"+std::to_string(i)+": "+sigs[i];
+                            }
+                            throw_error(error_str);
                             return;
                         }
                     } else {
@@ -2612,39 +2638,6 @@ namespace Acorn {
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
                 Value value = ctx.node().value();
-
-                //Temporary kludge because it's late right now, I want to just put values in the _layout directly instead in the future and do away with this whole system
-                if(!is_live(value)) {
-                    uint32_t ltype = left.value().type();
-                    if(layouts.hasKey(ltype)) {
-                        _layout& layout = layouts.get(ltype);
-                        std::string prop = right.name().to_std();
-                        if(layout.label_to_index.hasKey(prop)) {
-                            uint32_t index = layout.label_to_index.get(prop);
-                            if(is_live(layout.ptrs[index])) { //If we were handed a full value just copy that over (why not just always use this though... mark for later)
-                                ctx.node().value(make_value()); ctx.node().value().copy(layout.ptrs[index],true);
-                            } else {
-                                ctx.node().value(make_value(layout.tags[index], layout.sizes[index], layout.offsets[index], layout.subtags[index], layout.subsizes[index]));
-                            }
-                        } else {
-                            throw_error("Layout of "+labels[ltype]+" does not have prop "+prop);
-                            return;
-                        }
-                    } else {
-                        //throw_error("No layout found for type "+labels[ltype]);
-                        return;
-                    }
-
-                    //This is mean to be for inline get syntax like children(0), probably going to be replaced with a proper overload in the future
-                    if(right.type()==identifier_id&&!right.children().empty()) { //Can replace with QValue in the future for an optimization
-                        Value value = ctx.node().value();
-                        value.type(value.sub_type()); value.sub_type(0);
-                        value.size(value.sub_size()); value.sub_size(0);
-                        //right.type(temp_get_id);
-                    }
-
-                    //:/
-                } 
 
                 if(right.type()==identifier_id&&is_live(value)) {
                     Ptr ptr = deadptr;

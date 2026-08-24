@@ -531,3 +531,59 @@ for(int i=0;i<1;i++) {
 //     test_string_recursion(0);
 //     print(pool_info(2));
 // }
+
+Signatures testing
+
+##
+    register wub;
+    "wub" {
+        in executing {
+            subprocess(ctx);
+            if(ctx.node.type!=#wub) {
+                execut(ctx.node);
+            } else {
+                print("WUBBING!");
+                print(ctx.node.children.get(0).name," -W- ",ctx.node.children.get(1));
+            }
+        }
+    }
+    register twub;
+    "twub" {
+        in executing {
+            subprocess(ctx);
+            if(ctx.node.type!=#twub) {
+                execut(ctx.node);
+            } else {
+                print("Twubbing!");
+                print(ctx.node.children.get(0)," -T- ",ctx.node.children.get(1));
+            }
+        }
+    }
+    register thrub;
+    "thrub" {
+        in executing {
+            int old_type = ctx.node.type;
+            subprocess(ctx);
+            if(old_type!=ctx.node.type) {
+                execut(ctx.node);
+            } else {
+                print("thrubbing.");
+                print(ctx.node.children.get(0)," -H- ",ctx.node.children.get(1));
+            }
+        }
+    }
+##
+
+Ptr Ptr stuff;
+Ptr int num; num.push(6);
+Ptr string str; str.push("six");
+stuff.push(num); stuff.push(str);
+
+test_overload(#int,"+int",#wub);
+test_overload(#int,"+string",#twub);
+
+print(*(stuff[0])," ",*(stuff[1]));
+
+for(int i=0;i<2;i=i+1) {
+    4+(*(stuff[i]));
+}

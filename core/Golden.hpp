@@ -6,7 +6,7 @@
 //Controls for the compiler printing, for debugging
 #define PRINT_ALL 0
 
-g_ptr<Log::Span> span = nullptr;
+inline g_ptr<Log::Span> span = nullptr;
 static inline void newline(const std::string& label) {
     #if PRINT_ALL
     if(!span) span = make<Log::Span>();
@@ -34,7 +34,7 @@ static inline void log_and_print(Args&&... args) {
     print(std::forward<Args>(args)...); log(std::forward<Args>(args)...);
 }
 
-std::string ptr_to_string(uint64_t addr) {
+inline std::string ptr_to_string(uint64_t addr) {
     uint64_t varied = addr >> 4;
     
     const char* profiles[] = {"CGOQD", "IHLTFE", "AVWXZK", "BPRSM"};
@@ -51,7 +51,7 @@ std::string ptr_to_string(uint64_t addr) {
     return std::string({letter}) + "-" + tbstr + "-" + letter;
 }
 
-std::string ptr_to_string(void* ptr) {
+inline std::string ptr_to_string(void* ptr) {
     return ptr_to_string((uint64_t)ptr);
 }
 

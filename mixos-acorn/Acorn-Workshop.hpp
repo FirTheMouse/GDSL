@@ -48,6 +48,17 @@ namespace Acorn {
 
         void init() override {
 
+            add_function("print_hash",[this](Context& ctx){
+                standard_sub_process(ctx);
+                Value keyv = ctx.node().c0().value();
+                if(is_ptr_alias(keyv.type())) {
+                    Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
+                    print(hashBytes(keycol.storage,keycol.size));
+                } else {
+                    print(hashBytes(keyv.get(),keyv.size()));
+                }
+            });
+
             add_function("test_overload",[this](Context& ctx){
                 standard_sub_process(ctx);
                 uint32_t type = ctx.node().getInt(0);

@@ -1,3 +1,5 @@
+Scroll to bottom for modern syntax.
+
 "test" {
     in executing {
         print(source);
@@ -587,3 +589,321 @@ print(*(stuff[0])," ",*(stuff[1]));
 for(int i=0;i<2;i=i+1) {
     4+(*(stuff[i]));
 }
+
+New cursour algebra:
+
+// ##
+//     "int" {
+//         on ".'tst'(int,[](int))" {
+//             print("TRIGERED");
+//         }
+//         on ".'tft'(int,function)" {
+//             print("TRIGERED F");
+//         }
+//     }
+// ##
+
+// int n = 3; int a = 9;
+
+// a.tst(3,[n,i](int i){});
+
+// func f = [](){};
+
+// a.tft(3,f);
+
+
+// int l = 19;
+// Ptr func funcs;
+// for(int n=0;n<3;n++) {
+//     func f = [n,l](int i){
+//         print(n,": ",i);
+//         print(IV#n);
+//     }
+//     funcs.push(f);
+// }
+// func fu = funcs[1];
+// fu(11);
+
+##
+    "ptr" {
+        on ".'iter'(function)" Ptr {
+            print("Got func");
+        }
+        on ".'iter'([]())" Ptr {
+            print("Got lambda");
+        }
+
+        on ".'iter'([](any))" Ptr {
+            print("Got undefined");
+        }
+    }
+##
+
+Ptr int nums; nums.push(3); nums.push(6); nums.push(9); nums.push(12);
+
+print(*nums[+][+]);
+print(*nums[++]);
+nums++;
+print(nums[-?]);
+print(nums?--?);
+
+nums.iter([nums](num){
+    print("Num: ",num);
+    if(num-?) {
+        print(*-num);
+    }
+    if(num+?) {
+        print(*+num);
+    }
+    if(num++?) {
+        print(*++num);
+    }
+    if(?+num) {
+        print(*(&num)[+]);
+    }
+});
+
+
+
+func f = [](n){print("Num: ",n);}
+nums.iter(f);
+
+
+ColCol l = utypes.add;
+string s = l.add(char);
+s = "word";
+s.iter([](c){
+    print(c);
+    if(c+?) {
+        print("+",*+c);
+    }
+});
+cast_to(#string,l.add(char)) = "hello";
+l.iter([](cc){
+    (&cc).iter([](c){
+        if(c-?) {
+            print(*-c);
+        }
+    });
+});
+
+
+void countdown(int n) {
+    if(n < 0) return;
+    print(n);
+    if(n-?) {print("was: ",*-n);}
+    if(n+?) {print("Last time: ",*+n);}
+    countdown(n - 1);
+}
+countdown(3);
+countdown(5);
+
+
+##
+    "int" {
+        on "?-" {
+            print("Query of: ",ctx.node);
+        }
+    }
+##
+
+print("Testing:");
+?-9;
+
+
+[:]Reserved for later:
+
+print("Testing thing");
+Ptr Ptr rbnptr;
+Ribbon rbn = rbnptr;
+rbn.thing = 89;
+print(rbn.thing);
+if(true) {
+    for(int i=0;i<2;i++) {
+        if(i==0) {
+            rbn.do = [](int b){
+                print("Hello world: ",b);
+            };
+        } else {
+            rbn.do = [](int a){
+                print("Gooodbye world: ",a);
+            }   
+        }
+        rbn.do(9);
+        rbn.do(19);
+    }
+}
+
+More testing:
+
+Ptr int nums; nums.push(3); nums.push(6); nums.push(9); nums.push(12);
+print(nums[2]);
+
+nums.put("Wub",8);
+nums << ["TWub",16];
+
+nums.qub = 29;
+
+print(nums.Wub);
+
+nums.iter([](n,i){
+    print(i,": ",n);
+    if(n-?) {
+        (&-n).celllabel(to_string(n));
+    }
+}).cells([](key,val){
+    if(!val-?) {
+        print("CELLS");
+    }
+    print(key,": ",val);
+});
+
+Even more testing:
+
+
+ColCol pool = utypes.add;
+pool["Numbers"].retype(int).push(9).push(10);
+
+print("Testing thing");
+Ribbon rbn = pool.add(Ptr);
+rbn.thing = "Hello";
+rbn.number = 18;
+rbn.other = "Goodbye";
+print(rbn.thing);
+print(rbn);
+print_col(rbn);
+print(*+rbn.as(Ptr).thing);
+
+print(rbn.?number," ",rbn.has("number")," ",rbn.has(number)," ",rbn.?numer," ",rbn.has("numer"));
+
+##
+    "int" {
+        on ".string" {
+            int old_type = ctx.node.type;
+            subprocess(ctx);
+            if(ctx.node.type!=old_type) {execut(ctx.node);}
+            else {print("Int stringing with ",ctx.node.c1.value.get);}
+        }
+    }
+    "string" {
+        on ".string" {
+            int old_type = ctx.node.type;
+            subprocess(ctx);
+            if(ctx.node.type!=old_type) {execut(ctx.node);}
+            else{print("String stringing with ",ctx.node.c1.value.get);}
+        }
+    }
+##
+
+rbn.iter([](e,i){
+    print(i,": ",e);
+    e."term";
+});
+
+    Ptr Ribbon rbs;
+    for(int i=0;i<3;i++) {
+        Ribbon rb(
+            names: "joe";
+            votes: 16;
+        );
+        rb.init(
+            fields: i;
+            numbers: [int];
+            more: [1,2,i,4];
+        );
+        rbs << rb;
+    }
+    rbs.iter([](r){
+        print(r.names," ",r.votes," ",r.fields);
+        r.numbers.push(6);
+        r.numbers.push(12);
+        r.more.iter([](i){
+            print("I: ",i);
+        });
+        r.numbers.iter([](nn){
+            print("NN: ",nn);
+        });
+    });
+
+
+
+if(true) {
+    string p = "hello";
+    print("P: ",p);
+
+    string s(
+        one: 'A';
+        two: 'B';
+        'C';
+        'D';
+        three: 'E';
+    );
+    print("S: ",s);
+    s.iter([](c){
+        print(": ",c);
+    });
+    s.cells([](key,c){
+        print(key,": ",c);
+    });
+}
+
+for(int i=0;i<3;i++) {
+    pool.Ribbon.init(
+        name: "Joe";
+        age: i;
+    );
+}
+dump_pool(pool,true);
+
+
+ColColCol sub = usubunits.add("savetest.gsu");
+for(int i=0;i<3;i++) {
+    sub.add.Ribbon(
+        name: "Franky"; age: 42;
+    );
+}
+dump_subunit(sub,true);
+
+
+Modern YAPA syntax:
+
+Ptr int nums; 
+nums.init(
+    One: 1,
+    Two: 2,
+    3,
+    Four: 4
+);
+nums.do(n => {
+    n=n*2;
+    if(n+?) print("NEXT: ",*+n);   
+}).cells((key,val) => print(key,": ",val));
+nums.keys(key => print(key));
+
+ColCol pool = utypes.add;
+Object thing = pool.Object(
+    Numbers: [4,8,6,12];
+    Name: "Joe";
+);
+thing.behaviour = [](int a){
+    print("A: ",a);
+};
+thing.behaviour(6);
+thing.Numbers.do(e => {
+    thing.behaviour(e);
+});
+thing.property = 28;
+print("Thing.property: ",thing.property);
+
+Object other; 
+other.init(
+    Number: 19;
+);
+other.Thing = thing;
+print(other.Number," : ",other.Thing.property);
+
+DEBUG_ROOT_X(1);
+dump_pool(pool,true);
+
+
+

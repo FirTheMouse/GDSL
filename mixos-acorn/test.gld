@@ -1,8 +1,40 @@
-int sayHi(string word) {
-    print(word,"!");
-    return 6;
-}
-if(sayHi("hello")>0) {
-    print("Was more");
-}
-DEBUG_ROOT_X_BRIEF;
+Ptr int nums; 
+nums.init(
+    One: 1,
+    Two: 2,
+    3,
+    Four: 4
+);
+nums.do(n => {
+    n=n*2;
+    if(n+?) print("NEXT: ",*+n);   
+}).cells((key,val) => print(key,": ",val));
+nums.keys(key => print(key));
+
+ColCol pool = utypes.add;
+Object thing = pool.Object(
+    Numbers: [4,8,6,12];
+    Name: "Joe";
+);
+thing.behaviour = [](int a){
+    print("A: ",a);
+};
+thing.behaviour(6);
+thing.Numbers.do(e => {
+    thing.behaviour(e);
+});
+thing.property = 28;
+print("Thing.property: ",thing.property);
+
+Object other; 
+other.init(
+    Number: 19;
+);
+other.Thing = thing;
+print(other.Number," : ",other.Thing.property);
+
+DEBUG_ROOT_X(1);
+dump_pool(pool,true);
+
+
+

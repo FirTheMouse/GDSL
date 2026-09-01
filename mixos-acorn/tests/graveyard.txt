@@ -1,179 +1,308 @@
-r_handlers[dot_id] = [this](Context& ctx){
-            //     standard_sub_process(ctx);
-            //     Node left = ctx.node.children()[0];
-            //     Node right = ctx.node.children()[1];
+  r_handlers[dot_id] = [this](Context& ctx){
+    standard_sub_process(ctx);
+    Node left = ctx.node.children()[0];
+    Node right = ctx.node.children()[1];
 
-            //     if(left.value().type()==col_id) { //Lists and such get handled on their own
-            //         if(right.name().to_std()=="get"||right.name().to_std()=="take") { //If we're getting then right will be of the type we're getting
-            //             if(left.value().sub_type()==node_id) {
-            //                 right.value(make_value(node_id,sizeof(Ptr)));
-            //                 right.value().init_data();
-            //                 right.value().type_scope(Ptr(node_type_id,1,0)); //The node template
-            //             } else if(left.value().sub_type()==value_id) {
-            //                 right.value(make_value(value_id,sizeof(Ptr)));
-            //                 right.value().init_data();
-            //                 right.value().type_scope(Ptr(node_type_id,1,1)); //The value template
+    if(left.value().type()==col_id) { //Lists and such get handled on their own
+        if(right.name().to_std()=="get"||right.name().to_std()=="take") { //If we're getting then right will be of the type we're getting
+            if(left.value().sub_type()==node_id) {
+                right.value(make_value(node_id,sizeof(Ptr)));
+                right.value().init_data();
+                right.value().type_scope(Ptr(node_type_id,1,0)); //The node template
+            } else if(left.value().sub_type()==value_id) {
+                right.value(make_value(value_id,sizeof(Ptr)));
+                right.value().init_data();
+                right.value().type_scope(Ptr(node_type_id,1,1)); //The value template
+            } else {
+                right.value(make_value(left.value().sub_type(),left.value().sub_size()));
+                right.value().init_data();
+            }
+        } else if(right.name().to_std()=="length") {
+            right.value(make_value(int_id,4));
+            right.value().init_data();
+        }
+        ctx.node.value(right.value()); //Stealing it from right
+    } else if(left.value().type()==string_id) {
+        if(right.name().to_std()=="length") {
+            right.value(make_value(int_id,4));
+            right.value().init_data();
+        } else if(right.name().to_std()=="at") {
+            right.value(make_value(char_id,1));
+            right.value().init_data();
+        } else if(right.name().to_std()=="substr") {
+            right.value(make_value(string_id,sizeof(Ptr)));
+            right.value().init_data();
+            Ptr ticket(data_store_id,types[data_store_id].note_value("substrstorage",sizeof(char),char_id),0);
+            right.value().set((void*)&ticket);
+        } else if(right.name().to_std()=="find") {
+            right.value(make_value(int_id,4));
+            right.value().init_data();
+        } else if(right.name().to_std()=="split") {
+            right.value(make_value(col_id,sizeof(Ptr),0,string_id,sizeof(Ptr)));
+            right.value().init_data();
+            Ptr ticket(data_store_id,types[data_store_id].note_value("splitstorage",sizeof(Ptr),string_id),0);
+            right.value().set((void*)&ticket);
+        }
+        ctx.node.value(right.value()); //Stealing it from right
+    } else {
+        std::string prop = right.name().to_std();
+        right.value(make_value());
+        value_col look;
+        if(left.value().type_scope().idx==1) {
+            look = left.value().type_scope().value_table();
+        } else {
+            if(left.value().type()==node_id) {
+                Ptr pptr(value_table_store_id,0,0);
+                look = (value_col&)(pptr);
+            } else if(left.value().type()==value_id) {
+                Ptr pptr(value_table_store_id,1,0);
+                look = (value_col&)(pptr);
+            } else {
+                print(red("dot:r_handler no clue what value table to use for "+labels[left.value().type()]));
+                return;
+            }
+        }
+        right.value().copy(look.get(prop));
+        ctx.node.value(right.value()); //Stealing it from right
+    }
+};
+
+x_handlers[dot_id] = [this](Context& ctx){
+    standard_sub_process(ctx);
+    Node left = ctx.node.children()[0];
+    Node right = ctx.node.children()[1];
+    Ptr ptr = left;
+    if(left.value().idx==1&&(left.value().type()==node_id||left.value().type()==value_id||left.value().type()==col_id||left.value().type()==string_id)) {
+        ptr = *(Ptr*)left.value().get();
+    }
+
+    int addr = ctx.node.value().address();
+
+    if(left.value().type()==col_id) {
+        std::string opp = right.name().to_std();
+        if(opp=="push") {
+            Node rleft = right.children()[0];
+            types[ptr.pool][ptr.idx].push(rleft.value().get());
+        } else if(opp=="get") {
+            addr = *(int*)right.children()[0].value().get();
+            Ptr targetptr(ptr.pool,ptr.idx,addr);
+            if(ctx.root.type()==equals_id&&ctx.left.idx==1) { //Checking livness of left, because we only expose if we're the left term of the assignment
+                //Except this doesn't actually work correctly! Correct it later
+                ctx.node.value().data_col().set(ctx.node.value().sidx,(void*)&targetptr);
+            } else {
+                ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
+            }
+        } else if(opp=="take") {
+            addr = *(int*)right.children()[0].value().get();
+            Ptr targetptr(ptr.pool,ptr.idx,addr);
+            ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
+            types[targetptr.pool][targetptr.idx].removeAt(targetptr.sidx);
+        } else if(opp=="length") {
+            int len = types[ptr.pool][ptr.idx].length();
+            ctx.node.value().data_col().set(0,(void*)&len);
+        }
+    } else if(left.value().type()==string_id) {
+        std::string opp = right.name().to_std();
+        if(opp=="length") {
+            int len = types[ptr.pool][ptr.idx].length();
+            ctx.node.value().data_col().set(0,(void*)&len);
+        } else if(opp=="at") {
+            Ptr targetptr(ptr.pool,ptr.idx,*(uint32_t*)right.children()[0].value().get());
+            if(ctx.root.type()==equals_id&&ctx.left.idx==1) {
+                ctx.node.value().data_col().set(ctx.node.value().sidx,(void*)&targetptr);
+            } else {
+                ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
+            }
+        } else if(opp=="substr") {
+            int from = *(int*)right.children()[0].value().get();
+            int to = *(int*)right.children()[1].value().get();
+            string target(*(Ptr*)right.value().get());
+            target.col().clear();
+            for(int i=from;i<from+to;i++) {
+                target.push(*(char*)types[ptr.pool][ptr.idx][i]);
+            }
+        } else if(opp=="append") {
+            string to_add(*(Ptr*)right.children()[0].value().get());
+            for(int i=0;i<to_add.length();i++) {
+                types[ptr.pool][ptr.idx].push((void*)&to_add[i]);
+            }
+        } else if(opp=="clear") {
+            types[ptr.pool][ptr.idx].clear();
+        } else if(opp=="find") {
+            Col& tcol = types[ptr.pool][ptr.idx];
+            string refstr(*(Ptr*)right.children()[0].value().get());
+            int start_at = 0;
+            if(right.children().length()>1) {
+                start_at = *(int*)right.children()[1].value().get();
+            }
+            int found_id = -1;
+            for(int i=start_at;i<tcol.length();i++) {
+                bool match = true;
+                for(int s=0;s<refstr.length();s++) {
+                    if(*(char*)tcol[i+s]!=refstr[s]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if(match) {
+                    found_id = i; break;
+                }
+            }
+            ctx.node.value().data_col().set(0,(void*)&found_id);
+        } else if(opp=="split") { //DO NOT USE FOR NOW (this was an experiment)
+            string refstr(*(Ptr*)right.children()[0].value().get());
+            char delimt = refstr.at(0);
+            string str(ptr);
+            list<std::string> splt = split_str(str.to_std(),delimt);
+            Ptr tptr = *(Ptr*)right.value().get();
+            Col& tcol = types[tptr.pool][tptr.idx];
+            tcol.clear();
+            for(auto s : splt) {
+                Ptr ticket(data_store_id,types[data_store_id].note_value("spltstorage",sizeof(char),char_id),0);
+                string newstr(ticket);
+                newstr.push(s);
+            }
+        }
+    } else {
+        if(!right.children().empty()) { //This is a bit jank, a burn is coming
+            //types[ptr.pool][addr].set(ptr.sidx,right.children()[0].value().get());
+            types[ptr.pool][addr].set(ptr.sidx,(void*)&right.children()[0].value().data_ptr());
+        } else {
+            if(ctx.root.type()==equals_id&&ctx.left.idx==1) {
+                Ptr targetptr(ptr.pool,addr,ptr.sidx);
+                types[ctx.node.value().pool][value_data_col].set(ctx.node.value().sidx,(void*)&targetptr);
+            } else {
+                ctx.node.value().set(types[ptr.pool][addr][ptr.sidx]);
+            }
+        }
+    }
+};
+
+
+
+
+
+
+
+            // if(!is_node_opperator(ctx.root())) return;
+            // //LOG_W(ctx," resolving overloads");
+            // // print("RESOLVING: ",node_to_string(ctx.node()));
+            // if(do_subprocess) {
+            //     standard_sub_process(ctx); //Consider not doing this
+            // }
+            // if(ctx.index()==0&&is_live(ctx.node().value())) { //If we're the left term
+            //     if(layouts.hasKey(ctx.node().value().type())) {
+            //         _layout& l = layouts[ctx.node().value().type()];
+            //         uint32_t right_type = 0;
+            //         bool has_overload = false;
+            //         uint64_t typekey = 0;
+            //         if(ctx.result().length()>1) {
+            //             ctx.index() = 1; //Because process node will just blindly carry index
+            //             process_node(ctx,ctx.result().get(1));
+            //             ctx.index() = 0;
+            //             if(is_live(ctx.result().get(1).value())) {
+            //                 //print("Deriving value from right_type");
+            //                 right_type = ctx.result().get(1).value().type();
             //             } else {
-            //                 right.value(make_value(left.value().sub_type(),left.value().sub_size()));
-            //                 right.value().init_data();
+            //                 //log(yellow("resolve_overload: right term has a dead value: "),node_info(ctx.result().get(1)));
+            //                 //print(span->on_line->parent->to_string());
             //             }
-            //         } else if(right.name().to_std()=="length") {
-            //             right.value(make_value(int_id,4));
-            //             right.value().init_data();
-            //         }
-            //         ctx.node.value(right.value()); //Stealing it from right
-            //     } else if(left.value().type()==string_id) {
-            //         if(right.name().to_std()=="length") {
-            //             right.value(make_value(int_id,4));
-            //             right.value().init_data();
-            //         } else if(right.name().to_std()=="at") {
-            //             right.value(make_value(char_id,1));
-            //             right.value().init_data();
-            //         } else if(right.name().to_std()=="substr") {
-            //             right.value(make_value(string_id,sizeof(Ptr)));
-            //             right.value().init_data();
-            //             Ptr ticket(data_store_id,types[data_store_id].note_value("substrstorage",sizeof(char),char_id),0);
-            //             right.value().set((void*)&ticket);
-            //         } else if(right.name().to_std()=="find") {
-            //             right.value(make_value(int_id,4));
-            //             right.value().init_data();
-            //         } else if(right.name().to_std()=="split") {
-            //             right.value(make_value(col_id,sizeof(Ptr),0,string_id,sizeof(Ptr)));
-            //             right.value().init_data();
-            //             Ptr ticket(data_store_id,types[data_store_id].note_value("splitstorage",sizeof(Ptr),string_id),0);
-            //             right.value().set((void*)&ticket);
-            //         }
-            //         ctx.node.value(right.value()); //Stealing it from right
-            //     } else {
-            //         std::string prop = right.name().to_std();
-            //         right.value(make_value());
-            //         value_col look;
-            //         if(left.value().type_scope().idx==1) {
-            //             look = left.value().type_scope().value_table();
             //         } else {
-            //             if(left.value().type()==node_id) {
-            //                 Ptr pptr(value_table_store_id,0,0);
-            //                 look = (value_col&)(pptr);
-            //             } else if(left.value().type()==value_id) {
-            //                 Ptr pptr(value_table_store_id,1,0);
-            //                 look = (value_col&)(pptr);
-            //             } else {
-            //                 print(red("dot:r_handler no clue what value table to use for "+labels[left.value().type()]));
-            //                 return;
+            //             typekey = make_overload_key(ctx.root().type(),0);
+            //             has_overload = l.has_overload(typekey);
+            //         }
+
+            //         if(right_type!=0) {
+            //             typekey = make_overload_key(ctx.root().type(),right_type);
+            //             has_overload = l.has_overload(typekey);
+            //             if(!has_overload) {
+            //                 //print("False overload, checking any");
+            //                 typekey = make_overload_key(ctx.root().type(),any_id);
+            //                 has_overload = l.has_overload(typekey);
+            //             }
+            //         } else if(!has_overload) {
+            //             if(ctx.result().length()>1) {
+            //                 right_type = hashString(ctx.result().get(1).name().to_std());
+            //                 //print("Overloading name: ",ctx.result().get(1).name().to_std());
+            //             }
+            //             if(right_type!=0) {
+            //                 typekey = make_overload_key(ctx.root().type(),right_type);
+            //                 has_overload = l.has_overload(typekey);
             //             }
             //         }
-            //         right.value().copy(look.get(prop));
-            //         ctx.node.value(right.value()); //Stealing it from right
-            //     }
-            // };
+            //         //print("Has overload: ",has_overload?"Yes":"No");
+            //         if(has_overload) {
+            //             type_and_value tnv = l.get_overload(typekey);
+            //             ctx.root().type(tnv.type);
+            //             if(is_live(tnv.value)) {
+            //                 Value& value = (Value&)tnv.value;
+            //                 if((value.type()!=0)) {
+            //                     ctx.root().value(make_value(value.type(),value.size(),value.address(),value.sub_type(),value.sub_size(),value.type_scope()));
+            //                 } else {
+            //                     if(ctx.node().value().sub_type()==0) {
+            //                         fire_quals(ctx,ctx.node().value());
+            //                     } 
 
-            // x_handlers[dot_id] = [this](Context& ctx){
-            //     standard_sub_process(ctx);
-            //     Node left = ctx.node.children()[0];
-            //     Node right = ctx.node.children()[1];
-            //     Ptr ptr = left;
-            //     if(left.value().idx==1&&(left.value().type()==node_id||left.value().type()==value_id||left.value().type()==col_id||left.value().type()==string_id)) {
-            //         ptr = *(Ptr*)left.value().get();
-            //     }
-
-            //     int addr = ctx.node.value().address();
-
-            //     if(left.value().type()==col_id) {
-            //         std::string opp = right.name().to_std();
-            //         if(opp=="push") {
-            //             Node rleft = right.children()[0];
-            //             types[ptr.pool][ptr.idx].push(rleft.value().get());
-            //         } else if(opp=="get") {
-            //             addr = *(int*)right.children()[0].value().get();
-            //             Ptr targetptr(ptr.pool,ptr.idx,addr);
-            //             if(ctx.root.type()==equals_id&&ctx.left.idx==1) { //Checking livness of left, because we only expose if we're the left term of the assignment
-            //                 //Except this doesn't actually work correctly! Correct it later
-            //                 ctx.node.value().data_col().set(ctx.node.value().sidx,(void*)&targetptr);
-            //             } else {
-            //                 ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
-            //             }
-            //         } else if(opp=="take") {
-            //             addr = *(int*)right.children()[0].value().get();
-            //             Ptr targetptr(ptr.pool,ptr.idx,addr);
-            //             ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
-            //             types[targetptr.pool][targetptr.idx].removeAt(targetptr.sidx);
-            //         } else if(opp=="length") {
-            //             int len = types[ptr.pool][ptr.idx].length();
-            //             ctx.node.value().data_col().set(0,(void*)&len);
-            //         }
-            //     } else if(left.value().type()==string_id) {
-            //         std::string opp = right.name().to_std();
-            //         if(opp=="length") {
-            //             int len = types[ptr.pool][ptr.idx].length();
-            //             ctx.node.value().data_col().set(0,(void*)&len);
-            //         } else if(opp=="at") {
-            //             Ptr targetptr(ptr.pool,ptr.idx,*(uint32_t*)right.children()[0].value().get());
-            //             if(ctx.root.type()==equals_id&&ctx.left.idx==1) {
-            //                 ctx.node.value().data_col().set(ctx.node.value().sidx,(void*)&targetptr);
-            //             } else {
-            //                 ctx.node.value().set(types[targetptr.pool][targetptr.idx][targetptr.sidx]);
-            //             }
-            //         } else if(opp=="substr") {
-            //             int from = *(int*)right.children()[0].value().get();
-            //             int to = *(int*)right.children()[1].value().get();
-            //             string target(*(Ptr*)right.value().get());
-            //             target.col().clear();
-            //             for(int i=from;i<from+to;i++) {
-            //                 target.push(*(char*)types[ptr.pool][ptr.idx][i]);
-            //             }
-            //         } else if(opp=="append") {
-            //             string to_add(*(Ptr*)right.children()[0].value().get());
-            //             for(int i=0;i<to_add.length();i++) {
-            //                 types[ptr.pool][ptr.idx].push((void*)&to_add[i]);
-            //             }
-            //         } else if(opp=="clear") {
-            //             types[ptr.pool][ptr.idx].clear();
-            //         } else if(opp=="find") {
-            //             Col& tcol = types[ptr.pool][ptr.idx];
-            //             string refstr(*(Ptr*)right.children()[0].value().get());
-            //             int start_at = 0;
-            //             if(right.children().length()>1) {
-            //                 start_at = *(int*)right.children()[1].value().get();
-            //             }
-            //             int found_id = -1;
-            //             for(int i=start_at;i<tcol.length();i++) {
-            //                 bool match = true;
-            //                 for(int s=0;s<refstr.length();s++) {
-            //                     if(*(char*)tcol[i+s]!=refstr[s]) {
-            //                         match = false;
-            //                         break;
+            //                     ctx.root().value(make_value(
+            //                         ctx.node().value().sub_type(),
+            //                         ctx.node().value().sub_size()
+            //                     ));
+            //                     if(ctx.node().value().quals().length()>1) {
+            //                         for(int i=1;i<ctx.node().value().quals().length();i++) {
+            //                             ctx.root().value().quals() << ctx.node().value().quals()[i];
+            //                         }
             //                     }
             //                 }
-            //                 if(match) {
-            //                     found_id = i; break;
-            //                 }
-            //             }
-            //             ctx.node.value().data_col().set(0,(void*)&found_id);
-            //         } else if(opp=="split") { //DO NOT USE FOR NOW (this was an experiment)
-            //             string refstr(*(Ptr*)right.children()[0].value().get());
-            //             char delimt = refstr.at(0);
-            //             string str(ptr);
-            //             list<std::string> splt = split_str(str.to_std(),delimt);
-            //             Ptr tptr = *(Ptr*)right.value().get();
-            //             Col& tcol = types[tptr.pool][tptr.idx];
-            //             tcol.clear();
-            //             for(auto s : splt) {
-            //                 Ptr ticket(data_store_id,types[data_store_id].note_value("spltstorage",sizeof(char),char_id),0);
-            //                 string newstr(ticket);
-            //                 newstr.push(s);
-            //             }
-            //         }
-            //     } else {
-            //         if(!right.children().empty()) { //This is a bit jank, a burn is coming
-            //             //types[ptr.pool][addr].set(ptr.sidx,right.children()[0].value().get());
-            //             types[ptr.pool][addr].set(ptr.sidx,(void*)&right.children()[0].value().data_ptr());
-            //         } else {
-            //             if(ctx.root.type()==equals_id&&ctx.left.idx==1) {
-            //                 Ptr targetptr(ptr.pool,addr,ptr.sidx);
-            //                 types[ctx.node.value().pool][value_data_col].set(ctx.node.value().sidx,(void*)&targetptr);
-            //             } else {
-            //                 ctx.node.value().set(types[ptr.pool][addr][ptr.sidx]);
             //             }
             //         }
             //     }
-            // };
+            // }
+
+
+
+
+
+
+
+            // if(!layouts.hasKey(type)) {
+            //     layouts.put(type,_layout(add_template(type)));
+            // }
+
+            // float old_at_x = at_x; float old_at_y = at_y;
+            // at_x = 0.0f; at_y =0.0f;
+            // Node expr = tokenize(instr);
+            // at_x = old_at_x; at_y = old_at_y;
+
+            // Stage* old_stage = active_stage;
+            // start_stage(a_handlers);
+            // standard_direct_pass(expr);
+            // a_pass_resolve_keywords(expr.children());
+            // start_stage(old_stage);
+
+            // // print(node_to_string(expr));
+
+            // uint32_t root_type = 0; 
+            // uint32_t right_type = 0;
+            // if(!expr.children().empty()) {
+            //     Node op = expr.children()[0];
+            //     root_type = op.type();
+            //     if(op.name().length()==1&&instr.length()>1&&instr.find(op.name().to_std())==0&&op.type()!=group_id) {
+            //         root_type-=2; //Convert to normal version if it's on the left side, so +string parses as plus_unary, but is actually just normal plus
+            //         //Only single char ops can be unary form so token combos don't need this
+            //     }
+
+            //     if(!op.children().empty()) {
+            //         if(!is_live(op.children()[0].value())) {
+            //             right_type = op.children()[0].type();
+            //             if(right_type==string_id) {
+            //                 right_type = hashString(op.children()[0].name().to_std());
+            //             }
+            //         } else {
+            //             right_type = op.children()[0].value().type();
+            //         }
+            //     }
+            // }
+            // layouts.get(type).add_overload(make_overload_key(root_type,right_type),overload_to,value);
+            // recycle_node(expr);
+
+            // registered_operator_ids[overload_to] = true;

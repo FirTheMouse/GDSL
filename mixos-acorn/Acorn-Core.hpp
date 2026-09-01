@@ -6,11 +6,11 @@
 #include "../core/Golden.hpp"
 #include "../mixos-acorn/util/Acorn-Type.hpp"
 #include "../ext/g_lib/core/q_object.hpp"
-#include "../GDSL/ext/g_lib/core/thread.hpp"
+#include "../ext/g_lib/core/thread.hpp"
 
 
 // #include <mach/mach.h>
-size_t current_memory_usage() {
+inline size_t current_memory_usage() {
     // #ifdef _WIN32
     //     return 0;
     // #else
@@ -22,7 +22,7 @@ size_t current_memory_usage() {
     // #endif
     return 0;
 }
-size_t current_rss() {
+inline size_t current_rss() {
     // #ifdef _WIN32
     //     return 0;
     // #else
@@ -34,7 +34,7 @@ size_t current_rss() {
     return 0;
 }
 
-size_t current_vsz() {
+inline size_t current_vsz() {
     // #ifdef _WIN32
     //     return 0;
     // #else
@@ -49,7 +49,7 @@ size_t current_vsz() {
 #define NAMED_PTRS 0
 
 namespace Acorn {   
-    static int _ctx_dummy_index = 0;
+    static inline int _ctx_dummy_index = 0;
     class Unit;
     struct Node;
     struct Context;
@@ -134,7 +134,7 @@ namespace Acorn {
     };
 
      //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
-     uint32_t create_column(ColCol& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
+    inline uint32_t create_column(ColCol& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
         if(use_pooling&&!col.free.empty()) {
             //Lazy version that doesn't care about tags or sizes
             uint32_t idx = col.free.pop();
@@ -156,7 +156,7 @@ namespace Acorn {
         return col.length()-1;
     }
     //Creates a column from pool and intilizes it's memory if empty
-    uint32_t push_column(ColCol& col, uint32_t size, uint32_t tag) {
+    inline uint32_t push_column(ColCol& col, uint32_t size, uint32_t tag) {
         uint32_t at = create_column(col,size,tag);
         Col& ncol = *(Col*)col.sget(at);
         if(ncol.size<size) {
@@ -255,7 +255,7 @@ namespace Acorn {
         return *(Col*)p.cache; 
     }
 
-    std::string Ptr_to_string(Ptr p, int print_level = 3) {
+    inline  std::string Ptr_to_string(Ptr p, int print_level = 3) {
         if(p.cachelevel > 0 && print_level > p.cachelevel)  return "CANNOT PRINT LEVEL "+std::to_string(print_level)+" ON PTR WITH CACHELEVEL "+std::to_string(p.cachelevel);
 
         switch(print_level) {
@@ -270,10 +270,10 @@ namespace Acorn {
             default: return "INVALID PRINT LEVEL FOR PTR_TO_STRING "+std::to_string(print_level);
         }
     }
-    std::string capture_ptr(Ptr p) {
+    inline std::string capture_ptr(Ptr p) {
         return std::to_string((uint64_t)p.cache)+"."+std::to_string(p.gen)+"."+std::to_string(p.specialization)+"."+Ptr_to_string(p,p.cachelevel);
     }
-    Ptr decode_ptr_string(const std::string& s) {
+    inline Ptr decode_ptr_string(const std::string& s) {
         auto l = split_str(s,'|');
         if(l.length()==2) {
             Ptr p(std::stoi(l[0]),std::stoi(l[1]));
@@ -296,7 +296,7 @@ namespace Acorn {
             return deadptr;
         }
     }
-    Ptr string_to_Ptr(const std::string& s) {
+    inline Ptr string_to_Ptr(const std::string& s) {
         if(s.find('.') != std::string::npos) {
             auto parts = split_str(s, '.');
             Ptr p = decode_ptr_string(parts[3]);
@@ -308,25 +308,25 @@ namespace Acorn {
             return decode_ptr_string(s);
         }
     }
-    uint8_t string_to_cachelevel(const std::string& s) {
+    inline uint8_t string_to_cachelevel(const std::string& s) {
         uint8_t to_return = 0;
         for(auto& c : s) if(c=='|') to_return++;
         if(to_return!=0) to_return+=1;
         return to_return;
     }
 
-    list<g_ptr<Unit>> units;
-    static std::mutex units_mutex;
+    inline list<g_ptr<Unit>> units;
+    static inline std::mutex units_mutex;
 
-    ColColCol& init_first_unit();
+    inline ColColCol& init_first_unit();
 
-    ColColCol& global = init_first_unit();
+    inline ColColCol& global = init_first_unit();
 
 
-    uint32_t undefined_id = 0;
-    uint32_t stages_id = 1;
-    uint32_t ptr_id = 2; uint32_t prefix_ptr_id = 3; uint32_t suffix_ptr_id = 4;
-    uint32_t subunit_id = 5; uint32_t prefix_subunit_id = 6; uint32_t suffix_subunit_id = 7;
+    inline uint32_t undefined_id = 0;
+    inline uint32_t stages_id = 1;
+    inline uint32_t ptr_id = 2; inline uint32_t prefix_ptr_id = 3; inline uint32_t suffix_ptr_id = 4;
+    inline uint32_t subunit_id = 5; inline uint32_t prefix_subunit_id = 6; inline uint32_t suffix_subunit_id = 7;
 
     struct PtrColColCol : Col {
         PtrColColCol() : Col(sizeof(void*),subunit_id) {}
@@ -362,11 +362,11 @@ namespace Acorn {
         }
     };
 
-    static ColColCol col3_ref;
-    static PtrColColCol pcol3_ref;
+    static inline ColColCol col3_ref;
+    static inline PtrColColCol pcol3_ref;
     inline PtrColColCol& resolve_to_unit(const Ptr& ptr);
     inline ColColCol& resolve_to_subunit(const Ptr& ptr);
-    static ColCol col2_ref;
+    static inline ColCol col2_ref;
     inline ColCol& resolve_to_pool(const Ptr& ptr) {
         switch(ptr.cachelevel) {
             case 0: case 4: case 3: {
@@ -384,7 +384,7 @@ namespace Acorn {
             return col2_ref;
         }
     }
-    static Col col1_ref;
+    static inline Col col1_ref;
     inline Col& resolve_to_col(const Ptr& ptr) {
         switch(ptr.cachelevel) {
             case 0: case 4: case 3: case 2: {
@@ -433,7 +433,7 @@ namespace Acorn {
         inline void operator=(string s){ col().clear(); push((const char*)s.col().storage, s.length());}
         inline void operator=(const char* s) { col().clear(); push(s, strlen(s)); }
         inline char& operator[](uint32_t idx) { return *(char*)col().get(idx); }
-        std::string to_std() {Col& c = col(); CHECK_ERROR_VAL(ERROR_MSG,"Bad col in string");  return std::string((char*)c.storage, length());}
+        std::string to_std() {Col& c = col(); CHECK_ERROR_VAL(red("to_std failed: ")+ERROR_MSG,"Bad col in string");  return std::string((char*)c.storage, length());}
         inline int find(string look_for, int start_at, int nth_of = 1) {
             int found_at = -1;
             for(int i=start_at;i<col().length();i++) {
@@ -454,22 +454,22 @@ namespace Acorn {
             return found_at;
         }
     };
-    string get_global_string_ticket();
+    inline string get_global_string_ticket();
 
     struct type_and_value {
         uint32_t type;
         Ptr value;
     };
 
-    uint32_t offsets_col = 0;
-    uint32_t tags_col = offsets_col + 1;
-    uint32_t sizes_col = tags_col + 1;
-    uint32_t labels_col = sizes_col + 1;
-    uint32_t subtags_col = labels_col + 1;
-    uint32_t subsizes_col = subtags_col + 1;
-    uint32_t ptrs_col = subsizes_col + 1;
+    inline uint32_t offsets_col = 0;
+    inline uint32_t tags_col = offsets_col + 1;
+    inline uint32_t sizes_col = tags_col + 1;
+    inline uint32_t labels_col = sizes_col + 1;
+    inline uint32_t subtags_col = labels_col + 1;
+    inline uint32_t subsizes_col = subtags_col + 1;
+    inline uint32_t ptrs_col = subsizes_col + 1;
 
-    uint32_t overloads_col = ptrs_col + 1;
+    inline uint32_t overloads_col = ptrs_col + 1;
 
     inline Col& global_resolve_to_col(const Ptr& ptr, const uint32_t& idx) {return global[ptr.pool][idx];}
 
@@ -551,14 +551,14 @@ namespace Acorn {
     };
 
 
-    uint32_t add_type() {
+    inline uint32_t add_type() {
         uint32_t at = global.length();
         ColCol to_return;
         global.push(to_return);
         return at;
     }
 
-    uint32_t init_handler_type() {
+    inline uint32_t init_handler_type() {
         ColCol t;
         uint32_t at = global.length();
         note_value(t,"UNDEFINED",0,0);
@@ -573,90 +573,90 @@ namespace Acorn {
         return at;
     }
 
-    uint32_t handler_type_id = init_handler_type();
+    inline uint32_t handler_type_id = init_handler_type();
     
-    uint32_t init_layout_type() {
+    inline uint32_t init_layout_type() {
         ColCol t;
         uint32_t at = global.length();
         global.push(t);
         return at;
     }
-    uint32_t layout_type_id = init_layout_type(); 
+    inline uint32_t layout_type_id = init_layout_type(); 
 
-    uint32_t global_reg_id(const std::string& label) {
+    inline uint32_t global_reg_id(const std::string& label) {
         uint32_t at = global[handler_type_id].length();
         note_value(global[handler_type_id],label,sizeof(Ptr),ptr_id);
         global[handler_type_id][at].push_default();
         return at;
     }
 
-    uint32_t global_register_type_ids(const std::string& label) {
+    inline uint32_t global_register_type_ids(const std::string& label) {
         uint32_t id = global_reg_id(label);
         global_reg_id("prefix_"+label);
         global_reg_id("suffix_"+label);
         return id;
     }
     //Qual handlers which act on the value
-    size_t to_prefix_id(size_t id) {return id+1;}
+    inline size_t to_prefix_id(size_t id) {return id+1;}
     //Qual handlers which act on the node
-    size_t to_suffix_id(size_t id) {return id+2;}
+    inline size_t to_suffix_id(size_t id) {return id+2;}
 
-    uint32_t float_id  = global_register_type_ids("float");
-    uint32_t int_id    = global_register_type_ids("int");
-    uint32_t bool_id   = global_register_type_ids("bool");
-    uint32_t string_id = global_register_type_ids("string");
-    uint32_t char_id   = global_register_type_ids("char");
-    uint32_t ptr4_id   = global_register_type_ids("ptr4");
-    uint32_t duck_id   = global_register_type_ids("duck");
-    uint32_t void_id   = global_register_type_ids("void");
+    inline uint32_t float_id  = global_register_type_ids("float");
+    inline uint32_t int_id    = global_register_type_ids("int");
+    inline uint32_t bool_id   = global_register_type_ids("bool");
+    inline uint32_t string_id = global_register_type_ids("string");
+    inline uint32_t char_id   = global_register_type_ids("char");
+    inline uint32_t ptr4_id   = global_register_type_ids("ptr4");
+    inline uint32_t duck_id   = global_register_type_ids("duck");
+    inline uint32_t void_id   = global_register_type_ids("void");
 
-    size_t list_id = global_reg_id("list");
-    size_t map_id = global_reg_id("map");
-    size_t weakptr_id = global_reg_id("weakptr");
-    size_t col_id = global_reg_id("col");
-    size_t colcol_id = global_reg_id("colcol");
-    size_t colcolcol_id = global_reg_id("colcolcol");
+    inline size_t list_id = global_reg_id("list");
+    inline size_t map_id = global_reg_id("map");
+    inline size_t weakptr_id = global_reg_id("weakptr");
+    inline size_t col_id = global_reg_id("col");
+    inline size_t colcol_id = global_reg_id("colcol");
+    inline size_t colcolcol_id = global_reg_id("colcolcol");
     
-    uint32_t silenced_id = global_reg_id("SILENCED");
-    uint32_t any_id = global_reg_id("any");
-    uint32_t null_id = global_reg_id("null");
-    size_t identifier_id = global_reg_id("IDENTIFIER");
-    size_t object_id = global_reg_id("OBJECT");
-    size_t literal_id = global_reg_id("LITERAL");
-    uint32_t root_id = global_reg_id("ROOT");
+    inline uint32_t silenced_id = global_reg_id("SILENCED");
+    inline uint32_t any_id = global_reg_id("any");
+    inline uint32_t null_id = global_reg_id("null");
+    inline size_t identifier_id = global_reg_id("IDENTIFIER");
+    inline size_t literal_id = global_reg_id("LITERAL");
+    inline uint32_t root_id = global_reg_id("ROOT");
     
-    size_t node_id = global_reg_id("node"); size_t prefix_node_id = global_reg_id("prefix_node"); size_t suffix_node_id = global_reg_id("suffix_node");
-    size_t value_id = global_reg_id("value"); size_t prefix_value_id = global_reg_id("prefix_value"); size_t suffix_value_id = global_reg_id("suffix_value");
-    size_t context_id = global_reg_id("context"); size_t prefix_context_id = global_reg_id("prefix_context"); size_t suffix_context_id = global_reg_id("suffix_context");
+    inline size_t node_id = global_reg_id("node"); inline size_t prefix_node_id = global_reg_id("prefix_node"); inline size_t suffix_node_id = global_reg_id("suffix_node");
+    inline size_t value_id = global_reg_id("value"); inline size_t prefix_value_id = global_reg_id("prefix_value"); inline size_t suffix_value_id = global_reg_id("suffix_value");
+    inline size_t context_id = global_reg_id("context"); inline size_t prefix_context_id = global_reg_id("prefix_context"); inline size_t suffix_context_id = global_reg_id("suffix_context");
 
-    size_t var_decl_id = global_reg_id("VAR_DECL");
-    size_t func_call_id = global_reg_id("FUNC_CALL");
-    size_t lambda_id = global_reg_id("LAMBDA");
-    size_t function_id = global_reg_id("function"); size_t prefix_function_id = global_reg_id("prefix_function"); size_t suffix_function_id = global_reg_id("suffix_function");
-    size_t method_call_id = global_reg_id("METHOD_CALL");
-    size_t method_id = global_reg_id("METHOD");
-    size_t func_decl_id = global_reg_id("FUNC_DECL");
-    size_t type_decl_id = global_reg_id("TYPE_DECL");
-    uint32_t hide_block_id = global_reg_id("HIDE_BLOCK");
+    inline size_t var_decl_id = global_reg_id("VAR_DECL");
+    inline size_t func_call_id = global_reg_id("FUNC_CALL");
+    inline uint32_t lambda_call_id = global_reg_id("LAMBDA_CALL");
+    inline size_t lambda_id = global_reg_id("LAMBDA");
+    inline size_t function_id = global_reg_id("function"); inline size_t prefix_function_id = global_reg_id("prefix_function"); inline size_t suffix_function_id = global_reg_id("suffix_function");
+    inline size_t method_call_id = global_reg_id("METHOD_CALL");
+    inline size_t method_id = global_reg_id("METHOD");
+    inline size_t func_decl_id = global_reg_id("FUNC_DECL");
+    inline size_t type_decl_id = global_reg_id("TYPE_DECL");
+    inline uint32_t hide_block_id = global_reg_id("HIDE_BLOCK");
 
-    uint32_t sub_pass_id = global_reg_id("SUB_PASS");
-    uint32_t process_node_pass_id = global_reg_id("PROCESS_NODE");
-    uint32_t direct_pass_id = global_reg_id("DIRECT_PASS");
-    uint32_t resolving_pass_id = global_reg_id("RESOLVING_PASS");
-    uint32_t travel_pass_id = global_reg_id("TRAVEL_PASS");
-    uint32_t backwards_pass_id = global_reg_id("BACKWARDS_PASS");
-    uint32_t memory_backwards_pass_id = global_reg_id("MEMORY_BACKWARDS_PASS");
+    inline uint32_t sub_pass_id = global_reg_id("SUB_PASS");
+    inline uint32_t process_node_pass_id = global_reg_id("PROCESS_NODE");
+    inline uint32_t direct_pass_id = global_reg_id("DIRECT_PASS");
+    inline uint32_t resolving_pass_id = global_reg_id("RESOLVING_PASS");
+    inline uint32_t travel_pass_id = global_reg_id("TRAVEL_PASS");
+    inline uint32_t backwards_pass_id = global_reg_id("BACKWARDS_PASS");
+    inline uint32_t memory_backwards_pass_id = global_reg_id("MEMORY_BACKWARDS_PASS");
 
-    uint32_t headerpool_id = global_reg_id("headerpool");  uint32_t header_id = global_register_type_ids("header");
-    uint32_t messagepool_id = global_reg_id("messagepool");
-    uint32_t footerpool_id = global_reg_id("footerpool");
+    inline uint32_t headerpool_id = global_reg_id("headerpool");  inline uint32_t header_id = global_register_type_ids("header");
+    inline uint32_t messagepool_id = global_reg_id("messagepool");
+    inline uint32_t footerpool_id = global_reg_id("footerpool");
     
     
 
-    size_t tombstone_col = 0; 
-    size_t refs_col = 0;
+    inline size_t tombstone_col = 0; 
+    inline size_t refs_col = 0;
 
-    Ptr global_add_layout_to_col(uint32_t type) {
+    inline Ptr global_add_layout_to_col(uint32_t type) {
         Ptr p((uint32_t)0,layout_type_id,note_value(global[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
         note_value(global[layout_type_id],"Tags",4,int_id);
         note_value(global[layout_type_id],"Sizes",4,int_id);
@@ -669,90 +669,90 @@ namespace Acorn {
         return p;
     }
 
-    uint32_t make_store_type() {
+    inline uint32_t make_store_type() {
         uint32_t at = add_type();
         return at;
     }
     
-    uint32_t node_type_offset = 0;
-    uint32_t node_sub_type_offset = 0;
-    uint32_t node_name_offset = 0;
-    uint32_t x_offset = 0;
-    uint32_t y_offset = 0;
-    uint32_t z_offset = 0;
-    uint32_t node_value_offset = 0;
-    uint32_t node_children_offset = 0;
-    uint32_t node_quals_offset = 0;
-    uint32_t node_node_table_offset = 0;
-    uint32_t node_value_table_offset = 0;
-    uint32_t node_scopes_offset = 0;
-    uint32_t parent_offset = 0;
-    uint32_t owner_offset = 0;
-    uint32_t in_scope_offset = 0;
-    uint32_t resolved_offset = 0;
-    uint32_t node_opt_str_offset = 0;
-    uint32_t mute_offset = 0;
+    inline uint32_t node_type_offset = 0;
+    inline uint32_t node_sub_type_offset = 0;
+    inline uint32_t node_name_offset = 0;
+    inline uint32_t x_offset = 0;
+    inline uint32_t y_offset = 0;
+    inline uint32_t z_offset = 0;
+    inline uint32_t node_value_offset = 0;
+    inline uint32_t node_children_offset = 0;
+    inline uint32_t node_quals_offset = 0;
+    inline uint32_t node_node_table_offset = 0;
+    inline uint32_t node_value_table_offset = 0;
+    inline uint32_t node_scopes_offset = 0;
+    inline uint32_t parent_offset = 0;
+    inline uint32_t owner_offset = 0;
+    inline uint32_t in_scope_offset = 0;
+    inline uint32_t resolved_offset = 0;
+    inline uint32_t node_opt_str_offset = 0;
+    inline uint32_t mute_offset = 0;
 
-    uint32_t value_type_offset = 0;
-    uint32_t value_sub_type_offset = 0;
-    uint32_t value_data_offset = 0;
-    uint32_t address_offset = 0;
-    uint32_t reg_offset = 0;
-    uint32_t loc_offset = 0;
-    uint32_t size_offset = 0;
-    uint32_t sub_size_offset = 0;
-    uint32_t value_quals_offset = 0;
-    uint32_t value_sub_values_offset = 0;
-    uint32_t type_scope_offset = 0;
-    uint32_t store_offset = 0;
+    inline uint32_t value_type_offset = 0;
+    inline uint32_t value_sub_type_offset = 0;
+    inline uint32_t value_data_offset = 0;
+    inline uint32_t address_offset = 0;
+    inline uint32_t reg_offset = 0;
+    inline uint32_t loc_offset = 0;
+    inline uint32_t size_offset = 0;
+    inline uint32_t sub_size_offset = 0;
+    inline uint32_t value_quals_offset = 0;
+    inline uint32_t value_sub_values_offset = 0;
+    inline uint32_t type_scope_offset = 0;
+    inline uint32_t store_offset = 0;
 
-    uint32_t context_node_offset = 0;
-    uint32_t context_qual_offset = 0;
-    uint32_t context_left_offset = 0;
-    uint32_t context_out_offset = 0;
-    uint32_t context_root_offset = 0;
-    uint32_t context_result_offset = 0;
-    uint32_t context_value_offset = 0;
-    uint32_t context_index_offset = 0;
-    uint32_t context_state_offset = 0;
-    uint32_t context_flag_offset = 0;
-    uint32_t context_sub_offset = 0;
-    uint32_t context_source_offset = 0;
-    uint32_t context_pass_offset = 0;
-    uint32_t context_parent_offset = 0;
+    inline uint32_t context_node_offset = 0;
+    inline uint32_t context_qual_offset = 0;
+    inline uint32_t context_left_offset = 0;
+    inline uint32_t context_out_offset = 0;
+    inline uint32_t context_root_offset = 0;
+    inline uint32_t context_result_offset = 0;
+    inline uint32_t context_value_offset = 0;
+    inline uint32_t context_index_offset = 0;
+    inline uint32_t context_state_offset = 0;
+    inline uint32_t context_flag_offset = 0;
+    inline uint32_t context_sub_offset = 0;
+    inline uint32_t context_source_offset = 0;
+    inline uint32_t context_pass_offset = 0;
+    inline uint32_t context_parent_offset = 0;
 
-    uint32_t node_total_size = 0;
-    uint32_t value_total_size = 0;
-    uint32_t context_total_size = 0;
+    inline uint32_t node_total_size = 0;
+    inline uint32_t value_total_size = 0;
+    inline uint32_t context_total_size = 0;
 
-    uint32_t init_node_type();
-    uint32_t init_value_type();
-    uint32_t init_context_type();
+    inline uint32_t init_node_type();
+    inline uint32_t init_value_type();
+    inline uint32_t init_context_type();
 
-    uint32_t name_store_id = make_store_type();
-    uint32_t node_type_id = init_node_type();
-    uint32_t value_type_id = init_value_type();
-    uint32_t context_type_id = init_context_type();
-    uint32_t children_store_id = make_store_type();
-    uint32_t quals_store_id = make_store_type();
-    uint32_t node_table_store_id = make_store_type(); 
-    uint32_t value_table_store_id = make_store_type(); 
-    uint32_t scopes_store_id = make_store_type(); 
-    uint32_t opt_str_store_id = make_store_type();
-    uint32_t data_store_id = make_store_type();
-    uint32_t sub_value_store_id = make_store_type();
+    inline uint32_t name_store_id = make_store_type();
+    inline uint32_t node_type_id = init_node_type();
+    inline uint32_t value_type_id = init_value_type();
+    inline uint32_t context_type_id = init_context_type();
+    inline uint32_t children_store_id = make_store_type();
+    inline uint32_t quals_store_id = make_store_type();
+    inline uint32_t node_table_store_id = make_store_type(); 
+    inline uint32_t value_table_store_id = make_store_type(); 
+    inline uint32_t scopes_store_id = make_store_type(); 
+    inline uint32_t opt_str_store_id = make_store_type();
+    inline uint32_t data_store_id = make_store_type();
+    inline uint32_t sub_value_store_id = make_store_type();
 
-    string get_global_string_ticket() {
+    inline string get_global_string_ticket() {
         Ptr ticket((uint32_t)0,name_store_id,create_column(global[name_store_id],1,char_id),0);
         return ticket;
     }
 
-    Ptr global_add_template(uint32_t for_type) {
+    inline Ptr global_add_template(uint32_t for_type) {
         Ptr p = global_add_layout_to_col(for_type);
         return p;
     }
 
-    uint32_t init_node_type() {
+    inline uint32_t init_node_type() {
         uint32_t at = add_type();
         ColCol& t = global[at];
         _layout ntemp(global_add_template(node_id)); //Node template
@@ -778,7 +778,7 @@ namespace Acorn {
         return at;
     }
 
-    uint32_t init_value_type() {
+    inline uint32_t init_value_type() {
         uint32_t at = add_type();
         ColCol& t = global[at];
 
@@ -799,7 +799,7 @@ namespace Acorn {
         return at;
     }
 
-    uint32_t init_context_type() {
+    inline uint32_t init_context_type() {
         uint32_t at = add_type();
         ColCol& t = global[at];
         _layout ctemp(global_add_template(context_id)); //Context template
@@ -1118,20 +1118,20 @@ namespace Acorn {
     };
 
     inline Node Value::type_scope() {return Node(*(Ptr*) resolve_to_col(*this).qget(type_scope_offset));}
-    int Value::find_qual(uint32_t q_id) {
+    inline int Value::find_qual(uint32_t q_id) {
         for(int i=0;i<quals().length();i++){ 
             if(quals()[i].type()==q_id) {return i;}
         }
         return -1;
     } 
-    Node Value::get_qual(uint32_t q_id) {
+    inline Node Value::get_qual(uint32_t q_id) {
         int q_at = find_qual(q_id);
         if(q_at!=-1) {
             return quals()[q_at];
         }
         return deadptr;
     } 
-    uint32_t Value::count_qual(uint32_t q_id) {
+    inline uint32_t Value::count_qual(uint32_t q_id) {
         uint32_t count = 0;
         for(int i=0;i<quals().length();i++){ 
             if(quals()[i].type()==q_id) count++;
@@ -1204,7 +1204,7 @@ namespace Acorn {
     inline Context Node::getContext() {DEBUG_ONLY(if(safety_check("node:getContext")){return deadptr;}) return getPtr();}  inline Context Node::getContext(uint32_t i) {DEBUG_ONLY(if(safety_check("node:getContext:i")){return deadptr;}) return getPtr(i);}
 
     
-    bool init_type_pool() {
+    inline bool init_type_pool() {
         global[handler_type_id].label = "handlers";
         global[layout_type_id].label = "layouts";
         global[node_type_id].label = "nodes";
@@ -1221,15 +1221,15 @@ namespace Acorn {
         global[sub_value_store_id].label = "sub_value";
         return true;
     }
-    bool type_pool_intilized = init_type_pool();
+    inline bool type_pool_intilized = init_type_pool();
 
-    uint32_t message_id = global_register_type_ids("message");
-    uint32_t message_from_offset = 0;
-    uint32_t message_to_offset = 0;
-    uint32_t message_status_offset = 0;
-    uint32_t message_total_size = 0;
+    inline uint32_t message_id = global_register_type_ids("message");
+    inline uint32_t message_from_offset = 0;
+    inline uint32_t message_to_offset = 0;
+    inline uint32_t message_status_offset = 0;
+    inline uint32_t message_total_size = 0;
 
-    bool init_message_type() {
+    inline bool init_message_type() {
         _layout mtemp(global_add_template(message_id)); //Message template
         message_from_offset = mtemp.add_prop(int_id, 4, "from");
         message_to_offset = mtemp.add_prop(int_id, 4, "to");
@@ -1237,7 +1237,7 @@ namespace Acorn {
         message_total_size = mtemp.total_size;
         return true;
     }
-    bool message_type_ready = init_message_type();
+    inline bool message_type_ready = init_message_type();
 
     struct Message : public Ptr {
         Message() {}
@@ -1351,18 +1351,18 @@ namespace Acorn {
     };  
 
 
-    uint64_t get_real_size_of_col(Col& col) {
+    inline uint64_t get_real_size_of_col(Col& col) {
         uint64_t result = sizeof(Col)+col.size;
         return result;
     }
-    uint64_t get_real_size_of_colcol(ColCol& col) {
+    inline uint64_t get_real_size_of_colcol(ColCol& col) {
         uint64_t result = sizeof(ColCol);
         for(int i=0;i<col.length();i++) {
             result += get_real_size_of_col(col[i]);
         }
         return result;
     }
-    uint64_t get_real_size_of_colcolcol(ColColCol& col) {
+    inline uint64_t get_real_size_of_colcolcol(ColColCol& col) {
         uint64_t result = sizeof(ColColCol);
         for(int i=0;i<col.length();i++) {
             result += get_real_size_of_colcol(col[i]);
@@ -1373,7 +1373,7 @@ namespace Acorn {
 
 
 
-    static void write_TypeCol(std::ostream& out, ColCol& type) {
+    static inline void write_TypeCol(std::ostream& out, ColCol& type) {
         write_raw<uint32_t>(out, type.length());
         write_col_header(out, type);
         for(int c = 0; c < type.length(); c++) {
@@ -1382,7 +1382,7 @@ namespace Acorn {
         }
     }
     
-    static ColCol read_TypeCol(std::istream& in) {
+    static inline ColCol read_TypeCol(std::istream& in) {
         uint32_t len = read_raw<uint32_t>(in);
         ColCol type = read_col_header(in);
         for(uint32_t i = 0; i < len; i++) {
@@ -1392,7 +1392,7 @@ namespace Acorn {
         return type;
     }
 
-    static void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
+    static inline void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
         write_raw<uint32_t>(out, col.length());
         write_col_header(out, col);
         for(int i = 0; i < col.length(); i++) {
@@ -1400,7 +1400,7 @@ namespace Acorn {
         }
     }
 
-    static ColColCol read_TypeTypeCol(std::istream& in) {
+    static inline ColColCol read_TypeTypeCol(std::istream& in) {
         uint32_t len = read_raw<uint32_t>(in);
         ColColCol col = read_col_header(in);
         for(uint32_t p = 0; p < len; p++) {
@@ -1410,13 +1410,13 @@ namespace Acorn {
         return col;
     }
 
-    static void write_ColColList(std::ostream& out, list<ColCol*> cols) {
+    static inline void write_ColColList(std::ostream& out, list<ColCol*> cols) {
         write_raw<uint32_t>(out, cols.length());
         for(int i=0;i<cols.length();i++) {
             write_TypeCol(out,*cols[i]);
         }
     }
-    static list<ColCol> read_ColColList(std::ifstream& in) {
+    static inline list<ColCol> read_ColColList(std::ifstream& in) {
         list<ColCol> to_return;
         uint32_t len = read_raw<uint32_t>(in);
         for(int i=0;i<len;i++) {
@@ -4470,8 +4470,6 @@ namespace Acorn {
             invoke_in(&stage,ctx);
         }
 
-        uint32_t resume_travel_pass(Context ctx);
-
         bool node_source_position(Node node, float& x, float& y, int depth = 0) {
             if(!is_live(node) || depth > 16) return false;
         
@@ -4635,10 +4633,15 @@ namespace Acorn {
             sub_ctx.sub(ctx.sub());
             int& i = sub_ctx.index();
             while(i < sub_ctx.result().length()) {
-                if(i==0) {
-                    process_node(sub_ctx, sub_ctx.result().get(i));
+                Node node = sub_ctx.result().get(i);
+                if(node.resolved()) {
+                    node.resolved(false);
                 } else {
-                    process_node(sub_ctx, sub_ctx.result().get(i), sub_ctx.result().get(i-1));
+                    if(i==0) {
+                        process_node(sub_ctx, node);
+                    } else {
+                        process_node(sub_ctx, node, sub_ctx.result().get(i-1));
+                    }
                 }
 
                 DEBUG_ONLY(if(ERROR_FLAG) {catch_pass_error(sub_ctx); endline(); return;})
@@ -5122,34 +5125,13 @@ namespace Acorn {
         return deadptr;
     }
 
-    std::ostream& operator<<(std::ostream& os, Acorn::string& s) {
+    inline std::ostream& operator<<(std::ostream& os, Acorn::string& s) {
         os.write((const char*)s.col().storage, s.length());
         return os;
     }
 
     
-    //To prove a point about continuations and Seaside
-    uint32_t Unit::resume_travel_pass(Context ctx) {
-        int& i = ctx.index();
-        while(i < ctx.result().length()) {
-            ctx.node(ctx.result().get(i));
-            standard_process(ctx);
-            Node nleft = ctx.result().get(i);
-            ctx.left(nleft);
-            DEBUG_ONLY(if(ERROR_FLAG) {endline(); return true;})
-            if(ctx.state()>0) { //This is the return/break process
-                endline();
-                deep_recycle_context(ctx);
-                return ctx.state();
-            }
-            i++;
-        }
-        endline();
-        deep_recycle_context(ctx);
-        return 0;
-    }
-
-    ColColCol& init_first_unit() {
+    inline ColColCol& init_first_unit() {
         g_ptr<Unit> u = make<Unit>(false);
         units << u;
         return *u->get_subunit(0);

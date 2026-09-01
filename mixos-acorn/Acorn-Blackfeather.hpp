@@ -30,7 +30,7 @@
 
 
 
-char read_key() {
+inline char read_key() {
     #ifdef _WIN32
         return ' ';
     #else
@@ -50,7 +50,7 @@ char read_key() {
 //< = -1
 //s = 3
 //f = 4
-int read_arrow() {
+inline int read_arrow() {
     #ifdef _WIN32
         return 0;
     #else
@@ -80,7 +80,7 @@ namespace Acorn {
     #ifdef _WIN32
         void setup_signals() {}
     #else
-        void signal_handler(int signal) {
+        inline void signal_handler(int signal) {
             print("\nRECIVED SIGNAL: ",signal);
             //SHUTDOWN_FLAG = true;
             if(ERROR_FLAG) {
@@ -90,7 +90,7 @@ namespace Acorn {
             ERROR_MSG = "Console interrupt";
         }
 
-        void setup_signals() {
+        inline void setup_signals() {
             struct sigaction sa;
             sa.sa_handler = signal_handler;
             sigemptyset(&sa.sa_mask);

@@ -39,20 +39,20 @@ inline std::string add_commas(int num) {
   }
 
 
-    std::string pad_str(const std::string& s, uint32_t width) {
+    inline std::string pad_str(const std::string& s, uint32_t width) {
         std::string to_return = s;
         while(width>to_return.length()) to_return+=" ";
         return to_return;
     }
 
-    std::string center_pad(const std::string& s, uint32_t width) {
+    inline std::string center_pad(const std::string& s, uint32_t width) {
         if(s.length() >= width) return s;
         uint32_t total_pad = width - s.length();
         uint32_t left_pad = total_pad / 2;
         uint32_t right_pad = total_pad - left_pad;
         return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
     }
-    std::string center_pad_known(const std::string& s, uint32_t s_visible_len, uint32_t width) {
+    inline std::string center_pad_known(const std::string& s, uint32_t s_visible_len, uint32_t width) {
         if(s_visible_len >= width) return s;
         uint32_t total_pad = width - s_visible_len;
         uint32_t left_pad = total_pad / 2;
@@ -60,16 +60,16 @@ inline std::string add_commas(int num) {
         return std::string(left_pad, ' ') + s + std::string(right_pad, ' ');
     }
 
-    uint32_t digit_count(uint32_t n) {
+    inline uint32_t digit_count(uint32_t n) {
         if(n == 0) return 1;
         uint32_t digits = 0;
         while(n > 0) { n /= 10; digits++; }
         return digits;
     }
 
-    bool is_str_num(const std::string& tocheck) {for(auto c : tocheck) {if(!std::isdigit(c)) return false;} return true;}
+    inline bool is_str_num(const std::string& tocheck) {for(auto c : tocheck) {if(!std::isdigit(c)) return false;} return true;}
 
-    std::string escape_string(const std::string& content, bool compact_spaces = false, list<char> extra_escapes = {}) {
+    inline std::string escape_string(const std::string& content, bool compact_spaces = false, list<char> extra_escapes = {}) {
         std::string escaped;
         int space_count = 0;
         for(char c : content) {
@@ -101,7 +101,7 @@ inline std::string add_commas(int num) {
         return escaped;
     }
 
-    std::string strip_ansi(const std::string& s) {
+    inline std::string strip_ansi(const std::string& s) {
         std::string out;
         bool in_escape = false;
         for(int i = 0; i < s.length(); i++) {

@@ -10,7 +10,7 @@ namespace Acorn {
     inline thread_local std::string ERROR_MSG = "";
 
     template<typename... Args>
-    void throw_error(Args&&... args) {
+    inline void throw_error(Args&&... args) {
         std::ostringstream oss;
         (oss << ... << args);
         ERROR_MSG = oss.str();
@@ -19,7 +19,7 @@ namespace Acorn {
     }
 
     template<typename... Args>
-    void append_error(Args&&... args) {
+    inline void append_error(Args&&... args) {
         std::ostringstream oss;
         (oss << ... << std::forward<Args>(args));
         ERROR_MSG+=yellow(" -> ")+oss.str();
@@ -257,7 +257,7 @@ namespace Acorn {
     };
     static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
-    const uint8_t _DEADSPEC = 0;
+    inline const uint8_t _DEADSPEC = 0;
     inline bool is_live(Ptr p) {return (p.specialization!=_DEADSPEC);}
 
     struct Ptr4 {
@@ -267,8 +267,8 @@ namespace Acorn {
         Ptr ptr;
     };
 
-    static const Ptr deadptr(_DEADSPEC);
-    static Ptr dead_ref(_DEADSPEC);
+    inline static const Ptr deadptr(_DEADSPEC);
+    inline static Ptr dead_ref(_DEADSPEC);
 
     struct QCol {
         QCol() {}
@@ -433,7 +433,7 @@ namespace Acorn {
             return std::string((char*)storage, size);
         }
     };
-    std::ostream& operator<<(std::ostream& os, QString& s) {
+    inline std::ostream& operator<<(std::ostream& os, QString& s) {
         if(s.storage) os.write((const char*)s.storage, s.size);
         return os;
     }
@@ -537,7 +537,9 @@ namespace Acorn {
                 while(true) {
                     if(!has_acquired_lock) {
                         uint8_t cur = live.load();
-                        if(cur >= 128) return false;
+                        if(cur >= 128) {
+                            continue; //Wait for other writters to finish
+                        }
                         if(live.compare_exchange_weak(cur, cur | 128)) {has_acquired_lock = true;};
                     } else if(live.load()==128) {
                         return true;
@@ -941,7 +943,7 @@ namespace Acorn {
         }
     };
 
-    uint32_t add_column(Col& col, size_t size = 0, uint32_t tag = 0) {
+    inline uint32_t add_column(Col& col, size_t size = 0, uint32_t tag = 0) {
         Col ncol(size);
         ncol.tag = tag;
         col.push((void*)&ncol);
@@ -949,18 +951,18 @@ namespace Acorn {
     }
 
     
-    uint32_t note_value(Col& col, const std::string& key, uint32_t size, uint32_t tag) {
+    inline uint32_t note_value(Col& col, const std::string& key, uint32_t size, uint32_t tag) {
         uint32_t at = add_column(col, size, tag);
         (*(Col*)col.sget(at)).label = key;
         return at;
     }
 
-    static void write_qcol(std::ostream& out, QCol& col) {
+    inline static void write_qcol(std::ostream& out, QCol& col) {
         write_raw<uint32_t>(out, col.size);
         out.write((const char*)col.storage, col.size);
     }
 
-    static QCol read_qcol(std::istream& in) {
+    inline static QCol read_qcol(std::istream& in) {
         QCol col;
         uint32_t size = read_raw<uint32_t>(in);
         col.resize(size);
@@ -968,7 +970,7 @@ namespace Acorn {
         return col;
     }
 
-    static void write_ccol(std::ostream& out, CCol& col) {
+    inline static void write_ccol(std::ostream& out, CCol& col) {
         //print("write_ccol size: ", col.size, " storage: ", (void*)col.storage);
         write_qcol(out,col);
         write_raw<uint32_t>(out, col.element_size);
@@ -979,7 +981,7 @@ namespace Acorn {
         write_raw<uint8_t>(out, col.live);
     }
 
-    static CCol read_ccol(std::istream& in) {
+    inline static CCol read_ccol(std::istream& in) {
         CCol col = read_qcol(in);
         col.element_size = read_raw<uint32_t>(in);
         col.tag = read_raw<uint32_t>(in);
@@ -990,7 +992,7 @@ namespace Acorn {
         return col;
     }
 
-    static void write_qcellcol(std::ostream& out, QCellCol& cells) {
+    inline static void write_qcellcol(std::ostream& out, QCellCol& cells) {
         uint32_t count = 0;
         list<CCol*> to_save;
         for(uint32_t i = 0; i < cells.length(); i++) {
@@ -1006,7 +1008,7 @@ namespace Acorn {
         }
     }
     
-    static QCellCol read_qcellcol(std::istream& in) {
+    inline static QCellCol read_qcellcol(std::istream& in) {
         QCellCol cells;
         uint32_t count = read_raw<uint32_t>(in);
         for(uint32_t i = 0; i < count; i++) {
@@ -1017,7 +1019,7 @@ namespace Acorn {
         return cells;
     }
 
-    static void write_col(std::ostream& out, Col& col) {
+    inline static void write_col(std::ostream& out, Col& col) {
         write_ccol(out,col);
         write_raw<bool>(out, col.heterogenous);
         write_qcellcol(out, col.cells);
@@ -1028,7 +1030,7 @@ namespace Acorn {
         }
     }
 
-    static Col read_col(std::istream& in) {
+    inline static Col read_col(std::istream& in) {
         Col col = read_ccol(in);
         col.heterogenous = read_raw<bool>(in);
         col.cells = read_qcellcol(in);
@@ -1040,7 +1042,7 @@ namespace Acorn {
         return col;
     }
 
-    static void write_col_header(std::ostream& out, Col& col) {
+    inline static void write_col_header(std::ostream& out, Col& col) {
         //write_raw<uint32_t>(out, col.size);
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
@@ -1057,7 +1059,7 @@ namespace Acorn {
         }
     }
 
-    static Col read_col_header(std::istream& in) {
+    inline static Col read_col_header(std::istream& in) {
         Col col;
         // uint32_t size = read_raw<uint32_t>(in);
         // col.resize(size);

@@ -1,40 +1,23 @@
-Ptr int nums; 
-nums.init(
-    One: 1,
-    Two: 2,
-    3,
-    Four: 4
-);
-nums.do(n => {
-    n=n*2;
-    if(n+?) print("NEXT: ",*+n);   
-}).cells((key,val) => print(key,": ",val));
-nums.keys(key => print(key));
+Ptr int a; a.init(0,1,2);
+int n = a.length;
+int k = a.length-1;
+rprint("This should pass");
+a[k];
+rprint("This should error");
+a[n];
 
-ColCol pool = utypes.add;
-Object thing = pool.Object(
-    Numbers: [4,8,6,12];
-    Name: "Joe";
-);
-thing.behaviour = [](int a){
-    print("A: ",a);
-};
-thing.behaviour(6);
-thing.Numbers.do(e => {
-    thing.behaviour(e);
-});
-thing.property = 28;
-print("Thing.property: ",thing.property);
+RESULT:
 
-Object other; 
-other.init(
-    Number: 19;
-);
-other.Thing = thing;
-print(other.Number," : ",other.Thing.property);
-
-DEBUG_ROOT_X(1);
-dump_pool(pool,true);
-
-
-
+TEST START
+This should pass
+This should error
+ERROR: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
+5|0|0|G3253 RESOLVING_PASS Source at: 2|499|0|G128 Index: 7 
+VAR_DECL a | Ptr_INIT a.init | EQUALS = | EQUALS = | rprint | Ptr_IDXGET [ | rprint | >Ptr_IDXGET [[IDENTIFIER a, IDENTIFIER n] | 
+  Node: 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] 
+  Left: 3|535|0 rprint rprint [4|580|0](UNDEFINED)(0,5)[C:1]{ROOT}[Q: 3|549|0>LPAREN, 3|540|0>RPAREN, 3|541|0>END] 
+  Root: 3|0|0|G812 ROOT ROOT [C:8] 
+  Qual: 3|562|0 length_relation_qual[4|581|0](ptr[32]:int[4]{ROOT:3|0|0|G812}) 
+  Value: [4|587|0](int[4]{ROOT:3|0|0|G812}) 
+ERROR IN RESOLVING_PASS ON LINE 7: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
+TEST FINISHED

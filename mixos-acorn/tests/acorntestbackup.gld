@@ -907,3 +907,73 @@ dump_pool(pool,true);
 
 
 
+
+
+
+
+
+
+Challange from a stranger
+
+// bool expr_flag = false;
+// if(true) {
+//     Ptr int a; a.init(1,2,3);
+//     a.do(e => print("A: ",e));
+//     Ptr int b; b.init(0,1,12);
+//     b.do(e => print("B: ",e));
+
+//     b.validate_offests_and_lock(a);
+//     print("THIS SHOULD NOT PRINT");
+//     catch {
+//         expr_flag = true;
+//     }
+// }
+// print("Caught some exception while atetmpting to validate");
+// if(true) {
+//     Ptr int a; a.init(1,2,3,6);
+//     a.do(e => print("A_2: ",e));
+//     Ptr int b; b.init(0,1,2,3);
+//     b.do(e => print("B_2: ",e));
+
+//     b.validate_offests_and_lock(a);
+//     print("THIS SHOULD PRINT");
+// }
+
+
+// Test 2:
+
+// ##
+//     register "testing_qual";
+//     "testing_qual" {
+//         in executing {
+//             print("Testing qual fired!");
+//             print(SN#(ctx.node));
+//         }
+//     }
+// ##
+
+// if(true) {
+//     Ptr int a; 
+//     a.init(1,2,3);
+//     a.do(e => print("A: ",e));
+//     Ptr int b; 
+//     b.bind_by(offset_qual,a);
+//     b.bind_by(testing_qual,a);
+//     b.init(0,1,12);
+//     b.do(e => print("B: ",e));
+
+
+
+//     if(true) {
+//         b.assert_bound_by(offset_qual);
+//         a.assert_bound_by(offset_qual);
+//     }
+
+//     print("B getting 1:");
+//     print(b.get(1));
+//     print("B getting 2 (should be out of bounds): ");
+//     print(b.get(2));
+// }
+
+
+// Test 3:

@@ -33,6 +33,8 @@ namespace Acorn {
         Stage& i_handlers = reg_stage("interpreting");
         Stage& x_handlers = reg_stage("executing");
 
+        Stage& coerce_handlers = reg_stage("coercing"); 
+
         map<std::string,Value> keywords;
         map<uint32_t,bool> is_true_type;
 
@@ -2729,6 +2731,9 @@ namespace Acorn {
             r_handlers[group_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 resolve_overload(ctx);
+                // if(r_handlers.has(ctx.node().type())) {
+                //     standard_process(ctx);
+                // }
             };
             r_handlers[func_call_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
@@ -2903,6 +2908,9 @@ namespace Acorn {
                 }
                 standard_sub_process(ctx);
                 resolve_overload(ctx);
+                // if(r_handlers.has(ctx.node().type())) {
+                //     standard_process(ctx);
+                // }
             };
             x_handlers[dot_id] = [this](Context& ctx){
                 standard_sub_process(ctx);

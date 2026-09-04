@@ -161,6 +161,35 @@ inline std::string add_commas(int num) {
         snprintf(buf, sizeof(buf), "rgb(%d,%d,%d)", r, g, b);
         return std::string(buf);
     }
+
+    inline std::string color_string(const std::string& str) {
+        uint32_t hash = 0;
+        for (char c : str) {
+            hash = (hash << 5) - hash + (uint8_t)c;
+        }
+        
+        float h = (hash % 360) / 360.0f;
+        float s = 0.65f;
+        float l = 0.45f;
+        
+        auto hue2rgb = [](float p, float q, float t) {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1.0f/6) return p + (q-p) * 6 * t;
+            if (t < 1.0f/2) return q;
+            if (t < 2.0f/3) return p + (q-p) * (2.0f/3 - t) * 6;
+            return p;
+        };
+        
+        float q = l < 0.5f ? l * (1 + s) : l + s - l * s;
+        float p = 2 * l - q;
+        
+        int r = (int)(hue2rgb(p, q, h + 1.0f/3) * 255);
+        int g = (int)(hue2rgb(p, q, h) * 255);
+        int b = (int)(hue2rgb(p, q, h - 1.0f/3) * 255);
+        
+        return  rgb(str,r,g,b);
+    }
   
 namespace sgen {
     struct namebase {

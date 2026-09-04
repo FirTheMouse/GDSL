@@ -242,9 +242,12 @@ namespace Acorn {
         overload_type(id,list<std::string>{".UNDEFINED",".UNDEFINED(...)"},label+"_DUCK_GET",get_value,[this,YAPA_get](Context& ctx){
             YAPA_get(ctx,true,false);
         });
-        overload_type(id,"[any]",label+"_IDXGET",get_value,[this,YAPA_get](Context& ctx){
+        uint32_t idxget_id = overload_type(id,"[any]",label+"_IDXGET",get_value,[this,YAPA_get](Context& ctx){
             YAPA_get(ctx,true,false);
         });
+        // r_handlers[idxget_id] = [this](Context& ctx){
+        //     fire_quals(ctx,ctx.node().right().value());
+        // };
         overload_type(id,".'get'(any)",label+"_GET",get_value,[this,YAPA_get,id,YAPA_level](Context& ctx){
             YAPA_get(ctx,false,true);
         });
@@ -267,6 +270,8 @@ namespace Acorn {
             Ptr ptr = ctx.node().getPtr(0);
             YAPA_init(ptr,ctx.node().right(),is_indirect);
             ctx.node().value().set((void*)&ptr);
+
+            fire_quals(ctx,ctx.node().left().value());
         });
 
         x_handlers[to_prefix_id(id)] = [this,id,YAPA_level,is_indirect](Context& ctx){
@@ -351,7 +356,7 @@ namespace Acorn {
             // col.pop(data);
             //ctx.node().value().set(data);
         });
-        overload_type(id,".'length'",label+"_LENGTH",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+        uint32_t length_overload_id = overload_type(id,".'length'",label+"_LENGTH",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
             uint32_t old_type = ctx.node().type();
             standard_sub_process(ctx);
             if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
@@ -360,6 +365,13 @@ namespace Acorn {
             int len = resolve_YAPA_ptr(ptr,YAPA_level).length();
             ctx.node().value().set((void*)&len);
         });
+        // r_handlers[length_overload_id] = [this](Context& ctx){
+        //     if(ctx.root().type()==equals_id) {
+        //         Node new_qual = make_node(length_relation_qual);
+        //         new_qual.value(ctx.node().left().value());
+        //         ctx.root().left().value().quals().push(new_qual);
+        //     }
+        // };
 
 
         auto YAPA_has = [this,YAPA_level,id,is_indirect,YAPA_add](Context& ctx, bool key_on_right) {
@@ -428,18 +440,27 @@ namespace Acorn {
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid Ptr for "+labels[id]+" put");
             Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
-            Value keyv = ctx.node().right().c0().value();
-            Value elementv = ctx.node().right().c1().value();
-            CHECK_ERROR("Invalid arguments for "+labels[id]+" put");
-            if(is_ptr_alias(keyv.type())) {
-                Col& keycol = resolve_to_col(*(Ptr*)keyv.get());
-                col.qput(elementv.get(),keycol.storage,keycol.size,keyv.type());
-            } else if(keyv.type()==char_id) {
-                Col& keycol = keyv.data_col();
-                col.qput(elementv.get(),keyv.get(),keyv.size(),keyv.type());
+
+            Node key = ctx.node().right().c0();
+            void* data = nullptr;
+            uint32_t size = 0;
+            uint32_t lookup_type = 0;
+            if(is_live(key.value())&&key.value().type()!=0) {
+                lookup_type = key.value().type();
+                if(is_ptr_alias(lookup_type)) {
+                    Col& ccol = resolve_to_col(key.getPtr());
+                    data = ccol.storage;
+                    size = ccol.size;
+                } else {
+                    data = key.value().get();
+                    size = key.value().size();
+                }
             } else {
-                throw_error("script:put Type ",labels[keyv.type()]," is not a valid key type for put");
+                data = key.name().col().storage;
+                size = key.name().length();
+                lookup_type = identifier_id;
             }
+            col.qput(ctx.node().right().c1().get(),data,size,lookup_type);
             ctx.node().value().set((void*)&ptr);
         });
 
@@ -598,6 +619,27 @@ namespace Acorn {
             col.element_size = element_size;
         });
 
+        overload_type(id,".'index'",label+"_INDEX",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr for "+labels[id]+" index");
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            uint32_t index = col.index;
+            ctx.node().value().set((void*)&index);
+        });
+        overload_type(id,".'index'(int)",label+"_INDEX_SET",make_value(int_id,4),[this,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr for "+labels[id]+" index set");
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            uint32_t index = ctx.node().right().getInt(0);
+            col.index = index;
+        });
+
         overload_type(id,".'celllabel'",label+"_CELLLABEL",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
             uint32_t old_type = ctx.node().type();
             standard_sub_process(ctx);
@@ -650,6 +692,7 @@ namespace Acorn {
                     index.value().set((void*)&i);
                 }
                 i_ptr = (uint32_t*)index.value().get();
+                *i_ptr = 0;
             }
             while(*i_ptr < len) {
                 ptr[YAPA_level] = *i_ptr;
@@ -710,6 +753,7 @@ namespace Acorn {
                     index.value().set((void*)&i);
                 }
                 i_ptr = (uint32_t*)index.value().get();
+                *i_ptr = 0;
             }
             list<CCol*> cells = col.allCells();
             while(*i_ptr < cells.length()) {
@@ -1121,7 +1165,7 @@ namespace Acorn {
                 standard_sub_process(ctx);
                 if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
                 Ptr ptr = ctx.node().getPtr(0);
-                CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
+                CHECK_ERROR("Invalid Ptr for "+labels[id]+" retype");
                 Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
                 Value val = ctx.node().right().c0().value();
                 col.tag = val.type();
@@ -1130,6 +1174,142 @@ namespace Acorn {
             });
         }
 
+
+        overload_type(id,".'validate_offests_and_lock'(any)",label+"_EXPR_A",deadptr,[this,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            if(col.tag!=int_id) {
+                throw_error("A validator must be a col of int offsets");
+            } else {
+                Col& scol = resolve_to_col(ctx.node().right().getPtr(0));
+                for(int i=0;i<col.length();i++) {
+                    int e = *(int*)col[i];
+                    if(e<0||e>=scol.length()) {
+                        throw_error("Element ",i," of value ",e," is out of bounds as an offset for column of length ",scol.length());
+                        return;
+                    }
+                }
+                if(scol.live.load()==1) {
+                    scol.unlock();
+                }
+                if(!scol.try_lock()) {
+                    throw_error("Unable to acquire a lock in validate_offsets_and_lock");
+                    return;
+                }
+                ctx.node().left().value().store(ctx.node().right().getPtr(0));
+                ctx.node().value(ctx.node().left().value());
+            }
+        });
+        overload_type(id,".'store_get'(int)",label+"_EXPR_B",make_value(duck_id,0),[this,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr for "+labels[id]+" add");
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            int idx = *(int*)col[ctx.node().right().getInt(0)];
+            Col& scol = ctx.node().left().value().store_col();
+
+            if(idx<scol.length()) {
+                Ptr sptr = ctx.node().left().value().store_ptr();
+                sptr.sidx = idx;
+                ctx.node().value().data_ptr(sptr);
+                sync_value(ctx);
+            } else {
+                throw_error("Adjancet index is out of bounds");
+            }
+        });
+
+        uint32_t bind_by_id = overload_type(id,".'bind_by'(any,any)",label+"_EXPR_C",make_value(duck_id,0),[this,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            
+            uint32_t type_tag = ctx.node().right().c0().type();
+            Ptr bind_to = ctx.node().right().getPtr(1);
+
+            Value lval = ctx.node().left().value();
+            if(lval.has_qual(type_tag)) {
+                if(lval.get_qual(type_tag).getPtr()==bind_to) {
+                    return;
+                } else {
+                    lval.get_qual(type_tag).value().set((void*)&bind_to);
+                }
+            }
+        });
+        r_handlers[bind_by_id] = [this,YAPA_level,id](Context& ctx){
+            uint32_t type_tag = ctx.node().right().c0().type();
+            Value lval = ctx.node().left().value();
+            Node new_qual =  make_node(type_tag);
+            new_qual.value(make_value(ptr_id,sizeof(Ptr)));
+            new_qual.value().set((void*)&deadptr);
+            lval.quals().push(new_qual);
+        };
+
+        uint32_t assert_bound_by_id = overload_type(id,".'assert_bound_by'(any)",label+"_EXPR_D",deadptr,[this,id,YAPA_level](Context& ctx){
+        });
+        r_handlers[assert_bound_by_id] = [this,YAPA_level,id](Context& ctx){
+            uint32_t type_tag = ctx.node().right().c0().type();
+            if(!ctx.node().left().has_qual(type_tag)) {
+                throw_error("Node ",node_info(ctx.left(),1)," must be bound by ",labels[type_tag]);
+            }
+        };
+
+        return id;
+    }
+
+    uint32_t Acorn_Script::make_YAPA_type(const std::string& label, uint32_t YAPA_level, bool is_indirect) {
+        uint32_t id = make_type(label,sizeof(Ptr));
+        register_ptr_alias(id);
+        value_printers[id] = [this](Context& ctx){Ptr p = *(Ptr*)ctx.value().get(); ctx.source(Ptr_to_string(p,p.cachelevel));};
+        register_YAPA_type(label,YAPA_level,id,is_indirect);
+        return id;
+    }
+
+    uint32_t Acorn_Script::init_adjacency_type() {
+        uint32_t id = make_YAPA_type("Adjacency",1,false);
+
+        add_function("add_binding_qual",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t qid = add_qual(ctx.node().getString(0).to_std());
+            x_handlers[to_prefix_id(qid)] = [this](Context& ctx){
+                standard_process(ctx,ctx.qual().type());
+            };
+        });
+
+        uint32_t rprint_id = add_function("rprint",[this](Context& ctx){});
+        r_handlers[rprint_id] = [this](Context& ctx){
+            print(ctx.node().c0().name());
+        };
+
+        r_handlers[to_prefix_id(length_relation_qual)] = [this](Context& ctx){
+            if(ctx.node().type()==labels_lookup["Ptr_IDXGET"]) {
+                if(ctx.qual().value()==ctx.node().left().value()) {
+                    throw_error("Violated length relation, ",node_info(ctx.node())," is defined by the length of the container it is attempting to index");
+                }
+            }
+        };
+
+        x_handlers[to_prefix_id(offset_qual)] = [this](Context& ctx){
+            if(ctx.node().type()==labels_lookup["Ptr_GET"]) {
+                if(ctx.node().getInt()<0||ctx.node().getInt()>=resolve_to_col(ctx.qual().getPtr()).length()) {
+                    throw_error("Retrived offset is out of bounds for offset qual");
+                }
+            }
+            if(ctx.node().type()==labels_lookup["Ptr_INIT"]) {
+                Col& nums = resolve_to_col(ctx.node().getPtr());
+                for(int i=0;i<nums.length();i++) {
+                    int num = *(int*)nums[i];
+                    if(num<0||num>=resolve_to_col(ctx.qual().getPtr()).length()) {
+                        throw_error("Retrived offset ",num," is out of bounds for offset qual during initilization");
+                    }
+                }
+            }
+        };
         return id;
     }
 }

@@ -155,14 +155,10 @@ namespace Acorn {
         map<uint32_t,bool> is_YAPA_indirect;
         uint32_t register_YAPA_type(const std::string& label, uint32_t YAPA_level, uint32_t id, bool is_indirect = false);
 
-        uint32_t make_YAPA_type(const std::string& label, uint32_t YAPA_level, bool is_indirect) {
-            uint32_t id = make_type(label,sizeof(Ptr));
-            register_ptr_alias(id);
-            value_printers[id] = [this](Context& ctx){Ptr p = *(Ptr*)ctx.value().get(); ctx.source(Ptr_to_string(p,p.cachelevel));};
-            register_YAPA_type(label,YAPA_level,id,is_indirect);
-            return id;
-        }
+        uint32_t make_YAPA_type(const std::string& label, uint32_t YAPA_level, bool is_indirect);
 
+        uint32_t offset_qual = add_qual("offset_qual",sizeof(Ptr));
+        uint32_t length_relation_qual = add_qual("length_relation_qual");
 
         uint32_t ptr_as_YAPA_id = register_YAPA_type("Ptr",1,ptr_id);
         uint32_t colcol_as_YAPA_id = register_YAPA_type("ColCol",2,colcol_id);
@@ -173,6 +169,9 @@ namespace Acorn {
 
         uint32_t ribbon_id = make_YAPA_type("Ribbon",1,true);
         uint32_t object_id = make_YAPA_type("Object",1,true);
+
+        uint32_t init_adjacency_type();
+        uint32_t adjacency_id = init_adjacency_type();
 
 
         uint32_t c3_header_id = overload_type(colcolcol_id,list<std::string>{".'header'",".'header'(int)"},"ColColCol_HEADER",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
@@ -351,6 +350,12 @@ namespace Acorn {
             uint32_t ts = (uint32_t)std::time(nullptr);
             string s = resolve_string_ticket(ctx.node());
             s = std::to_string(ts);
+        },sizeof(Ptr),string_id);
+        uint32_t unit_precise_timestamp_id = add_function("unit_precise_timestamp",[this](Context& ctx){
+            auto now = std::chrono::system_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+            string s = resolve_string_ticket(ctx.node());
+            s = std::to_string(ms);
         },sizeof(Ptr),string_id);
 
         uint32_t header_ribbonT_id = overload_type(header_id,list<std::string>{".'ribbonT'",".'ribbonT'(string)"},"HEADER_RIBBONT",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
@@ -1310,6 +1315,24 @@ namespace Acorn {
                     mark_and_skip(ctx);
                 }
             });
+
+            add_function("experimental_cast_to",[this](Context& ctx){
+                standard_sub_process(ctx);
+                ctx.left(ctx.node().c0());
+                ctx.node(ctx.node().c1());
+                Stage* old_stage = active_stage;
+                start_stage(coerce_handlers);
+                standard_process(ctx,ctx.node().value().type());
+                start_stage(old_stage);
+                CHECK_ERROR("experimental_cast_to falied");
+                // int type = ctx.node().getInt(0);
+                // ctx.node().value().size(ctx.node().c1().value().size());
+                // ctx.node().value().type(type);
+                // ctx.node().value().data_ptr(ctx.node().c1().value().data_ptr());
+                // if(resolve_overload(ctx.root())) {
+                //     mark_and_skip(ctx);
+                // }
+            });
             
 
             Handler discard = [this](Context& ctx){
@@ -1333,7 +1356,7 @@ namespace Acorn {
             };
             a_handlers[make_tokenized_keyword("newstage")] = [this](Context& ctx){
                 ctx.node().quals() << turn_into_token(ctx.result().take(ctx.index()+1));
-                reg_stage(ctx.node().quals().last().name().to_std());
+                reg_stage(ctx.node().quals().last().name().to_std()).default_function = [](Context& ctx){};
             };
 
             add_function("set_binding_powers",[this](Context& ctx){
@@ -1704,6 +1727,10 @@ namespace Acorn {
                 string output = resolve_string_ticket(ctx.node());
                 output = ftime(uspan->get_time(children_to_string(ctx,ctx.node().children())));
             },sizeof(Ptr),string_id);
+            add_function("ttime_s",[this](Context& ctx){
+                int time = (int)uspan->timers.get(children_to_string(ctx,ctx.node().children())).time_s();
+                ctx.node().value().set((void*)&time);
+            },4,int_id);
             add_function("tstop",[this](Context& ctx){ //uspan_time_end
                 string output = resolve_string_ticket(ctx.node());
                 output = ftime(uspan->end_timer(children_to_string(ctx,ctx.node().children())));
@@ -1712,6 +1739,23 @@ namespace Acorn {
                 std::string str = children_to_string(ctx,ctx.node().children());
                 print(str,": ",ftime(uspan->end_timer(str)));
             });
+
+            add_function("green",[this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = green(ctx.node().getString(0).to_std());
+            },sizeof(Ptr),string_id);
+            add_function("red",[this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = red(ctx.node().getString(0).to_std());
+            },sizeof(Ptr),string_id);
+            add_function("blue",[this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = blue(ctx.node().getString(0).to_std());
+            },sizeof(Ptr),string_id);
+            add_function("yellow",[this](Context& ctx){
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = yellow(ctx.node().getString(0).to_std());
+            },sizeof(Ptr),string_id);
 
             add_function("unit_has_arg",[this](Context& ctx){
                 standard_sub_process(ctx);
@@ -2157,6 +2201,12 @@ namespace Acorn {
                 string str(*(Ptr*)ctx.node().value().get());
                 str = value_as_string(ctx.node().children()[0].value());
             };
+
+            add_function("to_color_string",[this](Context& ctx){
+                standard_sub_process(ctx);
+                string output = resolve_string_ticket(ctx.node());
+                output = color_string(value_as_string(ctx.node().children()[0].value()));
+            },sizeof(Ptr),string_id);
 
             r_handlers[labels_id] = [this](Context& ctx){
                 standard_sub_process(ctx);

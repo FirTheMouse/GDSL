@@ -44,10 +44,23 @@ namespace Acorn {
             return col2_ref;
         }
 
+        template<typename... Args>
+        std::string fill_capture(std::string fragment,Args&&... args) {
+            std::string parts[] = {std::string(std::forward<Args>(args))...};
+            for(const auto& part : parts) {
+                size_t at = fragment.find(",,");
+                if(at == std::string::npos) {
+                    break;
+                }
+                fragment.insert(at + 1, part);
+            }
+            return fragment;
+        }
 
-
+        void sub_init();
+        
         void init() override {
-
+            sub_init();
             add_function("print_hash",[this](Context& ctx){
                 standard_sub_process(ctx);
                 Value keyv = ctx.node().c0().value();
@@ -58,7 +71,7 @@ namespace Acorn {
                     print(hashBytes(keyv.get(),keyv.size()));
                 }
             });
-
+    
             add_function("test_overload",[this](Context& ctx){
                 standard_sub_process(ctx);
                 uint32_t type = ctx.node().getInt(0);
@@ -77,37 +90,37 @@ namespace Acorn {
                     print(i,": ",sigs[i]);
                 }
             });
-
+    
             add_function("overload_signature",[this](Context& ctx){
                 standard_sub_process(ctx);
                 resolve_overload(ctx.node().getContext(0));
             });
-
-            add_function("cleanup",[this](Context& ctx){
-                standard_sub_process(ctx);
-                if(ctx.node().children().length()>0) {
-                    if(ctx.node().children()[0].value().type()==node_id) {
-                        Stage& previous_stage = *active_stage;
-                        Node outer_node = ctx.node();
-                        walk_handlers.default_function = [this,&outer_node](Context& ctx) {
-                            standard_sub_process(ctx);
-                            if(is_live(ctx.node().value())) {
-                                Node ts = ctx.node().value().type_scope();
-                                if(is_live(ts)) {
-                                    print(node_info(ts)," ",ts.z()," VS ",outer_node.z());
-                                }
-                                if(is_live(ts) && ts.z()!=outer_node.z()) {
-                                    ctx.node().value(deadptr);
-                                }
-                            }
-                        };
-                        start_stage(walk_handlers);
-                        standard_backwards_pass(ctx.node().getNode(0));
-                        start_stage(previous_stage);
-                        recycle_node(ctx.node().getNode(0));
-                    }
-                }
-            });
+    
+            // add_function("cleanup",[this](Context& ctx){
+            //     standard_sub_process(ctx);
+            //     if(ctx.node().children().length()>0) {
+            //         if(ctx.node().children()[0].value().type()==node_id) {
+            //             Stage& previous_stage = *active_stage;
+            //             Node outer_node = ctx.node();
+            //             walk_handlers.default_function = [this,&outer_node](Context& ctx) {
+            //                 standard_sub_process(ctx);
+            //                 if(is_live(ctx.node().value())) {
+            //                     Node ts = ctx.node().value().type_scope();
+            //                     if(is_live(ts)) {
+            //                         print(node_info(ts)," ",ts.z()," VS ",outer_node.z());
+            //                     }
+            //                     if(is_live(ts) && ts.z()!=outer_node.z()) {
+            //                         ctx.node().value(deadptr);
+            //                     }
+            //                 }
+            //             };
+            //             start_stage(walk_handlers);
+            //             standard_backwards_pass(ctx.node().getNode(0));
+            //             start_stage(previous_stage);
+            //             recycle_node(ctx.node().getNode(0));
+            //         }
+            //     }
+            // });
         }
     };
 }

@@ -306,3 +306,1379 @@ x_handlers[dot_id] = [this](Context& ctx){
             // recycle_node(expr);
 
             // registered_operator_ids[overload_to] = true;
+
+
+Old Thorn messaging system built before subunits:
+
+
+        // Message make_message(ColColCol& in, uint32_t from, uint32_t to, uint32_t status) {
+        //     Message m = Ptr(&in,0,push_column(in[0],message_total_size,message_id),0);
+        //     resolve_to_col(m).heterogenous = true;
+        //     m.from() = from; m.to() = to; m.status() = status;
+        //     return m;
+        // }
+
+        // Header emplace_message(ColColCol& in, uint32_t status = 0) {
+        //     Header header = make_header(in);
+        //     header.add_ribbon();
+        //     make_message(in,header.pool,header.pool+1,status);
+        //     return header;
+        // }
+
+        // void send_message(list<ColCol*> messagepools) {
+        //     if(sendunit.try_lock_forever()) {
+        //         ColCol& instrs = sendunit[0];
+        //         uint32_t from = sendunit.length();
+        //         uint32_t to = from+messagepools.length();
+        //         uint32_t status = 0;
+
+        //         ColCol* header = find_pool(messagepools,headerpool_id);
+        //         if(header) {
+        //             Ptr refptr = *(Ptr*)header->get(0)[0]; //Getting the first Ptr from the ribbon so we know how to offset
+        //             ColColCol mesagepools_copy; //If we did a proper copy out then this wouldn't be a problem
+        //             for(int i=0;i<messagepools.length();i++) {
+        //                 ColCol msgcopy = *messagepools[i];
+        //                 mesagepools_copy.push(msgcopy);
+        //             }
+        //             offset_pool_ptrs(mesagepools_copy,-refptr.pool); //We also wouldn't need to offset
+        //             adopt_ptrs(mesagepools_copy,&sendunit);
+        //             push_pools(sendunit,mesagepools_copy);
+        //             make_message(sendunit,from,to,status);
+        //         } else {
+        //             throw_error("Failed to send message because there was no header pool");
+        //         }
+        //         sendunit.unlock();
+        //     }
+        // }
+        // //The pool needs to be in types
+        // void send_message(uint32_t pool) {send_message({&types[pool]});}
+
+        // Header make_header(ColColCol& in) {
+        //     uint32_t at = in.length();
+        //     ColCol pool; pool.tag = headerpool_id;
+        //     in.push(pool);
+        //     return Ptr(&in,at,0,0);
+        // }
+
+        // uint32_t make_headerpool(ColColCol& in, std::string send_to, std::string message) {
+        //     Header header = make_header(in);
+        //     header.add_ribbon();
+        //     header.putString("Send to", send_to);
+        //     header.putString("Message", message);
+        //     return header.pool;
+        // }
+
+        // void send_message(std::string to, std::string message) {
+        //     send_message(make_headerpool(types,to,message));
+        // }
+
+        // uint32_t courier_type_id = 0;
+        // void become_courier(bool auto_start = true) {
+        //     unit_label = "Thorn";
+        //     ColCol couriertype;
+        //     courier_type_id = types.length();
+        //     couriertype.label = "Leg";
+        //     types.push(couriertype);
+        //     if(auto_start) {
+        //         start_thread([this](){
+        //             run_courier();
+        //         });
+        //     }
+        // }
+
+        // void courier_pick_up_messages(g_ptr<Unit> unit) {
+        //     if(courier_type_id==0) {
+        //         throw_error("Unit ",uid," is not a courier, can't pick up mesages");
+        //         return;
+        //     }
+
+        //     if(unit->sendunit.try_lock_for(0.005)) {
+        //         ColCol& instrs = unit->sendunit[0];
+
+        //         list<Message> messages;
+        //         for(int i=0;i<instrs.length();i++) {
+        //             if(!instrs[i].live) continue;
+        //             Message msg = Ptr(&instrs,i,0);
+        //             messages.push(msg);
+        //         }
+        //         messages.sort([](Message a, Message b){return a.from()>b.from();});
+        //         for(int i=0;i<messages.length();i++) {
+        //             // print("Courier found an instruction to iterate over in ",unit->unit_label);
+        //             // unit->print_column(resolve_to_col(messages[i]));
+        //             Message msg = messages[i];                
+        //             if(msg.status()==0) {
+        //                 list<ColCol*> sample = unit->gather_pools(unit->sendunit,msg.from(),msg.to());
+        //                 ColCol* header_ptr = find_pool(sample,headerpool_id);
+        //                 if(header_ptr) {
+        //                     Header header = makePtr(unit->sendunit,header_ptr);
+        //                     if(header.ribbon().hasKey("Send to")) {
+        //                         string send_to_list = header.getString("Send to");
+        //                         list<std::string> send_to = split_str(send_to_list.to_std(),',');
+
+        //                         //Has valid recipiants
+        //                         ColColCol group = unit->take_pools(unit->sendunit,msg.from(),msg.to());
+        //                         adopt_ptrs(group);
+
+        //                         for(int s=0;s<send_to.length();s++) {
+        //                             ColCol& leg = types[courier_type_id];
+        //                             Message record = deadptr;
+        //                             Col* col = nullptr;
+        //                             if(is_str_num(send_to[s])) {
+        //                                 uint32_t asnum = std::stoi(send_to[s]);
+        //                                 if(leg.hasKey(asnum)) {
+        //                                     col = (Col*)leg.Col::get((void*)&asnum,4);
+        //                                 }
+        //                             } else {
+        //                                 if(leg.hasKey(send_to[s])) {
+        //                                     col = (Col*)leg.Col::get(send_to[s]);
+        //                                 }
+        //                             }
+        //                             if(col) {
+        //                                 record = Ptr(col,col->length()); col->push_default();
+        //                             } else {
+        //                                 uint32_t ncol_at = push_column(leg,message_total_size,message_id);
+        //                                 leg[ncol_at].heterogenous = true;
+        //                                 record = Ptr(&leg,ncol_at,0);
+        //                                 CCol key;
+        //                                 if(is_str_num(send_to[s])) {
+        //                                     key.element_size = 4;
+        //                                     key.tag = int_id;
+        //                                     uint32_t asnum = std::stoi(send_to[s]);
+        //                                     key.hash = hashBytes((void*)&asnum, 4);
+        //                                     key.push((void*)&asnum);
+        //                                 } else {
+        //                                     key.element_size = send_to[s].length(); 
+        //                                     key.tag = string_id;
+        //                                     key.hash = hashBytes(send_to[s].data(), send_to[s].length());
+        //                                     ((QString&)key) = send_to[s];
+        //                                 }
+        //                                 key.index = ncol_at;
+        //                                 leg.cells.scan_for_slot(std::move(key));
+        //                             }     
+        //                             record.from() = types.length(); record.to() = types.length()+sample.length(); record.status() = 0;
+        //                             ColColCol copy_to_store = group;
+        //                             push_pools(types,copy_to_store);
+        //                         }
+
+        //                         // editTextFile("printout.txt",[&](std::string& source){source+="Pickup from "+unit->unit_label+"\n";});
+        //                         // dump_unit(false,"printout.txt",14);
+        //                     } else {
+        //                         throw_error("core:courier_pick_up_messages encountered a message whose headerpool has no field 'Send to'!");
+        //                     }
+        //                     recycle_column(msg);
+        //                 } else {
+        //                     throw_error("core:courier_pick_up_messages encountered a message with no headerpool "
+        //                     "send message was bypassed or some memory was corrupted!");
+        //                     break;
+        //                 }
+        //             } else {
+        //                 //For when I add more status codes
+        //             }
+        //         }
+        //         unit->sendunit.unlock();
+        //     }
+        // }
+        // void courier_drop_off_messages(g_ptr<Unit> unit) {
+        //     if(courier_type_id==0) {
+        //         throw_error("Unit ",uid," is not a courier, can't drop off mesages");
+        //         return;
+        //     }
+
+        //     uint32_t asnum = unit->uid;
+        //     ColCol& leg = types[courier_type_id];
+        //     Col* col = nullptr;
+        //     if(leg.hasKey(unit->unit_label)) {
+        //         col = (Col*)leg.Col::get(unit->unit_label);
+        //     } else if(leg.hasKey(asnum)) {
+        //         col = (Col*)leg.Col::get((void*)&asnum,4);
+        //     }
+        //     if(col&&col->live&&!col->empty()) {
+        //         if(unit->recvunit.try_lock_for(0.005)) {
+        //             list<Message> messages;
+        //             for(int i=0;i<col->length();i++) {
+        //                 Message msg = Ptr(col,i);
+        //                 messages.push(msg);
+        //             }
+        //             messages.sort([](Message a, Message b){return a.from()>b.from();});
+        //             for(int i=0;i<messages.length();i++) {
+        //                 Message msg = messages[i];
+        //                 if(msg.status()==0) {
+        //                     ColColCol group = take_pools(types,msg.from(),msg.to());
+
+        //                     uint32_t recv_at = unit->recvunit.length();
+        //                     unit->make_message(unit->recvunit,recv_at,recv_at+group.length(),0);
+
+        //                     unit->adopt_ptrs(group,&unit->recvunit);
+        //                     unit->push_pools(unit->recvunit,group);
+
+        //                     for(int t=0;t<leg.length();t++) {
+        //                         Col& tube = leg[t];
+        //                         if(tube.storage!=col->storage&&!tube.empty()&&tube.live) {
+        //                             for(int m=0;m<tube.length();m++) {
+        //                                 Message tube_msg = Ptr(&tube,m);
+        //                                 uint32_t removed = msg.to() - msg.from();
+        //                                 if(tube_msg.from()>=msg.to()) {
+        //                                     tube_msg.from() -= removed;
+        //                                     tube_msg.to() -= removed;
+        //                                 } else if(tube_msg.from()>=msg.from()) {
+        //                                     throw_error(red("core:courier_drop_off_messages encountered a message which pointed into a taken range, corrupted!"));
+        //                                 }
+        //                             }
+        //                         }
+        //                     }
+        //                 } else {
+        //                     //For when I add more status codes
+        //                 }
+        //             }
+        //             unit->recvunit.unlock();
+        //         }
+        //         col->clear();
+
+        //         // editTextFile("printout.txt",[&](std::string& source){source+="Drop off at "+unit->unit_label+"\n";});
+        //         // dump_unit(false,"printout.txt",14);
+        //     }
+        // }
+        // void run_courier() {
+        //     while(running) {
+        //         list<g_ptr<Unit>> snapshot;
+        //         {
+        //             std::lock_guard<std::mutex> lock(units_mutex);
+        //             snapshot = units;
+        //         }
+        //         for(auto& unit : snapshot) {
+        //             if(unit.getPtr()==this) continue;
+        //             courier_pick_up_messages(unit);
+        //             courier_drop_off_messages(unit);
+        //         }
+        //         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        //     }
+        // }
+
+        // ColColCol check_messages() {
+        //     if(recvunit.try_lock(0.005)) {
+        //         ColCol& instrs = recvunit[0];
+        //         for(int i=0;i<instrs.length();i++) {
+        //             if(!instrs[i].live) continue;
+        //             Message msg = Ptr(&instrs, i, 0);
+        //             if(msg.status()==0) {
+        //                 ColColCol group = take_pools(recvunit,msg.from(),msg.to());
+        //                 recycle_column(msg);
+        //                 for(int t=0;t<instrs.length();t++) {
+        //                     if(!instrs[t].live) continue;
+        //                     Message instr = Ptr(&instrs,t,0);
+        //                     uint32_t removed = msg.to() - msg.from();
+        //                     if(instr.from()>=msg.to()) {
+        //                         instr.from() -= removed;
+        //                         instr.to() -= removed;
+        //                     } else if(instr.from()>=msg.from()) {
+        //                         throw_error(red("core:check_messages encountered a message which pointed into a taken range, corrupted!"));
+        //                     }
+        //                 }
+        //                 recvunit.unlock();
+        //                 return group;
+        //             }                        
+        //         }
+        //         recvunit.unlock();
+        //     }
+        //     return col3_ref;
+        // }
+
+
+Old Webcorn Session system before YAPA absorbed it:
+
+
+    inline uint32_t session_username_offset;
+    inline uint32_t session_userpath_offset;
+    inline uint32_t session_ip_offset;
+    inline uint32_t session_role_offset;
+    inline uint32_t session_org_offset;
+    inline uint32_t session_timestamp_offset;
+
+    struct Session : Ptr {
+        Session() {}
+        Session(Ptr p) : Ptr(p) {}
+ 
+        inline Ptr&         username_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+session_username_offset); }
+        inline Col&         username_col(){return resolve_to_col(username_ptr());}
+        inline void         username(Ptr p){resolve_to_col(*this).qset(sidx+session_username_offset, (void*)&p, sizeof(Ptr)); }
+        inline string       username() {return (string&)username_ptr();}
+   
+        inline Ptr&         userpath_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+session_userpath_offset); }
+        inline Col&         userpath_col(){return resolve_to_col(userpath_ptr());}
+        inline void         userpath(Ptr p){resolve_to_col(*this).qset(sidx+session_userpath_offset, (void*)&p, sizeof(Ptr)); }
+        inline string       userpath() {return (string&)userpath_ptr();}
+   
+        inline int&         timestamp() {return *(int*)resolve_to_col(*this).qget(sidx+session_timestamp_offset); }
+        inline void         timestamp(int t){resolve_to_col(*this).qset(sidx+session_timestamp_offset, (void*)&t, 4); }
+   
+        inline int&         ip()        {return *(int*)resolve_to_col(*this).qget(sidx+session_ip_offset); }
+        inline void         ip(int t)   {resolve_to_col(*this).qset(sidx+session_ip_offset, (void*)&t, 4); }
+
+        inline Ptr&         role_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+session_role_offset); }
+        inline Col&         role_col(){return resolve_to_col(role_ptr());}
+        inline void         role(Ptr p){resolve_to_col(*this).qset(sidx+session_role_offset, (void*)&p, sizeof(Ptr)); }
+        inline string       role() {return (string&)role_ptr();}
+
+        inline Ptr&         org_ptr(){return *(Ptr*)resolve_to_col(*this).qget(sidx+session_org_offset); }
+        inline Col&         org_col(){return resolve_to_col(org_ptr());}
+        inline void         org(Ptr p){resolve_to_col(*this).qset(sidx+session_org_offset, (void*)&p, sizeof(Ptr)); }
+        inline string       org() {return (string&)org_ptr();}
+    };
+
+
+    Inside the Webcorn_Unit:
+
+        uint32_t session_id = make_type("Session");
+
+        uint32_t init_session_type() {
+            ColCol col;
+            col.label = "Sessions";
+            uint32_t id = types.length();
+            types.push(col);
+
+            _layout stemp(add_template(session_id));
+            session_username_offset = stemp.add_prop(string_id,sizeof(Ptr),"username",char_id,1);
+            session_userpath_offset = stemp.add_prop(string_id,sizeof(Ptr),"userpath",char_id,1);
+            session_timestamp_offset = stemp.add_prop(int_id,4,"timestamp");
+            session_ip_offset = stemp.add_prop(int_id,4,"ip");
+            session_role_offset = stemp.add_prop(string_id,sizeof(Ptr),"role");
+            session_org_offset = stemp.add_prop(string_id,sizeof(Ptr),"org");
+            layouts.put(session_id,stemp);
+            value_printers[session_id] = [this](Context& ctx) {ctx.source("SESSION:"+Ptr_as_string(*(Ptr*)ctx.value().get()));};
+            return id;
+        }
+        uint32_t session_col = init_session_type();
+
+        void copy_session(Session s, Session o) {
+            if(is_live(o.username_ptr())) { 
+                if(!is_live(s.username_ptr())) {
+                    s.username(get_ticket(data_store_id,1,char_id));
+                }
+                s.username() = o.username();
+            }
+            if(is_live(o.userpath_ptr())) { 
+                if(!is_live(s.userpath_ptr())) {
+                    s.userpath(get_ticket(data_store_id,1,char_id));
+                }
+                s.userpath() = o.userpath();
+            }
+            s.timestamp(o.timestamp());
+            s.ip(o.ip());
+        }
+
+        Session manager branch:
+
+        if(cmd=="SESSION") {
+            if(session_col==0) {
+                print(red("webcorn:manage_sessions no valid session column in the main unit! Ensure a session manager was started"));
+            } else {
+                ColCol& sessions = types[session_col];
+                std::string token = "";
+                print(green("Logging in unit "+std::to_string(unit->uid)+" for "+arg));
+                uint32_t seshid = 0;
+                Session o;
+                if(sessions.hasKey(arg)) { //Arg is username
+                    uint32_t seshid = sessions.getidx(arg.data(),arg.length());
+                    token = sessions[seshid].label.to_std();
+                    Ptr optr(&types,session_col,seshid,0);
+                    o = optr;
+                    print("Retrived token ",token," for ",arg);
+                } else {
+                    token = generate_token();
+                    distributed_tokens.put(token, true);
+                    Col newsession;
+                    newsession.label = token;
+                    newsession.index = server->unit;
+                    newsession.heterogenous = true;
+                    _layout& l = layouts.get(session_id);
+                    newsession.tag = session_id; newsession.element_size = l.total_size;
+                    newsession.push_default();
+                    seshid = sessions.length();
+                    sessions.put(arg,newsession); //Do not use the sessions col refrence after this point
+                    Ptr optr(&types,session_col,seshid,0);
+                    o = optr;
+                    o.username(get_ticket(name_store_id,1,char_id));
+                    o.username() = arg;
+                    o.userpath(get_ticket(name_store_id,1,char_id));
+                    o.userpath() = sessionpath+"users/"+arg+"/";
+                    uint32_t ts = (uint32_t)std::time(nullptr);
+                    o.timestamp(ts);
+                    server->authourized = true;
+                }
+                server->session = o; //Give it its session
+                unit->types.label = token;
+                server->sethash(token);
+
+                ColCol& unitdata = unit->types[unitdata_col];
+                value_col unit_global_values(unit->uid, unitdata_col, global_value_table_idx);
+                if(unit_global_values.hasKey("session")) {
+                    Value seshv = unit_global_values.get("session");
+                    Session s = seshv.data_ptr();
+                    unit->copy_session(s,o);
+                    print("Session coppied to unit ",unit->uid);
+                }
+                distributed_tokens.put(token,true);
+
+                //Setting up the inbox, investiture of capability
+                std::string userpath = o.userpath().to_std();
+                list<std::string> files = listFilesInDirectory(userpath);
+                if(files.has("inbox.gsu")) {
+                    ColColCol* sub = unit->subunits.create(userpath+"inbox.gsu");
+                    sub->unlock();
+                    if(unit->acquire_subunit(sub)) { //All the authentication to make sure it's intilized right
+                        if(!sub->empty()&&sub->get(0).length()>1) {
+                            Col& recv = sub->get(0)[0];
+                            Col& sent = sub->get(0)[1]; 
+                            if(recv.tag==ptr_id&&sent.tag==ptr_id) { //This is really designed for the specific shape of Thistle, this is not meant to be the final general form
+                                for(int i=0;i<recv.cells.length();i++) {
+                                    CCol& cell = recv.cells.get(i);
+                                    if(cell.storage) { //We're swapping out each Ptr that was saved for the real Ptr in the new unit, and ensuring it's all ready for use
+                                        std::string label((const char*)cell.storage, cell.size);
+                                        Ptr subptr = load_subunit(label);
+                                        recv.set(cell.index,(void*)&subptr);
+                                    }
+                                }
+                                for(int i=0;i<sent.cells.length();i++) {
+                                    CCol& cell = sent.cells.get(i);
+                                    if(cell.storage) {
+                                        std::string label((const char*)cell.storage, cell.size);
+                                        Ptr subptr = load_subunit(label);
+                                        sent.set(cell.index,(void*)&subptr);
+                                    }
+                                }
+                            } else {
+                                print(red("webcorn:manage_sessions:SESSION the inbox.gsu at "+o.userpath().to_std()+" does not have a proper recv or sent ribbon"));
+                            }
+                        } else {
+                            print(red("webcorn:manage_sessions:SESSION the inbox.gsu at "+o.userpath().to_std()+" is missing pools or columns"));
+                        }
+                        sub->unlock();
+                    }
+                } else {
+                    //print(red("webcorn:manage_sessions:SESSION you forgot to add an inbox.gsu file to "+o.userpath().to_std()+"!"));
+                }
+
+                //Invest database access
+                if(subunits.hasKey(sessionpath+"data.gsu")) {
+                    Ptr dataptr = load_subunit(sessionpath+"data.gsu");
+                    if(unit_global_values.hasKey("database")) {
+                        unit_global_values.get("database").set((void*)&dataptr);
+                    }
+                }
+            }
+            unit->types.live = true;
+        }
+
+Old Webcorn-Thistle sheets system:
+
+
+   uint32_t datasheet_id = reg_id("datasheet");
+   uint32_t metadatasheet_id = reg_id("metadatasheet");
+   uint32_t notesheet_id = reg_id("notesheet");
+   uint32_t scriptsheet_id = reg_id("scriptsheet");
+   uint32_t storesheet_id = reg_id("storesheet");
+   uint32_t formsheet_id = reg_id("formsheet");
+
+
+        void save_sheet(uint32_t idx, const std::string& path) {
+            uint32_t sheetpool = find_sheet_pools_start(idx);
+            try {
+                auto out = openWriteStream(path);
+                types[sheetpool].label =  path.substr(path.find_last_of('/')+1);
+                write_raw<uint32_t>(out,sheetpool);
+                list<ColCol*> sheet = gather_sheet_pools(sheetpool);
+                write_ColColList(out,sheet);
+                write_normalize_trailer(out,{NORM_IDS});
+                out.close();
+            } catch(std::exception& e) {
+                throw_error("webcorn:save_sheet can not write to ",path);
+            }
+        }
+
+        uint32_t load_sheet(const std::string& path, bool use_cache = true) {
+            uint32_t sheetpool = 0;
+            bool found = false;
+            std::string label = path.substr(path.find_last_of('/')+1);
+            if(!use_cache||!find_pool(sheetpool,types,datasheet_id,label)) {
+                try {
+                    auto in = openReadStream(path);
+                    print("Loading ",label);
+                    uint32_t saved_sheetpool = read_raw<uint32_t>(in);
+                    list<ColCol> loadsheet = read_ColColList(in);
+                    list<void*> to_normalize; for(int i=0;i<loadsheet.length();i++) to_normalize << (void*)&loadsheet[i];
+                    normalize(in,to_normalize,1);
+
+                    sheetpool = types.length();
+                    print("Sheetpool ",sheetpool," saved sheetpool ",saved_sheetpool);
+                    for(int p=0;p<loadsheet.length();p++) {
+                        for(int c=0;c<loadsheet[p].length();c++) {
+                            Col& col = loadsheet[p][c];
+                            if(col.heterogenous) {
+                                //Add a scan over the layout and normalization for Ptr members in the future if needed
+                            } else if(col.tag==ptr_id||col.tag==string_id) {
+                                for(int r=0;r<col.length();r++) {
+                                Ptr ptr = *(Ptr*)col[r];
+                                if(is_live(ptr)) {
+                                        if(ptr.cachelevel==3) {
+                                            ptr.cache = &types;
+                                        } else if(ptr.cachelevel==0) {
+                                            ptr.unit = uid;
+                                        }
+                                        uint32_t oldpool = ptr.pool;
+                                        ptr.pool = sheetpool + (ptr.pool - saved_sheetpool);
+                                        //print("Normalized ",oldpool," to ",ptr.pool);
+                                        col.set(r,(void*)&ptr);
+                                }
+                                }
+                            }
+                        }
+                        types.push(loadsheet[p]);
+                    }  
+                } catch(std::exception& e) {
+                    throw_error("webcorn:load_sheet can not read from ",path);
+                    return 0;
+                } 
+                // print("Snapshotting");
+                // auto out = openWriteStream("printout.txt");
+                // snapshot_colcol(out,types[sheetpool+loadsheet.length()-1]);
+                // out.close();
+                // print("Loading");
+                // auto inp = openReadStream("printout.txt");
+                // ColCol gcol = load_snapshot_colcol(inp);
+                // print("Dumping");
+                // dump_pool(gcol,0,true);
+                // inp.close();
+
+            }
+            return sheetpool;
+        };
+
+        Inside session manager:
+
+        else if(cmd=="FILE") {
+            if(session_col==0) {
+                print(red("webcorn:manage_sessions:FILE no valid session column in the main unit! Ensure a session manager was started"));
+            } else {
+                if(server->authourized) {
+                    if(arg=="LOAD") {
+                        std::string path = req[2]; //Add a bounds check for this later
+                        print("Loading ",path);
+                        uint32_t sheetpool = unit->load_sheet(path);
+                        unit->types.label = std::to_string(sheetpool);
+                    } else if(arg=="SAVE") {
+                        std::string path = req[3]; //Add a bounds check for this later
+                        print("Saving ",path);
+                        unit->save_sheet(std::stoi(req[2]),path); //And a bounds check for this
+                    } else {
+                        print(red("webcorn:manage_sessions:FILE unrecognized argument: "+arg));
+                    }
+                } else {
+                    unit->types.label = "";
+                    print(red("webcorn:manage_sessions:FILE server is not authourized, please log in"));
+                }
+            }
+        } else if(cmd=="APPROVE") {
+            if(session_col==0) {
+                print(red("webcorn:manage_sessions:APPROVE no valid session column in the main unit! Ensure a session manager was started"));
+            } else {
+                if(server->authourized) {
+                    uint32_t sheetpool = std::stoi(arg);
+                    ColColCol subgraph = unit->copy_subgraph(unit->types,sheetpool,true);
+                    list<ColCol*> ledgerpools = gather_sheet_pools(ledgerpool);
+                    
+                    if(subgraph.length()==2) {
+                        ColCol& ledgerdatasheet = *ledgerpools[0];
+                        ColCol& ledgerstoresheet= *ledgerpools[1];
+                        ColCol& subgraphdatasheet = subgraph[0];
+                        ColCol& subgraphstoresheet = subgraph[1];
+                        
+                        for(int i=0;i<ledgerdatasheet.length();i++) {
+                            std::string label = ledgerdatasheet[i].label.to_std();
+                            if(!ledgerdatasheet.hasKey(label)) {
+                                ledgerdatasheet.addcell(i,label.data(),label.size(),string_id);
+                            }
+                        }   
+
+                        uint32_t subgraphptroffset = ledgerstoresheet.length();
+                        offset_idx_ptrs(subgraphdatasheet, subgraphptroffset);
+                        offset_idx_ptrs(subgraphstoresheet, subgraphptroffset);
+                        offset_pool_ptrs(subgraph, ledgerpool);
+                        adopt_ptrs(subgraph);
+
+                        for(int i=0;i<subgraphstoresheet.length();i++) {
+                            ledgerstoresheet.push(subgraphstoresheet[i]);
+                        }
+
+                        for(int i=0;i<subgraphdatasheet.length();i++) {
+                            if(ledgerdatasheet.hasKey(subgraphdatasheet[i].label.to_std())) {
+                                Col& ledgercol = *(Col*)ledgerdatasheet.Col::get(subgraphdatasheet[i].label.to_std());
+                                for(int n=0;n<subgraphdatasheet[i].length();n++) {
+                                    ledgercol.push(subgraphdatasheet[i][n]);
+                                }
+                            } else {
+                                Col c;
+                                c.element_size = subgraphdatasheet[i].element_size;
+                                c.tag = subgraphdatasheet[i].tag;
+                                c.label = subgraphdatasheet[i].label;
+                                ledgerdatasheet.addcell(ledgerdatasheet.length(),c.label.storage,c.label.size,string_id);
+                                for(int n=0;n<subgraphdatasheet[i].length();n++) {
+                                    c.push(subgraphdatasheet[i][n]);
+                                }
+                                ledgerdatasheet.push(c);
+                            }
+                        }
+                    } else {    
+                        print(red("webcorn:manage_sessions:APPROVE subgraph from "+arg+" has unexpected shape: "+
+                            std::to_string(subgraph.length())+" pools, expected 2 (datasheet+storesheet). "+
+                            "This indicates a foreign Ptr in the submitted sheet, possible corruption."));
+                    }
+
+                    save_sheet(ledgerpool, "web/thistle/ledger");
+                    //dump_sheet(ledgerpool);
+                }
+            }
+        } else if(cmd=="MESSAGE") {
+            if(session_col==0) {
+                print(red("webcorn:manage_sessions:MESSAGE no valid session column in the main unit! Ensure a session manager was started"));
+            } else {
+                if(server->authourized) {
+                    ColCol& sessions = types[session_col];
+                    if(sessions.hasKey(arg)) {
+                        uint32_t seshid = sessions.getidx(arg.data(),arg.length());
+                        uint32_t unitid = sessions[seshid].index;
+                        g_ptr<Unit> target_unit = nullptr;
+                        {
+                            std::lock_guard<std::mutex> lock(servers_mutex);
+                            target_unit = units[unitid];
+                        }
+                        if(target_unit->recvunit.try_lock_forever()) {
+                            Header header = emplace_message(target_unit->recvunit);
+                            header.putString("Method",req[2]);
+                            header.putString("Message",req[3]);
+                            target_unit->recvunit.unlock();
+                        }
+                    } else {
+                        print(arg," isn't logged in so no cache to clear");
+                    }
+                }
+            }
+        } else if(cmd=="SEND") {
+            if(session_col==0) {
+                print(red("webcorn:manage_sessions:SEND no valid session column in the main unit! Ensure a session manager was started"));
+            } else {
+                if(server->authourized) {
+                    uint32_t sheetpool = std::stoi(arg);
+                    list<ColCol*> sheets = unit->gather_sheet_pools(sheetpool); //Not sure if this should be destructive take or not, though this entire method is a temporary measure so...
+
+                    // editTextFile("printout.txt",[](std::string& source){source="";});
+                    // print("SHEET LEN: ",sheets.length()," IDX: ",unit->types.indexof(sheets[0])," SHEETPOOL: ",sheetpool);
+                    // dump_sheet(sheetpool);
+                    // editTextFile("printout.txt",[](std::string& source){source+="\n\nSHEET ^\n";});
+                    // for(int i=0;i<sheets.length();i++) {
+                    //     dump_pool(*sheets[i],i,false);
+                    // }
+                    // editTextFile("printout.txt",[](std::string& source){source+="\n\nSHEET TRUE^\n";});
+
+                    ColColCol* sentsub = new ColColCol(std::move(unit->take_pools(unit->types,unit->types.indexof(sheets[0]),unit->types.indexof(sheets.last())+1)));
+                    adopt_ptrs(*sentsub,sentsub); //This should perhaps be create, to better centrilize the opperation
+                    std::string newpath = "web/thistle/subunits/"+req[2];
+                    sentsub->label = newpath;
+                    subunits.qput(sentsub,newpath.data(),newpath.size(),string_id);
+                    save_subunit(sentsub);
+
+                    // editTextFile("printout.txt",[](std::string& source){source+="\nSUB v\n";});
+                    // dump_subunit(*sentsub,false);
+
+                    Ptr ubox_ptr = unit->load_subunit(server->session.userpath().to_std()+"inbox.gsu");
+                    ColColCol& ubox = resolve_to_subunit(ubox_ptr);
+                    Col& sent = ubox[0][1]; //We already validated the shape earlier on login
+
+                    Ptr sent_ptr = load_subunit(newpath); 
+                    sent.qput((void*)&sent_ptr,newpath.data(),newpath.size(),string_id);
+                    
+                    ColCol& sessions = types[session_col];
+                    for(std::string recipient : split_str(req[3],',')) {
+                        if(sessions.hasKey(recipient)) {
+                            uint32_t seshidx = sessions.getidx(recipient.data(), recipient.length());
+                            uint32_t unitid = sessions[seshidx].index;
+                            g_ptr<Unit> target_unit = nullptr;
+                            {
+                                std::lock_guard<std::mutex> lock(servers_mutex);
+                                target_unit = units[unitid];
+                            }
+                            Ptr rbox_ptr = target_unit->load_subunit("web/thistle/users/"+recipient+"/inbox.gsu");
+                            ColColCol& rbox = resolve_to_subunit(rbox_ptr);
+                            if(acquire_subunit(&rbox)) {
+                                rbox[0][0].qput((void*)&sent_ptr,newpath.data(),newpath.size(),string_id);
+                                target_unit->save_subunit(&rbox);
+                                rbox.unlock();
+                            }
+                        } else {
+                            print(red(recipient+" isn't logged in, so can't send, in the future all units should be created on startup, so this is just temporary"));
+                        }
+                    }
+
+                    unit->types.label = newpath; //Then hand the unit the path, and it can look in it's sent and make use of it for the lookup
+                }
+            }
+        }
+
+
+
+        uint32_t find_sheet_pools_start(uint32_t sheetpool) {return find_pools_start(sheetpool,datasheet_id);}
+        list<ColCol*> gather_sheet_pools(uint32_t sheetpool) {return gather_pools_from(sheetpool,datasheet_id,storesheet_id);}
+
+        void delete_sheet(uint32_t sheetpool) {
+            if(sheetpool>=types.length()) {print(red("webcorn:delete_sheet sheetpool "+std::to_string(sheetpool)+" out of bounds for types length "+std::to_string(types.length()))); return;}
+            sheetpool = find_sheet_pools_start(sheetpool);
+            
+            uint32_t first_removed = sheetpool;
+            uint32_t num_removed = 0;
+            
+            while(sheetpool < types.length() && types[sheetpool].tag != storesheet_id) {
+                types.removeAt(sheetpool);
+                num_removed++;
+            }
+            if(sheetpool < types.length()) {
+                types.removeAt(sheetpool);
+                num_removed++;
+            }
+            
+            // Normalize all remaining Ptrs that pointed above the deleted range
+            for(int p=0;p<types.length();p++) {
+                for(int c=0;c<types[p].length();c++) {
+                    Col& col = types[p][c];
+                    if(col.heterogenous) {
+                        // skip for now
+                    } else if(col.tag==ptr_id||col.tag==string_id) {
+                        for(int r=0;r<col.length();r++) {
+                            Ptr ptr = *(Ptr*)col[r];
+                            if(is_live(ptr)) {
+                                if(ptr.pool >= first_removed+num_removed) {
+                                    ptr.pool -= num_removed;
+                                    col.set(r,(void*)&ptr);
+                                } else if(ptr.pool >= first_removed) {
+                                    // Ptr pointed into the deleted sheet — invalidate it
+                                    ptr = deadptr;
+                                    col.set(r,(void*)&ptr);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        void rename_sheet(uint32_t sheetpool, const std::string& name) {
+            sheetpool = find_sheet_pools_start(sheetpool);
+            types[sheetpool].label = name;
+        }
+
+        bool has_sheet(list<ColCol*> sheets, uint32_t tag, uint32_t nth = 0) {
+            for(int i=0;i<sheets.length();i++) {
+                if(sheets[i]->tag==tag) {
+                    if(nth==0) {
+                        return true;
+                    } else nth-=1;
+                }
+            }
+            return false;
+        }
+        uint32_t find_sheetidx(list<ColCol*> sheets, uint32_t tag, uint32_t nth = 0) {
+            for(int i=0;i<sheets.length();i++) {
+                if(sheets[i]->tag==tag) {
+                    if(nth==0) {
+                        return i;
+                    } else nth-=1;
+                }
+            }
+            print(red("webcorn:find_sheetidx could not find sheet "+labels[tag]));
+            return 0;
+        }
+        ColCol* find_sheet(list<ColCol*> sheets, uint32_t tag, uint32_t nth = 0) {
+            uint32_t index = find_sheetidx(sheets,tag,nth);
+            return sheets[index];
+        }
+        uint32_t find_sheet_id = add_function("find_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            uint32_t tag = *(int*)ctx.node().children()[1].value().get();
+            uint32_t nth = 0;
+            if(ctx.node().children().length()>2) {
+                nth = *(int*)ctx.node().children()[2].value().get();
+            }
+            uint32_t index = find_sheet_pools_start(sheetpool)+find_sheetidx(sheets,tag,nth);
+            ctx.node().value().set((void*)&index);
+        },4,int_id);
+        uint32_t has_sheet_id = add_function("has_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            CHECK_ERROR("Could not gather sheets from sheetpool ",sheetpool);
+            uint32_t tag = *(int*)ctx.node().children()[1].value().get();
+            uint32_t nth = 0;
+            if(ctx.node().children().length()>2) {
+                nth = *(int*)ctx.node().children()[2].value().get();
+            }
+            bool has = has_sheet(sheets,tag,nth);
+            ctx.node().value().set((void*)&has);
+        },1,bool_id);
+        uint32_t get_sheet_id = add_function("get_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            uint32_t tag = *(int*)ctx.node().children()[1].value().get();
+            uint32_t nth = 0;
+            if(ctx.node().children().length()>2) {
+                nth = *(int*)ctx.node().children()[2].value().get();
+            }
+            uint32_t index = find_sheet_pools_start(sheetpool)+find_sheetidx(sheets,tag,nth);
+            Ptr p(&types,index,0,0);
+            ctx.node().value().set((void*)&p);
+        },sizeof(Ptr),colcol_id);
+
+        void dump_sheet(list<ColCol*> sheets, uint32_t baseoffset) {
+            for(int s = 0;s<sheets.length();s++) {
+                dump_pool(*sheets[s],s+baseoffset,s==0);
+            }
+        }
+        void dump_sheet(uint32_t sheetpool) {
+            uint32_t baseoffset = find_sheet_pools_start(sheetpool);
+            dump_sheet(gather_sheet_pools(sheetpool),baseoffset);
+        }
+
+        uint32_t dump_sheet_id = add_function("dump_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            uint32_t baseoffset = find_sheet_pools_start(sheetpool);
+            dump_sheet(gather_sheet_pools(sheetpool),baseoffset);
+        });
+
+        uint32_t sheets_to_CSV_id = add_function("sheets_to_CSV",[this](Context& ctx){
+            std::string to_return = "";
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            ColCol* datasheet = find_sheet(sheets, datasheet_id);
+            for(int c = 0; c < datasheet->length(); c++) {
+                if(c > 0) to_return += ",";
+                to_return += "\"" + datasheet->get(c).label.to_std() + "\"";
+            }
+            to_return += "\r\n";
+            int lenr = datasheet->empty() ? 0 : datasheet->get(0).length();
+            for(int r = 0; r < lenr; r++) {
+                for(int c = 0; c < datasheet->length(); c++) {
+                    if(c > 0) to_return += ",";
+                    Ptr cellptr(&types, sheetpool, c, r);
+                    Ptr p = *(Ptr*)resolve_ptr(cellptr);
+                    if(is_live(p)) {
+                        to_return += "\"" + value_as_string(p) + "\"";
+                    }
+                }
+                to_return += "\r\n";
+            }
+
+            string output = resolve_string_ticket(ctx.node());
+            output = to_return;
+        },sizeof(Ptr),string_id);
+        uint32_t sheets_to_JSON_id = add_function("sheets_to_JSON",[this](Context& ctx){
+            uint32_t sheetpool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(sheetpool);
+            ColCol* datasheet = find_sheet(sheets, datasheet_id);
+            std::string to_return = "[\n";
+            int lenr = datasheet->empty() ? 0 : datasheet->get(0).length();
+            for(int r = 0; r < lenr; r++) {
+                to_return += "  {";
+                bool first = true;
+                for(int c = 0; c < datasheet->length(); c++) {
+                    if(!first) to_return += ",";
+                    first = false;
+                    std::string label = datasheet->get(c).label.to_std();
+                    Ptr cellptr(&types, sheetpool, c, r);
+                    Ptr p = *(Ptr*)resolve_ptr(cellptr);
+                    std::string val = "";
+                    if(is_live(p)) {
+                        val = value_as_string(p);
+                    }
+                    to_return += "\"" + label + "\":\"" + val + "\"";
+                }
+                to_return += "}";
+                if(r < lenr - 1) to_return += ",";
+                to_return += "\n";
+            }
+            to_return += "]";
+            string output = resolve_string_ticket(ctx.node());
+            output = to_return;
+        },sizeof(Ptr),string_id);
+        
+        //Moved to TwigSnap
+        uint32_t render_sheet_id = add_function("render_sheet",[this](Context& ctx){});
+
+        uint32_t create_sheet_id = add_function("create_sheet",[this](Context& ctx){
+            uint32_t sheetid = types.length();
+            ColCol data_pool; data_pool.tag=datasheet_id; types.push(data_pool);
+            ColCol metadata_pool; metadata_pool.tag=metadatasheet_id; types.push(metadata_pool); 
+            ColCol notes_pool; notes_pool.tag=notesheet_id; types.push(notes_pool);
+            ColCol scripts_pool; scripts_pool.tag=scriptsheet_id; types.push(scripts_pool);
+            ColCol store_pool; store_pool.tag=storesheet_id; types.push(store_pool);
+            ctx.node().value().set((void*)&sheetid);
+        },4,int_id);
+        uint32_t delete_sheet_id = add_function("delete_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = 0;
+            if(ctx.node().c0().value().type()==int_id) {
+                sheetpool = ctx.node().getInt(0);
+                CHECK_ERROR("Bad int argument in delete sheet");
+                delete_sheet(sheetpool);
+            } else if(ctx.node().c0().value().type()==string_id) {
+                string str = ctx.node().getString(0);
+                CHECK_ERROR("Bad string argument in delete sheet");
+                if(find_pool(sheetpool,types,datasheet_id,str.to_std())) {
+                    delete_sheet(sheetpool);
+                }
+            }
+        });
+        uint32_t rename_sheet_id = add_function("rename_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t sheetpool = 0;
+            std::string name = "";
+            if(ctx.node().children()[0].value().type()==int_id) {
+                sheetpool = *(uint32_t*)ctx.node().children()[0].value().get();
+            } else if(ctx.node().children()[0].value().type()==string_id) {
+                bool found = false;
+                std::string label = resolve_string_ticket(ctx.node().children()[0]).to_std();
+                for(int p=0;p<types.length();p++) {
+                    if(types[p].tag==datasheet_id&&types[p].label==label) {
+                        sheetpool = p; found = true; break;
+                    }   
+                }
+                if(!found) {
+                    print(red("webcorn:rename_sheet rename failed because "+label+" was not found!"));
+                    return;
+                }
+            }
+            name = resolve_string_ticket(ctx.node().children()[1]).to_std();
+            rename_sheet(sheetpool,name);
+        });
+        uint32_t add_form_id = add_function("add_form",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int idx = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> sheets = gather_sheet_pools(idx);
+            if(sheets.empty()) {print(red("webcorn::add_form sheetpool "+std::to_string(idx)+" is invalid, unable to add a form")); return;}
+            uint32_t baseoffset = find_sheet_pools_start(idx);
+            uint32_t storeidx = baseoffset+(sheets.length()-1);
+            uint32_t oldstoreidx = storeidx;
+            
+            //Snapshot shape from first non-store pool
+            int ncols = sheets[0]->length();
+            int nrows = 0;
+            if(!sheets[0]->empty()) {
+                nrows = sheets[0]->get(0).length();
+            }
+        
+            auto insert_pool = [&](uint32_t tag) {
+                ColCol pool; pool.tag = tag;
+                for(int c = 0; c < ncols; c++) {
+                    Col col(sizeof(Ptr)); col.tag = ptr_id;
+                    for(int r = 0; r < nrows; r++) col.push_default();
+                    pool.push(col); 
+                }
+                types.insert(oldstoreidx,pool); //There's a resize risk here, so probably shouldn't use sheets past this point
+                storeidx+=1;
+            };
+        
+            //Order is inverted becuase an insert means entries come in backwards
+            insert_pool(scriptsheet_id);
+            insert_pool(notesheet_id);
+            insert_pool(metadatasheet_id);
+            insert_pool(formsheet_id);
+
+            sheets = gather_sheet_pools(idx);
+
+            //Normalize for the newely shifted storesheet index
+            for(int p=0;p<sheets.length();p++) {
+                for(int c=0;c<sheets[p]->length();c++) {
+                    Col& col = sheets[p]->get(c);
+                    if(col.heterogenous) {
+                        //Add a scan over the layout and normalization for Ptr members in the future if needed
+                    } else if(col.tag==ptr_id||col.tag==string_id) {
+                        for(int r=0;r<col.length();r++) {
+                           Ptr ptr = *(Ptr*)col[r];
+                           if(is_live(ptr)) {
+                                if(ptr.pool==oldstoreidx) {
+                                    ptr.pool = storeidx;
+                                }
+                                col.set(r,(void*)&ptr);
+                           }
+                        }
+                    }
+                }
+            }   
+            // print("Added form elements");
+            // dump_sheet(sheets,baseoffset);
+        });
+
+        uint32_t save_sheet_id = add_function("save_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t idx = *(uint32_t*)ctx.node().children()[0].value().get();
+            string s(*(Ptr*)ctx.node().children()[1].value().get());
+            cry("FILE:SAVE:"+std::to_string(idx)+":"+s.to_std());
+        });
+        uint32_t load_sheet_id = add_function("load_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string s(*(Ptr*)ctx.node().children()[0].value().get());
+            // uint32_t sheetpool = load_sheet(s.to_std());
+            // ctx.node().value().set((void*)&sheetpool);
+            // dump_sheet(sheetpool);
+            cry("FILE:LOAD:"+s.to_std());
+            if(types.label.empty()) {
+                print(red("Load sheet failed!"));
+            } else {
+                uint32_t sheetpool = std::stoi(types.label.to_std());
+                ctx.node().value().set((void*)&sheetpool);
+            }
+        },4,int_id);
+
+        uint32_t load_sheet_direct_id = add_function("load_sheet_direct",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string s(*(Ptr*)ctx.node().children()[0].value().get());
+            uint32_t sheetpool = load_sheet(s.to_std());
+            ctx.node().value().set((void*)&sheetpool);
+        },4,int_id);
+
+
+        uint32_t copy_sheet_id = add_function("copy_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string path = ctx.node().getString(0);
+            uint32_t sheetpool = load_sheet(path.to_std(),false);
+            ctx.node().value().set((void*)&sheetpool);
+        },4,int_id);
+
+
+        uint32_t delete_pool_id = add_function("delete_pool",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int sheetpool = ctx.node().getInt(0);
+            remove_pools(types,sheetpool,sheetpool+1);
+        });
+
+        uint32_t add_column_id = add_function("add_column_to_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int sheetpool = *(int*)ctx.node().children()[0].value().get();
+            for(auto& pool : gather_sheet_pools(sheetpool)) {
+                if(pool->tag==storesheet_id) continue;
+                if(pool->tag==headerpool_id) continue;
+                Col ncol(sizeof(Ptr)); ncol.tag = ptr_id;
+                uint32_t row_count = 0;
+                if(!types[sheetpool].empty()) {
+                    row_count = types[sheetpool][0].empty() ? 0 : types[sheetpool][0].length();
+                } 
+                for(int i=0;i<row_count;i++) {
+                    ncol.push_default();
+                }
+                pool->push(ncol);
+            }
+        });
+        uint32_t add_row_id = add_function("add_row_to_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int sheetpool = *(int*)ctx.node().children()[0].value().get();
+            for(auto& pool : gather_sheet_pools(sheetpool)) {
+                if(pool->tag==storesheet_id) continue;
+                if(pool->tag==headerpool_id) continue;
+                for(int i=0;i<pool->length();i++) {
+                    pool->get(i).push_default();
+                }
+            }
+        });
+
+        //In the future extract this logic out into a generic depp copy for cols
+        uint32_t duplicate_row_id = add_function("duplicate_row_on_sheet",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int spool = *(int*)ctx.node().children()[0].value().get();
+            list<ColCol*> pools = gather_sheet_pools(spool);
+            int storepool = find_sheet_pools_start(spool)+(pools.length()-1);
+            for(auto& pool : pools) {
+                if(pool->tag==storesheet_id) continue;
+                if(pool->tag==headerpool_id) continue;
+                for(int i=0;i<pool->length();i++) {
+                    Col& col = pool->get(i);
+                    if(col.length()==0) continue;
+                    Ptr existing = *(Ptr*)col.sget(col.length()-1);
+                    if(!is_live(existing)) {
+                        col.push_default();
+                        continue;
+                    }
+
+                    std::function<Ptr(Ptr)> deep_copy_col = [&](Ptr src_ptr) -> Ptr {
+                        Col& src = resolve_to_col(src_ptr);
+                        Ptr new_ticket = get_ticket(storepool, src.element_size, src.tag);
+                        Col& dst = resolve_to_col(new_ticket);
+                        dst.label = src.label;
+                        dst.cells = src.cells;
+                        if(is_ptr_alias(src.tag)) {
+                            for(int j=0;j<src.length();j++) {
+                                Ptr child_ptr = *(Ptr*)src.sget(j);
+                                if(is_live(child_ptr)) {
+                                    Ptr new_child = deep_copy_col(child_ptr);
+                                    dst.push((void*)&new_child);
+                                } else {
+                                    dst.push(src[j]);
+                                }
+                            }
+                        } else {
+                            for(int j=0;j<src.length();j++) {
+                                dst.push(src[j]);
+                            }
+                        }
+                        return new_ticket;
+                    };
+                    
+                    Ptr new_ticket = deep_copy_col(existing);
+                    col.push((void*)&new_ticket);
+                }
+            }
+        });
+
+        uint32_t add_row_to_col_id = add_function("add_row_to_col",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int sheetpool = *(int*)ctx.node().children()[0].value().get();
+            int column = *(int*)ctx.node().children()[1].value().get();
+            types[sheetpool][column].push_default();
+        });
+        uint32_t remove_row_from_col_id = add_function("remove_row_from_col",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int sheetpool = *(int*)ctx.node().children()[0].value().get();
+            int column = *(int*)ctx.node().children()[1].value().get();
+            Col& col = types[sheetpool][column];
+            col.removeAt(col.length()-1);
+        });
+
+        uint32_t setcell_id = add_function("setcell",[this](Context& ctx){
+            standard_sub_process(ctx);
+            //uspan->newline("setcell resolving vars");
+            string addr = (string&)*(Ptr*)ctx.node().children()[0].value().get();
+            list<std::string> terms = split_str(addr.to_std(),'=');
+            if(string_to_cachelevel(terms[0])!=3) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, it has the wrong cache level")); return;}
+            Ptr cellptr = string_to_Ptr(terms[0]); cellptr.cache = &types;
+            uint32_t pooltag = resolve_to_pool(cellptr).tag;
+            list<ColCol*> sheets = gather_sheet_pools(cellptr.pool);
+            if(sheets.last()->tag!=storesheet_id) {print(red("webcorn:setcell ptr "+terms[0]+" is invalid, the sheets it gathered did not end with a storesheet")); return;}
+            uint32_t storepoolidx = find_sheet_pools_start(cellptr.pool)+(sheets.length()-1);
+            Ptr p = cellptr;
+            if(cellptr.pool!=storepoolidx) {
+                p = *(Ptr*)resolve_ptr(cellptr);
+            }
+            //uspan->endline();
+            //uspan->newline("setcell compiling literal");
+            Node literal = compile_literal(terms[1]);
+            //uspan->endline();
+            //uspan->newline("setcell interim");
+            Value lv = literal.value();
+            print("Setcell value: ",value_info(lv));
+            if(!is_live(p)) { //If we aren't replacing a live Ptr, create a new spot for its data in the store pool
+                p = get_ticket(storepoolidx,lv.size(),lv.type());
+                resolve_to_col(cellptr).set(cellptr.sidx,(void*)&p);
+            }
+            void* data = lv.get();
+            Col& tcol = resolve_to_col(p); //Where the value is stored in the store pool
+
+            uint32_t subtype = 0; uint32_t subsize = 0; uint32_t alias = ptr_id;
+
+            if(lv.type()==string_id) {subtype = char_id; subsize = 1; alias = string_id;}
+            else if(lv.sub_type()!=0) {subtype = lv.sub_type(); subsize = lv.sub_size(); alias = lv.type();}
+
+            Ptr subp = deadptr; //This can be optimized in the future with finer discernment, such as detecting if we're replacing a Ptr more accurately than with just alias
+            //Pending a redesign of how double-hop values work on the language side
+            //uspan->endline();
+            //uspan->newline("setcell work");
+            if(tcol.tag==ptr_id||tcol.tag==string_id) {
+                if(!tcol.empty()) {
+                    subp = *(Ptr*)tcol.get(p.sidx); //The Ptr currently stored to the other collection
+                    if(subtype==0||subsize==0&&is_live(subp)) { //Free the subptr if we're realiasing to a scalar
+                        print("Recycling subp");
+                        recycle_column(subp);
+                    } else {
+                        if(is_live(subp)) {
+                            print("Resetting subp");
+                            Col& subcol = resolve_to_col(subp);
+                            subcol.clear(); subcol.element_size = subsize; subcol.tag = subtype;
+                        } else {
+                            print("Regnerating subp");
+                            subp = get_ticket(storepoolidx,subsize,subtype);
+                            resolve_to_col(p).set(p.sidx,(void*)&subp);
+                        }
+                    }
+                } else if(subtype!=0&&subsize!=0) {
+                    print("Replacing subp");
+                    subp = get_ticket(storepoolidx,subsize,subtype);
+                    resolve_to_col(p).push((void*)&subp);
+                }
+            }
+            Col& col = resolve_to_col(p);
+            if(subtype!=0&&subsize!=0) { //If we're a pointer to a collection
+                if(col.tag!=alias) {
+                    print("Realiasing");
+                    col.element_size = sizeof(Ptr); col.tag=alias;
+                    col.clear();
+                    subp = get_ticket(storepoolidx,subsize,subtype);
+                    resolve_to_col(p).push((void*)&subp);
+                } else {
+                    print("Replacing");
+                }
+                Ptr dataptr  = *(Ptr*)data;
+                Col& datacol = resolve_to_col(dataptr); //Copy over the data to it's new position
+                Col& subcol = resolve_to_col(subp);
+                subcol.clear();
+                for(int i=0;i<datacol.length();i++) {
+                    subcol.push(datacol[i]);
+                }
+            } else { //If we're the direct value in the store pool
+                if(col.element_size!=lv.size()||col.tag!=lv.type()) {
+                    print("Clearing and pushing");
+                    col.clear();
+                    col.element_size = lv.size(); col.tag=lv.type();
+                    col.push(data);
+                } else if(col.empty()) {
+                    print("Pushing");
+                    col.push(data);
+                } else {
+                    print("Setting");
+                    col.set(p.sidx,data);
+                }
+            }
+            //uspan->endline();
+        });
+
+        uint32_t webcorn_ledger_append_id = add_function("webcorn_ledger_append",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t ledgerindex = ctx.node().getInt(0);
+            uint32_t sheetpool = ctx.node().getInt(1);
+            ColColCol subgraph = copy_subgraph(types,sheetpool);
+            list<ColCol*> ledgerpools = gather_sheet_pools(ledgerindex);
+            uint32_t new_index = 0;
+            if(subgraph.length()==2&&subgraph[0].tag==datasheet_id&&subgraph[1].tag==storesheet_id) {
+                ColCol& ledgerdatasheet = *ledgerpools[0];
+                ColCol& ledgerstoresheet= *ledgerpools[1];
+                ColCol& subgraphdatasheet = subgraph[0];
+                ColCol& subgraphstoresheet = subgraph[1];
+
+                uint32_t subgraphptroffset = ledgerstoresheet.length();
+                offset_idx_ptrs(subgraphdatasheet, subgraphptroffset);
+                offset_idx_ptrs(subgraphstoresheet, subgraphptroffset);
+                offset_pool_ptrs(subgraph, ledgerindex);
+
+                for(int i=0;i<subgraphstoresheet.length();i++) {
+                    ledgerstoresheet.push(subgraphstoresheet[i]);
+                }
+
+                for(int i=0;i<ledgerdatasheet.length();i++) {
+                    Col& ledgercol = ledgerdatasheet[i];
+                    if(i==0) new_index = ledgercol.length();
+                    for(int j=0;j<subgraphdatasheet.length();j++) {
+                        if(subgraphdatasheet[j].label.to_std()==ledgercol.label.to_std()) {
+                            for(int n=0;n<subgraphdatasheet[j].length();n++) {
+                                ledgercol.push(subgraphdatasheet[j][n]);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            ctx.node().value().set((void*)&new_index);
+        },4,int_id);
+
+        uint32_t webcorn_ledger_sort_id = add_function("webcorn_ledger_sort",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string output = resolve_string_ticket(ctx.node());
+            output = "[]";
+
+            uint32_t ledgerindex = ctx.node().getInt(0);
+            std::string datacol_label = ctx.node().getString(1).to_std();
+            std::string sortkind = ctx.node().getString(2).to_std();
+            ColCol& ledger = types[ledgerindex];
+            uint32_t datacol_idx = 0;
+            for(int i=0;i<ledger.length();i++) {
+                if(ledger[i].label==datacol_label) {datacol_idx = i; break;}
+            }
+            Col& datacol = ledger[datacol_idx];
+            //dump_sheet(ledgerindex);
+            // print("Sorting ",ledgerindex," at ",datacol_idx," by ",datacol_label," ",sortkind);
+            // print("Datacol: ");
+            // print_column(datacol);
+            if(datacol.empty()) return;
+            uint32_t datatype = 0;
+
+            Col sortcol; sortcol.tag = ptr_id; sortcol.element_size = sizeof(Ptr);
+            for(int i=0;i<datacol.length();i++) {
+                Ptr& dataptr = *(Ptr*)datacol[i];
+                if(!is_live(dataptr)) continue;
+                else if(datatype==0) datatype = resolve_to_col(dataptr).tag;
+                dataptr.cache = &resolve_to_col(dataptr); dataptr.cachelevel = 1;
+                Ptr sortptr(&datacol,i);
+                sortcol.push((void*)&sortptr);
+            }
+
+            if(datatype==0) return;
+
+            std::function<bool(Ptr&,Ptr&)> func = nullptr;
+
+            if(sortkind=="asc"){
+                if(datatype==int_id) {
+                    func = [this](Ptr& a, Ptr& b){
+                        return *(int*)resolve_ptr(a) < *(int*)resolve_ptr(b);;
+                    };
+                } else if(datatype==float_id) {
+                    func = [this](Ptr& a, Ptr& b){
+                        return *(float*)resolve_ptr(a) < *(float*)resolve_ptr(b);;
+                    };
+                } else if(datatype==string_id) {
+                    func = [this](Ptr& a, Ptr& b){
+                        return strcmp(
+                            (const char*)resolve_to_col(*(Ptr*)resolve_ptr(a)).sget(a.sidx),
+                            (const char*)resolve_to_col(*(Ptr*)resolve_ptr(b)).sget(b.sidx)
+                        ) < 0;
+                    };
+                }
+            }
+            else if(sortkind=="desc"){
+                if(datatype==int_id) {
+                    func = [this](Ptr& a, Ptr& b){
+                        return *(int*)resolve_ptr(a) > *(int*)resolve_ptr(b);
+                    };
+                } else if(datatype==float_id) {
+                    func = [this](Ptr& a, Ptr& b){
+                        return *(float*)resolve_ptr(a) > *(float*)resolve_ptr(b);
+                    };
+                } else if(datatype==string_id) {
+                    func = [this](Ptr& a, Ptr& b){
+                        return strcmp(
+                            (const char*)resolve_to_col(*(Ptr*)resolve_ptr(a)).sget(a.sidx),
+                            (const char*)resolve_to_col(*(Ptr*)resolve_ptr(b)).sget(b.sidx)
+                        ) > 0;
+                    };
+                }
+            } else if(sortkind=="none") {
+                func = [this](Ptr& a, Ptr& b){
+                    return false;
+                };
+            }
+
+            std::sort((Ptr*)sortcol.storage, (Ptr*)sortcol.storage + sortcol.length(),
+            [func](Ptr& a, Ptr& b){
+                return func(*(Ptr*)resolve_ptr(a),*(Ptr*)resolve_ptr(b));
+            });
+
+            output.col().clear();
+            output.push("[");
+            for(int i=0;i<sortcol.length();i++) {
+                output.push(std::to_string((*(Ptr*)sortcol[i]).sidx));
+                if(i<sortcol.length()-1) output.push(",");
+                else output.push("]");
+            }
+
+            for(int i=0;i<datacol.length();i++) {
+                Ptr& dataptr = *(Ptr*)datacol[i];
+                dataptr.cachelevel = 3; dataptr.cache = &types;
+            }
+
+        },sizeof(Ptr),string_id);
+        

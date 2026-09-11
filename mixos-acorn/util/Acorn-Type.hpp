@@ -350,8 +350,12 @@ namespace Acorn {
         }
         void push_default(uint32_t width) {
             size_t old_size = size;
-            resize(old_size + width);
+            uint32_t new_size = size+width;
+            if(new_size>=capacity) {
+                reserve(new_size*2);
+            }
             memset(&storage[old_size], 0, width);
+            size = new_size;
         }
         void insert(uint32_t index, const void* element, uint32_t width) {
             uint32_t byte_pos = index * width;
@@ -393,6 +397,87 @@ namespace Acorn {
         QCol take(uint32_t index, uint32_t width) {
             return take_range(index, index+1, width);
         }
+    };
+
+    struct CCol {
+        CCol() {}
+        CCol(const CCol& o) {
+            storage = nullptr;
+            size = 0;
+            hash = o.hash;
+            index = o.index;
+            tag = o.tag;
+            if(o.storage && o.size > 0) {
+                resize(o.size);
+                memcpy(storage, o.storage, o.size);
+            }
+        }
+        CCol(CCol&& o) {
+            storage = o.storage;
+            size = o.size;
+            hash = o.hash;
+            index = o.index;
+            tag = o.tag;
+            o.storage = nullptr;
+            o.size = 0;
+        }
+        CCol& operator=(const CCol& o) {
+            if(this == &o) return *this;
+            if(storage) delete[] storage;
+            size = o.size;
+            hash = o.hash;
+            index = o.index;
+            tag = o.tag;
+            if(o.storage && o.size > 0) {
+                resize(o.size);
+                memcpy(storage, o.storage, o.size);
+            } else {
+                storage = nullptr;
+            }
+            return *this;
+        }
+        CCol& operator=(CCol&& o) {
+            if(this == &o) return *this;
+            if(storage) delete[] storage;
+            storage = o.storage;
+            size = o.size;
+            hash = o.hash;
+            index = o.index;
+            tag = o.tag;
+            o.storage = nullptr;
+            o.size = 0;
+            return *this;
+        }
+        ~CCol() {
+            if(storage) {
+                delete[] storage;
+                storage = nullptr;
+            }
+        }
+
+        uint8_t* storage = nullptr;
+        uint32_t size = 0;
+        uint32_t tag = 0;
+        uint32_t hash = 0;
+        uint32_t index = 0;
+
+        inline bool empty() {return size==0;}
+        void resize(uint32_t new_size) {
+            uint8_t* newPtr = new uint8_t[new_size];
+            if(storage) memcpy(newPtr, storage, size);
+            delete[] storage;
+            storage = newPtr;
+            size = new_size;
+        }
+        void set(const void* element) {memcpy(storage,element,size);}
+        void store(const void* element, uint32_t element_size) {resize(element_size); set(element); hash = hashBytes(element,element_size);}
+        void store(const void* element, uint32_t element_size, uint32_t element_tag) {store(element,element_size); tag = element_tag;}
+
+        //Move tag initlization down into here and add string tag here too later, not doing it right now because I'll have enough breaking with just TCol
+        CCol(const std::string& str) {store(str.data(),str.size());}
+
+        template<typename T>
+        T& retrieve() {return *(T*)storage;}
     };
 
     struct QString : QCol {
@@ -439,63 +524,77 @@ namespace Acorn {
     }
 
 
-    struct CCol : QCol {
-        CCol() {}
-        CCol(uint32_t _size) : element_size(_size) {}
-        CCol(uint32_t _size, uint32_t _tag) : element_size(_size), tag(_tag) {}
-        CCol(QCol q) : QCol(q) {}
-        CCol(const CCol& o) : QCol(o) {
+
+    enum class Spec : uint8_t {
+        DEAD = 0, POD = 1, HETERO = 2, COL = 3, PTR_COL = 4, PTR = 5, OWN_PTR = 6
+    };
+
+    struct TCol : QCol {
+        TCol() {}
+        TCol(uint32_t _size) : element_size(_size) {}
+        TCol(uint32_t _size, uint32_t _tag) : element_size(_size), tag(_tag) {}
+        TCol(QCol q) : QCol(q) {}
+        TCol(const TCol& o) : QCol(o) {
+            specialization = o.specialization;
+            form = o.form;
             element_size = o.element_size;
             tag = o.tag;
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
             gen = o.gen;
         }
-        CCol(CCol&& o) : QCol(std::move(o)) {
+        TCol(TCol&& o) : QCol(std::move(o)) {
+            specialization = o.specialization;
+            form = o.form;
             element_size = o.element_size;
             tag = o.tag;
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
             gen = o.gen;
         }
-        CCol& operator=(CCol&& o) {
+        TCol& operator=(TCol&& o) {
             if(this == &o) return *this;
             QCol::operator=(std::move(o));
+            specialization = o.specialization;
+            form = o.form;
             element_size = o.element_size;
             tag = o.tag;
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
             gen = o.gen;
             return *this;
         }
-        CCol& operator=(const CCol& o) {
+        TCol& operator=(const TCol& o) {
             if(this == &o) return *this;
             QCol::operator=(o);
+            specialization = o.specialization;
+            form = o.form;
             element_size = o.element_size;
             tag = o.tag;
             hash = o.hash;
             index = o.index;
             cachelevel = o.cachelevel;
-            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
             gen = o.gen;
             return *this;
         }
+        Spec specialization = Spec::DEAD;
+        uint8_t form = 0;
         uint32_t element_size = 1;
         uint32_t tag = 0;
         uint32_t hash = 0;
         uint32_t index = 0;
         uint8_t cachelevel = 0;
-        std::atomic<uint8_t> live = true;
         uint16_t gen = 0;
 
         inline uint32_t length() const {if(element_size==0||size==0) {return 0;} else {return size / element_size;}}
         void push(const void* element) {
+            if(specialization==Spec::COL) {
+                throw_error("TCol::push called on a COL specialization, use add() instead");
+                return;
+            }
             QCol::push(element,element_size);
         }
         void operator<<(const void* element) {push(element);}
@@ -515,74 +614,6 @@ namespace Acorn {
         QCol take_range(uint32_t from, uint32_t to) {return QCol::take_range(from, to, element_size);}
 
         uint32_t indexof(void* pointer) {return derive_offset(storage,pointer,element_size);}
-        
-        bool try_lock(double wait_for = 0.0) {
-            bool has_acquired_lock = false;
-            if(wait_for>0.0) {
-                Log::Line l; l.start();
-                while(l.time_s()<wait_for) {
-                    if(!has_acquired_lock) {
-                        uint8_t cur = live.load();
-                        if(cur >= 128) return false;
-                        if(live.compare_exchange_weak(cur, cur | 128)) {has_acquired_lock = true;};
-                    } else if(live.load()==128) {
-                        return true;
-                    }
-                }
-                return false;
-            } else if(wait_for==0.0) {
-                uint8_t expected = 0;
-                return live.compare_exchange_strong(expected, 128);
-            } else {
-                while(true) {
-                    if(!has_acquired_lock) {
-                        uint8_t cur = live.load();
-                        if(cur >= 128) {
-                            continue; //Wait for other writters to finish
-                        }
-                        if(live.compare_exchange_weak(cur, cur | 128)) {has_acquired_lock = true;};
-                    } else if(live.load()==128) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-        }
-        bool try_lock_forever() {return try_lock(-1.0);}
-        bool try_lock_for(double wait_for) {return try_lock(wait_for);}
-        void unlock() {
-            uint8_t cur = live.load();
-            if(cur == 128) {
-                live.store(0);
-            } else {
-                live.fetch_sub(1);
-            }
-        }
-
-        bool try_read(double wait_for = 0.0) {
-            if(wait_for > 0.0) {
-                Log::Line l; l.start();
-                while(l.time_s() < wait_for) {
-                    uint8_t cur = live.load();
-                    if(cur>=127) continue; //Techincally the check is >=128, but we use 127 because that's also the saturated mark (we have only 7 bits)
-                    if(live.compare_exchange_weak(cur, cur + 1)) return true;
-                }
-                return false;
-            } else if(wait_for == 0.0) {
-                uint8_t cur = live.load();
-                if(cur>=127) return false;
-                return live.compare_exchange_strong(cur, cur + 1);
-            } else {
-                while(true) {
-                    uint8_t cur = live.load();
-                    if(cur<127) {
-                        if(live.compare_exchange_weak(cur, cur + 1)) return true;
-                    }
-                }
-            }
-        }
-        bool try_read_forever() {return try_read(-1.0);}
-        bool try_read_for(double wait_for) {return try_read(wait_for);}
     };
 
 
@@ -748,7 +779,7 @@ namespace Acorn {
             while(traversed<capacity) {
                 CCol& c = get(pos);
                 if(!c.storage) {return nullptr;}
-                if(c.hash==h&&memcmp(c.storage, key, key_size)==0) {return &c;}
+                if(c.hash==h&&c.size==key_size&&memcmp(c.storage, key, key_size)==0) {return &c;}
                 traversed++;
                 pos = (pos+1)%capacity;
             }
@@ -817,26 +848,59 @@ namespace Acorn {
         }
     };
 
-    struct Col : CCol {
+
+
+    struct Col : TCol {
         Col() {}
-        Col(uint32_t _size) :  CCol(_size) {}
-        Col(uint32_t _size, uint32_t _tag) :  CCol(_size,_tag) {}
-        Col(const Col& o) : CCol((const CCol&)o), heterogenous(o.heterogenous), label(o.label), cells(o.cells), free(o.free) {}
-        Col(CCol q) : CCol(q) {}
-        Col(Col&& o) noexcept : CCol(std::move(o)), heterogenous(o.heterogenous),label(std::move(o.label)), cells(std::move(o.cells)), free(std::move(o.free)) {}
+        Col(uint32_t _size) :  TCol(_size) {}
+        Col(uint32_t _size, uint32_t _tag) :  TCol(_size,_tag) {}
+        Col(const Col& o) : TCol((const TCol&)o), heterogenous(o.heterogenous), label(o.label), cells(o.cells), free(o.free) {
+            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            if(o.specialization == Spec::COL && o.storage && o.element_size > 0) {
+                for(uint32_t i = 0; i < o.length(); i++) {
+                    Col* dst = (Col*)sget(i);
+                    Col* src = (Col*)o.sget(i);
+                    memset(dst, 0, sizeof(Col));
+                    new (dst) Col(*src);
+                }
+            }
+        }
+        Col(TCol q) : TCol(q) {}
+        Col(Col&& o) noexcept : TCol(std::move(o)), heterogenous(o.heterogenous),label(std::move(o.label)), cells(std::move(o.cells)), free(std::move(o.free)) {
+            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
         Col& operator=(Col&& o) {
             if(this == &o) return *this;
-            CCol::operator=(std::move(o)); 
+            TCol::operator=(std::move(o)); 
             heterogenous = o.heterogenous;
+            live.store(o.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
             label = std::move(o.label);
             cells = std::move(o.cells);
             free = std::move(o.free);
             return *this;
         }
+        ~Col() {
+            if(!storage || element_size == 0) return;
+            switch(specialization) {
+                case Spec::COL: {
+                    for(uint32_t i = 0; i < length(); i++) {
+                        ((Col*)sget(i))->~Col();
+                    }
+                } break;
+                case Spec::PTR_COL: {
+                    for(uint32_t i = 0; i < length(); i++) {
+                        Col* ptr = *(Col**)sget(i);
+                        if(ptr) { ptr->~Col(); delete ptr; }
+                    }
+                } break;
+                default: break;
+            }
+        }
         bool heterogenous = false;
         QString label;
         QCellCol cells;
         list<uint32_t> free;
+        std::atomic<uint8_t> live = true;
 
         void erase() {
             label.clear();
@@ -857,11 +921,8 @@ namespace Acorn {
 
         CCol makecell(uint32_t idx, const void* key, uint32_t key_size, uint32_t key_tag) {
             CCol c;
-            c.element_size = key_size; 
-            c.tag = key_tag;
-            c.hash = hashBytes(key, key_size);
+            c.store(key,key_size,key_tag);
             c.index = idx;
-            c.push(key);
             return c;
         }
 
@@ -881,8 +942,8 @@ namespace Acorn {
             if(cell) {return *cell;}
             else {
                 CCol c;
-                c.hash = hashBytes(key,key_size); c.element_size = key_size; 
-                c.tag = key_tag; c.index = length(); c.push(key);
+                c.store(key,key_size,key_tag);
+                c.index = length();
                 cells.scan_for_slot(std::move(c));
                 push_default();
                 return cells.get(key,key_size);
@@ -918,13 +979,130 @@ namespace Acorn {
 
         void removeAt(uint32_t index) {
             if(!cells.empty()) {cells.removeAtByValue(index);}
-            CCol::removeAt(index);
+            TCol::removeAt(index);
         }
 
         inline list<CCol*> allCells() {
             return cells.cells();
         }
+
+        bool try_lock(double wait_for = 0.0) {
+            bool has_acquired_lock = false;
+            if(wait_for>0.0) {
+                Log::Line l; l.start();
+                while(l.time_s()<wait_for) {
+                    if(!has_acquired_lock) {
+                        uint8_t cur = live.load();
+                        if(cur >= 128) return false;
+                        if(live.compare_exchange_weak(cur, cur | 128)) {has_acquired_lock = true;};
+                    } else if(live.load()==128) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if(wait_for==0.0) {
+                uint8_t expected = 0;
+                return live.compare_exchange_strong(expected, 128);
+            } else {
+                while(true) {
+                    if(!has_acquired_lock) {
+                        uint8_t cur = live.load();
+                        if(cur >= 128) {
+                            continue; //Wait for other writters to finish
+                        }
+                        if(live.compare_exchange_weak(cur, cur | 128)) {has_acquired_lock = true;};
+                    } else if(live.load()==128) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        bool try_lock_forever() {return try_lock(-1.0);}
+        bool try_lock_for(double wait_for) {return try_lock(wait_for);}
+        void unlock() {
+            uint8_t cur = live.load();
+            if(cur == 128) {
+                live.store(0);
+            } else {
+                live.fetch_sub(1);
+            }
+        }
+
+        bool try_read(double wait_for = 0.0) {
+            if(wait_for > 0.0) {
+                Log::Line l; l.start();
+                while(l.time_s() < wait_for) {
+                    uint8_t cur = live.load();
+                    if(cur>=127) continue; //Techincally the check is >=128, but we use 127 because that's also the saturated mark (we have only 7 bits)
+                    if(live.compare_exchange_weak(cur, cur + 1)) return true;
+                }
+                return false;
+            } else if(wait_for == 0.0) {
+                uint8_t cur = live.load();
+                if(cur>=127) return false;
+                return live.compare_exchange_strong(cur, cur + 1);
+            } else {
+                while(true) {
+                    uint8_t cur = live.load();
+                    if(cur<127) {
+                        if(live.compare_exchange_weak(cur, cur + 1)) return true;
+                    }
+                }
+            }
+        }
+        bool try_read_forever() {return try_read(-1.0);}
+        bool try_read_for(double wait_for) {return try_read(wait_for);}
+
+        inline Col& add();
+        uint32_t add_idx() {
+            Col& col = add();
+            CHECK_ERROR_VAL(0,"Error while adding, no index can be returned");
+            return indexof(&col);
+        }
+        Col& add(uint32_t esize, uint32_t tag) {
+            Col& c = add();
+            c.element_size = esize; c.tag = tag;
+            return c;
+        }
+        Col& add(const std::string& label, uint32_t esize, uint32_t tag) {
+            Col& c = add(esize,tag);
+            c.label = label;
+            return c;
+        }
+        uint32_t add_idx(const std::string& label, uint32_t esize, uint32_t tag) {
+            Col& c = add(label,esize,tag);
+            return indexof(&c);
+        }
     };
+
+    inline uint32_t note_value(Col& col, const std::string& label, uint32_t esize, uint32_t tag) {return col.add_idx(label,esize,tag);}
+
+    static inline Col col1_ref;
+
+    Col& Col::add() {
+        if(specialization==Spec::COL) {
+            if(element_size!=sizeof(Col)) {
+                throw_error("Col::add this col is not sized to store other cols");
+                return col1_ref;
+            }
+            push_default();
+            void* place = last();
+            Col* col = new (place) Col();
+            return *col;
+        } else if(specialization==Spec::PTR_COL) {
+            if(element_size!=sizeof(void*)) {
+                throw_error("Col::add this col is not sized to store pointers");
+                return col1_ref;
+            }
+            Col* col = new Col();
+            push(col);
+            return *col;
+        } else {
+            throw_error("Col::add this col is not specialized to store other cols");
+            return col1_ref;
+        }
+    }
 
     //Convience for ergonomic white/blacklist things
     struct _lookup {
@@ -943,52 +1121,76 @@ namespace Acorn {
         }
     };
 
-    inline uint32_t add_column(Col& col, size_t size = 0, uint32_t tag = 0) {
-        Col ncol(size);
-        ncol.tag = tag;
-        col.push((void*)&ncol);
-        return col.length()-1;
-    }
+    struct ColCol : Col {
+        ColCol() {specialization = Spec::COL;  element_size = sizeof(Col);}
+        Col& get(uint32_t idx) {return *(Col*)Col::get(idx);}
+        inline Col& operator[](uint32_t index) {return get(index);}
+    };
 
-    
-    inline uint32_t note_value(Col& col, const std::string& key, uint32_t size, uint32_t tag) {
-        uint32_t at = add_column(col, size, tag);
-        (*(Col*)col.sget(at)).label = key;
-        return at;
-    }
+    struct ColColCol : Col {
+        ColColCol() {specialization = Spec::COL; element_size = sizeof(ColCol);}
+        ColCol& get(uint32_t idx) {return *(ColCol*)Col::get(idx);}
+        inline ColCol& operator[](uint32_t index) {return get(index);}
+        ColCol& add() {Col& c = Col::add(); c.specialization = Spec::COL; c.element_size = sizeof(Col); return (ColCol&)c;}
+        uint32_t add_idx() {
+            ColCol& col = add();
+            CHECK_ERROR_VAL(0,"Error while adding, no index can be returned");
+            return indexof(&col);
+        }
+    };
 
-    inline static void write_qcol(std::ostream& out, QCol& col) {
+    struct PtrColColCol : Col {
+        PtrColColCol() {specialization = Spec::PTR_COL; element_size = sizeof(void*);}
+        ColColCol& get(uint32_t idx) {return **(ColColCol**)Col::sget(idx);}
+        inline ColColCol& operator[](uint32_t index) {return get(index);}
+        ColColCol* add() {
+            ColColCol* c = new ColColCol();
+            push((void*)&c);
+            c->specialization = Spec::COL; c->element_size = sizeof(Col); 
+            return c;
+        }
+        uint32_t add_idx() {
+            ColColCol* col = add();
+            CHECK_ERROR_VAL(0,"Error while adding, no index can be returned");
+            return length()-1; //<- indexof is the more general case, but can't be used in the Ptr case.
+        }
+        ColColCol* create(const std::string& label) {
+            ColColCol* col = new ColColCol();
+            col->label = label;
+            push((void*)&col);
+            return col;
+        }
+    };
+
+    inline static void write_qcol(std::ostream& out, QCol& col, bool include_data) {
         write_raw<uint32_t>(out, col.size);
-        out.write((const char*)col.storage, col.size);
+        if(include_data) {
+            out.write((const char*)col.storage, col.size);
+        }
     }
-
-    inline static QCol read_qcol(std::istream& in) {
-        QCol col;
+    inline static void read_qcol(std::istream& in, QCol& col, bool include_data) {
         uint32_t size = read_raw<uint32_t>(in);
         col.resize(size);
-        in.read((char*)col.storage, col.size);
-        return col;
+        if(include_data) {
+            in.read((char*)col.storage, col.size);
+        }
     }
 
     inline static void write_ccol(std::ostream& out, CCol& col) {
-        //print("write_ccol size: ", col.size, " storage: ", (void*)col.storage);
-        write_qcol(out,col);
-        write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, col.hash);
         write_raw<uint32_t>(out, col.index);
-        write_raw<uint32_t>(out, col.gen);
-        write_raw<uint8_t>(out, col.live);
+        write_raw<uint32_t>(out, col.size);
+        out.write((const char*)col.storage, col.size);
     }
-
     inline static CCol read_ccol(std::istream& in) {
-        CCol col = read_qcol(in);
-        col.element_size = read_raw<uint32_t>(in);
+        CCol col;
         col.tag = read_raw<uint32_t>(in);
         col.hash = read_raw<uint32_t>(in);
         col.index = read_raw<uint32_t>(in);
-        col.gen = read_raw<uint32_t>(in);
-        col.live = read_raw<uint8_t>(in);
+        uint32_t size = read_raw<uint32_t>(in);
+        col.resize(size);
+        in.read((char*)col.storage, col.size);
         return col;
     }
 
@@ -1007,76 +1209,115 @@ namespace Acorn {
             write_ccol(out, *to_save[i]);
         }
     }
-    
-    inline static QCellCol read_qcellcol(std::istream& in) {
-        QCellCol cells;
+    inline static void read_qcellcol(std::istream& in, QCellCol& cells) {
         uint32_t count = read_raw<uint32_t>(in);
         for(uint32_t i = 0; i < count; i++) {
             CCol c = read_ccol(in);
             c.hash = hashBytes(c.storage,c.size);
             cells.scan_for_slot(std::move(c));
         }
-        return cells;
     }
 
-    inline static void write_col(std::ostream& out, Col& col) {
-        write_ccol(out,col);
-        write_raw<bool>(out, col.heterogenous);
-        write_qcellcol(out, col.cells);
-        write_qcol(out,col.label);
-        write_raw<uint32_t>(out,col.free.length());
-        for(int i=0;i<col.free.length();i++) {
-            write_raw<uint32_t>(out,col.free[i]);
-        }
-    }
-
-    inline static Col read_col(std::istream& in) {
-        Col col = read_ccol(in);
-        col.heterogenous = read_raw<bool>(in);
-        col.cells = read_qcellcol(in);
-        col.label = read_qcol(in);
-        uint32_t freelen = read_raw<uint32_t>(in);
-        for(int i=0;i<freelen;i++) {
-            col.free << read_raw<uint32_t>(in);
-        }
-        return col;
-    }
-
-    inline static void write_col_header(std::ostream& out, Col& col) {
-        //write_raw<uint32_t>(out, col.size);
+    inline static void write_tcol(std::ostream& out, TCol& col) {
         write_raw<uint32_t>(out, col.element_size);
         write_raw<uint32_t>(out, col.tag);
         write_raw<uint32_t>(out, col.hash);
         write_raw<uint32_t>(out, col.index);
-        write_raw<uint32_t>(out, col.gen);
-        write_raw<uint8_t>(out, col.live);
-        write_raw<bool>(out, col.heterogenous);
-        write_qcellcol(out, col.cells);
-        write_qcol(out,col.label);
-        write_raw<uint32_t>(out,col.free.length());
-        for(int i=0;i<col.free.length();i++) {
-            write_raw<uint32_t>(out,col.free[i]);
-        }
+        write_raw<uint16_t>(out, col.gen);
+        write_raw<uint8_t>(out, (uint8_t)col.specialization);
+        bool should_include_data = true;
+        if(col.specialization==Spec::COL||col.specialization==Spec::PTR_COL) {should_include_data = false;}
+        write_qcol(out,col,should_include_data);
     }
-
-    inline static Col read_col_header(std::istream& in) {
-        Col col;
-        // uint32_t size = read_raw<uint32_t>(in);
-        // col.resize(size);
+    inline static void read_tcol(std::istream& in, TCol& col) {
         col.element_size = read_raw<uint32_t>(in);
         col.tag = read_raw<uint32_t>(in);
         col.hash = read_raw<uint32_t>(in);
         col.index = read_raw<uint32_t>(in);
-        col.gen = read_raw<uint32_t>(in);
-        col.live = read_raw<uint8_t>(in);
+        col.gen = read_raw<uint16_t>(in);
+        col.specialization = (Spec)read_raw<uint8_t>(in);
+        bool should_include_data = true;
+        if(col.specialization==Spec::COL||col.specialization==Spec::PTR_COL) {should_include_data = false;}
+        read_qcol(in,col,should_include_data);
+    }
+
+    inline static void write_col(std::ostream& out, Col& col) {
+        write_raw<bool>(out, col.heterogenous);
+        write_qcellcol(out, col.cells);
+        write_qcol(out, col.label, true);
+        write_raw<uint32_t>(out, col.free.length());
+        for(uint32_t i = 0; i < col.free.length(); i++) {
+            write_raw<uint32_t>(out, col.free[i]);
+        }
+        write_tcol(out,col);
+        if(col.specialization==Spec::COL) {
+            for(uint32_t i=0;i<col.length();i++) {
+                write_col(out,*(Col*)col[i]);
+            }
+        }
+    }
+    inline static void read_col(std::istream& in, Col& col) {
         col.heterogenous = read_raw<bool>(in);
-        col.cells = read_qcellcol(in);
-        col.label = read_qcol(in);
+        read_qcellcol(in,col.cells);
+        read_qcol(in,col.label,true);
         uint32_t freelen = read_raw<uint32_t>(in);
-        for(int i=0;i<freelen;i++) {
+        for(uint32_t i=0; i<freelen; i++) {
             col.free << read_raw<uint32_t>(in);
         }
-        return col;
+        read_tcol(in,col);
+        if(col.specialization==Spec::COL) {
+            uint32_t datalen = col.length();
+            col.size = 0;
+            for(uint32_t i=0;i<datalen;i++) {
+                read_col(in,col.add());
+            }
+        }
+    }
+
+    // inline void save_test() {
+    //     print("SAVE TEST");
+    //     ColColCol unit;
+    //     ColCol& pool = unit[unit.add_idx()];
+    //     print("POOL 1");
+    //     Col& col = pool.add();
+    //     col.element_size = 4;
+    //     int a = 6; int b = 9; int c = 12;
+    //     col.push((void*)&a);  col.put("test_a",(void*)&b);  col.put("test_b",(void*)&c);
+    //     col.label = "col1";
+
+    //     print("POOL 2");
+    //     ColCol& pool_2 = unit[unit.add_idx()];
+    //     Col& col_2 = pool_2.add();
+    //     col_2.element_size = 4;
+    //     col_2.push((void*)&c); col_2.put("test_a",(void*)&a);  col_2.put("test_b",(void*)&b);
+    //     col_2.label = "col2";
+
+    //     print(*(int*)unit[0][0][0]," : ",*(int*)unit[1][0][0]," : ",*(int*)unit[0][0][2]," : ",*(int*)unit[1][0][2]);
+    //     print(*(int*)unit[0][0].get("test_a")," : ",*(int*)unit[1][0].get("test_a"));
+
+    //     auto out = openWriteStream("savetest.gsu");
+    //     print("SAVING");
+    //     write_col(out,unit);
+    //     out.close();
+    // }
+
+
+    inline void test_acorn() {
+        
+
+
+
+        // save_test();
+        // ColColCol unit;
+        // auto in = openReadStream("savetest.gsu");
+        // print("LOADING");
+        // read_col(in,unit);
+        // print("LOADED");
+        // in.close();
+
+        // print(*(int*)unit[0][0][0]," : ",*(int*)unit[1][0][0]," : ",*(int*)unit[0][0][2]," : ",*(int*)unit[1][0][2]);
+        // print(*(int*)unit[0][0].get("test_a")," : ",*(int*)unit[1][0].get("test_a"));
+        // print(unit[1][0].label);
     }
 }
 

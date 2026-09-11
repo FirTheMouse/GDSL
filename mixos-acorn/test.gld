@@ -1,23 +1,18 @@
-Ptr int a; a.init(0,1,2);
-int n = a.length;
-int k = a.length-1;
-rprint("This should pass");
-a[k];
-rprint("This should error");
-a[n];
+int addOne(int n) {
+    return n+1;
+}
 
-RESULT:
+int i = 5;
+print("Hello world ",addOne(i));
 
-TEST START
-This should pass
-This should error
-ERROR: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
-5|0|0|G3253 RESOLVING_PASS Source at: 2|499|0|G128 Index: 7 
-VAR_DECL a | Ptr_INIT a.init | EQUALS = | EQUALS = | rprint | Ptr_IDXGET [ | rprint | >Ptr_IDXGET [[IDENTIFIER a, IDENTIFIER n] | 
-  Node: 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] 
-  Left: 3|535|0 rprint rprint [4|580|0](UNDEFINED)(0,5)[C:1]{ROOT}[Q: 3|549|0>LPAREN, 3|540|0>RPAREN, 3|541|0>END] 
-  Root: 3|0|0|G812 ROOT ROOT [C:8] 
-  Qual: 3|562|0 length_relation_qual[4|581|0](ptr[32]:int[4]{ROOT:3|0|0|G812}) 
-  Value: [4|587|0](int[4]{ROOT:3|0|0|G812}) 
-ERROR IN RESOLVING_PASS ON LINE 7: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
-TEST FINISHED
+ColColCol sub = usubunits.add("savetest.gsu");
+ColCol pool = sub.add;
+pool.add(int).init(1,Num: 2,3,Wub: 4,5);
+
+print(pool[0][3]);
+print(pool[0].Num);
+
+//sub.save;
+
+//  ColColCol sub = load_subunit("savetest.gsu");
+//  dump_subunit(sub,true);

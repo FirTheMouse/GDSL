@@ -1,0 +1,3 @@
+"Type","Amount"
+"Gym","33"
+"Transit","204"

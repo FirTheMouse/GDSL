@@ -1,0 +1,5 @@
+##
+    int global = 6;
+##
+
+print("Gobal: ",global);

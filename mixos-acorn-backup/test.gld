@@ -1,0 +1,15 @@
+ColColCol sub = usubunits.add("savetest.gsu");
+ColCol pool_one = sub.add("Pool One");
+ColCol pool_two = sub.add("Pool Two");
+ColCol pool_three = sub.add("Pool Three");
+
+pool_one.add(int).init(1,2,8,4,5);
+pool_two.add(int).init(9,8,18);
+pool_two.add(int).init(91,42,33);
+pool_three.add(int).init(4,5,6,17);
+
+print(sub.every(pool => {pool.length<2;}));
+sub.do(pool => {if(pool.length>1){pool.pop}});
+print(sub.every(pool => {pool.length<2;}));
+
+pool_one[0].filter(i => {i>4}).do(i => print(i));

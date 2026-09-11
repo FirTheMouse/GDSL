@@ -2,6 +2,7 @@
 #include <iostream>
 #include <random>
 #include <chrono>
+#include <algorithm>
 
 template<typename... Args>
 void print(Args&&... args) {
@@ -90,8 +91,10 @@ static inline  std::string to_hex(uint32_t n) {
 
 static std::string ftime(double t) 
 {
-  if(t < 100000) {
-      return green(std::to_string(t/1000.0)+"ns");
+  if(t < 1000) {
+      return pine(std::to_string(t)+"ns");
+  } else if(t < 1000000) {
+      return green(std::to_string(t/1000.0)+"us");
   } else if(t < 100000000) {
       return yellow(std::to_string(t/1000000.0)+"ms");
   } else if(t < 60000000000.0) {

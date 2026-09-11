@@ -663,6 +663,22 @@ nums.iter([nums](num){
     }
 });
 
+nums.iter(num=>{
+    print("Num: ",num);
+    if(num-?) {
+        print(*-num);
+    }
+    if(num+?) {
+        print(*+num);
+    }
+    if(num++?) {
+        print(*++num);
+    }
+    if(?+num) {
+        print(*(&num)[+]);
+    }
+});
+
 
 
 func f = [](n){print("Num: ",n);}
@@ -977,3 +993,49 @@ Challange from a stranger
 
 
 // Test 3:
+
+Ptr int a; a.init(0,1,2);
+int n = a.length;
+int k = a.length-1;
+rprint("This should pass");
+a[k];
+rprint("This should error");
+a[n];
+
+RESULT:
+
+TEST START
+This should pass
+This should error
+ERROR: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
+5|0|0|G3253 RESOLVING_PASS Source at: 2|499|0|G128 Index: 7 
+VAR_DECL a | Ptr_INIT a.init | EQUALS = | EQUALS = | rprint | Ptr_IDXGET [ | rprint | >Ptr_IDXGET [[IDENTIFIER a, IDENTIFIER n] | 
+  Node: 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] 
+  Left: 3|535|0 rprint rprint [4|580|0](UNDEFINED)(0,5)[C:1]{ROOT}[Q: 3|549|0>LPAREN, 3|540|0>RPAREN, 3|541|0>END] 
+  Root: 3|0|0|G812 ROOT ROOT [C:8] 
+  Qual: 3|562|0 length_relation_qual[4|581|0](ptr[32]:int[4]{ROOT:3|0|0|G812}) 
+  Value: [4|587|0](int[4]{ROOT:3|0|0|G812}) 
+ERROR IN RESOLVING_PASS ON LINE 7: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
+TEST FINISHED
+
+
+
+
+
+
+
+ColColCol sub = usubunits.add("savetest.gsu");
+ColCol pool_one = sub.add("Pool One");
+ColCol pool_two = sub.add("Pool Two");
+ColCol pool_three = sub.add("Pool Three");
+
+pool_one.add(int).init(1,2,8,4,5);
+pool_two.add(int).init(9,8,18);
+pool_two.add(int).init(91,42,33);
+pool_three.add(int).init(4,5,6,17);
+
+print(sub.every(pool => {pool.length<2;}));
+sub.do(pool => {if(pool.length>1){pool.pop}});
+print(sub.every(pool => {pool.length<2;}));
+
+pool_one[0].filter(i => {i>4}).do(i => print(i));

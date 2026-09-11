@@ -55,84 +55,6 @@ namespace Acorn {
     struct Context;
     struct Value;
 
-    struct ColCol : Col {
-        ColCol() : Col(sizeof(Col)) {}
-        ColCol(Col c) : Col(c) {}
-        ColCol(const ColCol& o) : Col(sizeof(Col)) {
-            element_size = o.element_size;
-            tag = o.tag;
-            gen = o.gen;
-            heterogenous = o.heterogenous;
-            label = QCol(o.label);
-            cells = o.cells;
-            free = o.free;
-            for(uint32_t i = 0; i < o.length(); i++) {
-                Col copy(*(Col*)o.sget(i));
-                push(copy);
-            }
-        }
-        ColCol& operator=(ColCol&& o) {
-            if(this == &o) return *this;
-            if(storage && element_size != 0) {
-                for(uint32_t i = 0; i < length(); i++) get(i).~Col();
-            }
-            Col::operator=(std::move(o));
-            return *this;
-        }
-        ~ColCol() {
-            if(!storage || element_size == 0) return;
-            for(uint32_t i = 0; i < length(); i++) {
-                get(i).~Col();
-            }
-        }
-
-        // void clear() {
-        //     for(uint32_t i = 0; i < length(); i++) {get(i).~Col();}
-        //     Col::clear();
-        //     ::free(storage);
-        //     capacity = 4;
-        //     storage = new uint8_t[capacity*sizeof(Col)];
-        // }
-
-        Col& get(uint32_t idx) {return *(Col*)Col::sget(idx);}
-        void set(uint32_t idx, Col val) {
-            get(idx).~Col();
-            Col::set(idx,(void*)&val);
-            val.storage = nullptr;
-            val.label.storage = nullptr;
-            // for(uint32_t i = 0; i < val.cells.length(); i++) {
-            //     val.cells.get(i).storage = nullptr;
-            // }
-            val.cells.nullstorage();
-            val.free.nullstorage();
-        }
-        Col& operator[](uint32_t idx) {return *(Col*)Col::sget(idx);}
-        void push(Col t) {
-            Col::push((void*)&t);
-            t.storage = nullptr;
-            t.label.storage = nullptr;
-            t.cells.nullstorage();
-            t.free.nullstorage();
-        }
-        void put(const std::string& key, Col t) {
-            Col::put(key,(void*)&t); //This should probably have tag string id for display later, may require reordering how we register the ids
-            t.storage = nullptr;
-            t.label.storage = nullptr;
-            t.cells.nullstorage();
-            t.free.nullstorage();
-        }
-        // void pop(Col& out) {
-        //     uint32_t last = size - element_size;
-        //     memcpy(&out, &storage[last], element_size);
-        //     Col* zombie = (Col*)&storage[last];
-        //     zombie->storage = nullptr;
-        //     zombie->label.storage = nullptr;
-        //     zombie->cells.nullstorage();
-        //     zombie->free.nullstorage();
-        //     size -= element_size;
-        // }
-    };
-
      //Standard column create, use pooling means it will try to find a dead column first, tag sensitive means it will also ensure the column tag matches
     inline uint32_t create_column(ColCol& col, uint32_t size, uint32_t tag, bool use_pooling = true, bool tag_sensitive = false) {
         if(use_pooling&&!col.free.empty()) {
@@ -152,8 +74,10 @@ namespace Acorn {
             //     }
             // }
         }
-        add_column(col,size,tag);
-        return col.length()-1;
+        uint32_t index = col.add_idx();
+        Col& c = col[index];
+        c.element_size = size; c.tag = tag;
+        return index;
     }
     //Creates a column from pool and intilizes it's memory if empty
     inline uint32_t push_column(ColCol& col, uint32_t size, uint32_t tag) {
@@ -176,72 +100,6 @@ namespace Acorn {
        }
     }
     
-    struct ColColCol : Col {
-        ColColCol() : Col(sizeof(ColCol)) {}
-        ColColCol(Col c) : Col(c) {}
-        ColColCol(const ColColCol& o) : Col(sizeof(ColCol)) {
-            element_size = o.element_size;
-            tag = o.tag;
-            heterogenous = o.heterogenous;
-            label = QCol(o.label);
-            cells = o.cells;
-            for(uint32_t i = 0; i < o.length(); i++) {
-                ColCol copy(*(ColCol*)o.sget(i));
-                push(copy);
-            }
-        }
-        ColColCol& operator=(ColColCol&& o) {
-            if(this == &o) return *this;
-            if(storage && element_size != 0) {
-                for(uint32_t i = 0; i < length(); i++) get(i).~ColCol();
-            }
-            Col::operator=(std::move(o));
-            return *this;
-        }
-        ~ColColCol() {
-            if(!storage || element_size == 0) return;
-            for(uint32_t i = 0; i < length(); i++) {
-                get(i).~ColCol();
-            }
-        }
-
-        // void clear() {
-        //     for(uint32_t i = 0; i < length(); i++) {get(i).~ColCol();}
-        //     Col::clear();
-        //     ::free(storage);
-        //     capacity = 4;
-        //     storage = new uint8_t[capacity*sizeof(ColCol)];
-        // }
-
-        ColCol& get(uint32_t idx) {return *(ColCol*)Col::sget(idx);}
-        void set(uint32_t idx, ColCol val) {
-            get(idx).~ColCol();
-            Col::set(idx,(void*)&val);
-            val.storage = nullptr;
-            val.label.storage = nullptr;
-            // for(uint32_t i = 0; i < val.cells.length(); i++) {
-            //     val.cells.get(i).storage = nullptr;
-            // }
-            val.cells.nullstorage();
-            val.free.nullstorage();
-        }
-        ColCol& operator[](uint32_t idx) {return *(ColCol*)Col::sget(idx);}
-        void push(ColCol t) {
-            Col::push((void*)&t);
-            t.storage = nullptr;
-            t.label.storage = nullptr;
-            t.cells.nullstorage();
-            t.free.nullstorage();
-        }
-        void insert(uint32_t index, ColCol t) {
-            CCol::insert(index,(void*)&t);
-            t.storage = nullptr;
-            t.label.storage = nullptr;
-            t.cells.nullstorage();
-            t.free.nullstorage();
-        }
-    };
-
     inline ColColCol& cache_as_unit(const Ptr& p) { 
         DEBUG_ONLY(if(p.cachelevel != 3) throw_error("cache_as_unit called on Ptr with cachelevel ", p.cachelevel);)
         return *(ColColCol*)p.cache; 
@@ -328,39 +186,8 @@ namespace Acorn {
     inline uint32_t ptr_id = 2; inline uint32_t prefix_ptr_id = 3; inline uint32_t suffix_ptr_id = 4;
     inline uint32_t subunit_id = 5; inline uint32_t prefix_subunit_id = 6; inline uint32_t suffix_subunit_id = 7;
 
-    struct PtrColColCol : Col {
-        PtrColColCol() : Col(sizeof(void*),subunit_id) {}
-        PtrColColCol(Col c) : Col(c) {}
-        ColColCol* get(uint32_t idx) {return *(ColColCol**)Col::sget(idx);}
-        ColColCol* operator[](uint32_t idx) {return PtrColColCol::get(idx);}
-        ColColCol* create(std::string path = "") {
-            if(!free.empty()) {
-                uint32_t idx = free.pop();
-                ColColCol* c3 = get(idx);
-                c3->clear();
-                if(!path.empty()) {
-                    c3->label = path;
-                    addcell(idx,path.data(),path.size(),0); //<- Make this string id later when I want to wrestle with intilization order
-                }
-                return c3;
-            } else {
-                ColColCol* c3 = new ColColCol();
-                if(path.empty()) {
-                    push((void*)&c3);
-                } else {
-                    c3->label = path;
-                    qput((void*)&c3,path.data(),path.size(),0);
-                }
-                return c3;
-            }
-        }
-        void recycle(uint32_t idx) {
-            get(idx)->unlock();
-            get(idx)->gen++;
-            // cells.removeAt(cells.get()); <- add this later
-            free.push(idx);
-        }
-    };
+    // inline uint32_t string_id = 5; inline uint32_t prefix_string_id = 6; inline uint32_t suffix_string_id = 7;
+    // inline uint32_t subunit_id = 8; inline uint32_t prefix_subunit_id = 9; inline uint32_t suffix_subunit_id = 10;
 
     static inline ColColCol col3_ref;
     static inline PtrColColCol pcol3_ref;
@@ -384,7 +211,7 @@ namespace Acorn {
             return col2_ref;
         }
     }
-    static inline Col col1_ref;
+
     inline Col& resolve_to_col(const Ptr& ptr) {
         switch(ptr.cachelevel) {
             case 0: case 4: case 3: case 2: {
@@ -552,40 +379,33 @@ namespace Acorn {
 
 
     inline uint32_t add_type() {
-        uint32_t at = global.length();
-        ColCol to_return;
-        global.push(to_return);
-        return at;
+        return global.add_idx();
     }
 
     inline uint32_t init_handler_type() {
-        ColCol t;
-        uint32_t at = global.length();
-        note_value(t,"UNDEFINED",0,0);
+        uint32_t at = global.add_idx();
+        ColCol& t = global[at];
+        t.add("UNDEFINED",0,0);
         t.get(0).push_default(); //UNDEFINED cell
-        note_value(t,"stages",sizeof(Ptr),ptr_id);
+        t.add("stages",sizeof(Ptr),ptr_id);
         t.get(1).put("Layouts",(void*)&deadptr); //Layouts label
-        note_value(t,"ptr",sizeof(Ptr),ptr_id); note_value(t,"prefix_ptr",sizeof(Ptr),ptr_id); note_value(t,"suffix_ptr",sizeof(Ptr),ptr_id);
+        t.add("ptr",sizeof(Ptr),ptr_id); t.add("prefix_ptr",sizeof(Ptr),ptr_id); t.add("suffix_ptr",sizeof(Ptr),ptr_id);
         t.get(2).push_default(); t.get(3).push_default(); t.get(4).push_default();
-        note_value(t,"subunit",sizeof(Ptr),ptr_id); note_value(t,"prefix_subunit",sizeof(Ptr),ptr_id); note_value(t,"suffix_subunit",sizeof(Ptr),ptr_id);
+        t.add("subunit",sizeof(Ptr),ptr_id); t.add("prefix_subunit",sizeof(Ptr),ptr_id); t.add("suffix_subunit",sizeof(Ptr),ptr_id);
         t.get(5).push_default(); t.get(6).push_default(); t.get(7).push_default();
-        global.push(t);
         return at;
     }
 
     inline uint32_t handler_type_id = init_handler_type();
     
     inline uint32_t init_layout_type() {
-        ColCol t;
-        uint32_t at = global.length();
-        global.push(t);
-        return at;
+        return global.add_idx();
     }
     inline uint32_t layout_type_id = init_layout_type(); 
 
     inline uint32_t global_reg_id(const std::string& label) {
         uint32_t at = global[handler_type_id].length();
-        note_value(global[handler_type_id],label,sizeof(Ptr),ptr_id);
+        global[handler_type_id].add(label,sizeof(Ptr),ptr_id);
         global[handler_type_id][at].push_default();
         return at;
     }
@@ -657,14 +477,14 @@ namespace Acorn {
     inline size_t refs_col = 0;
 
     inline Ptr global_add_layout_to_col(uint32_t type) {
-        Ptr p((uint32_t)0,layout_type_id,note_value(global[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
-        note_value(global[layout_type_id],"Tags",4,int_id);
-        note_value(global[layout_type_id],"Sizes",4,int_id);
-        note_value(global[layout_type_id],"Labels",sizeof(Ptr),string_id);
-        note_value(global[layout_type_id],"Subtags",4,int_id);
-        note_value(global[layout_type_id],"Subsizes",4,int_id);
-        note_value(global[layout_type_id],"Ptrs",sizeof(Ptr),ptr_id);
-        note_value(global[layout_type_id],"Overloads",sizeof(Ptr4),ptr4_id);
+        Ptr p((uint32_t)0,layout_type_id,global[layout_type_id].add_idx(std::to_string(type)+" Offsets",4,int_id),0);
+        global[layout_type_id].add("Tags",4,int_id);
+        global[layout_type_id].add("Sizes",4,int_id);
+        global[layout_type_id].add("Labels",sizeof(Ptr),string_id);
+        global[layout_type_id].add("Subtags",4,int_id);
+        global[layout_type_id].add("Subsizes",4,int_id);
+        global[layout_type_id].add("Ptrs",sizeof(Ptr),ptr_id);
+        global[layout_type_id].add("Overloads",sizeof(Ptr4),ptr4_id);
         global[handler_type_id][type].set(0,(void*)&p);
         return p;
     }
@@ -917,6 +737,16 @@ namespace Acorn {
             } else {
                 resolve_to_col(dataptr).set(dataptr.sidx, data);
             }
+        }
+
+        inline void retype(uint32_t tag, uint32_t e_size) {
+            if(is_live(data_ptr())) {
+                data_col().tag = tag; data_col().element_size = e_size;
+                if(data_col().empty()) {
+                    data_col().push_default();
+                }
+            }
+            type(tag); size(e_size);   
         }
     
         inline void* get() {
@@ -1373,57 +1203,57 @@ namespace Acorn {
 
 
 
-    static inline void write_TypeCol(std::ostream& out, ColCol& type) {
-        write_raw<uint32_t>(out, type.length());
-        write_col_header(out, type);
-        for(int c = 0; c < type.length(); c++) {
-            Col& col = type[c];
-            write_col(out, col);
-        }
-    }
+    // static inline void write_TypeCol(std::ostream& out, ColCol& type) {
+    //     write_raw<uint32_t>(out, type.length());
+    //     write_col_header(out, type);
+    //     for(int c = 0; c < type.length(); c++) {
+    //         Col& col = type[c];
+    //         write_col(out, col);
+    //     }
+    // }
     
-    static inline ColCol read_TypeCol(std::istream& in) {
-        uint32_t len = read_raw<uint32_t>(in);
-        ColCol type = read_col_header(in);
-        for(uint32_t i = 0; i < len; i++) {
-            Col col = read_col(in);
-            type.push(col);
-        }
-        return type;
-    }
+    // static inline ColCol read_TypeCol(std::istream& in) {
+    //     uint32_t len = read_raw<uint32_t>(in);
+    //     ColCol type = read_col_header(in);
+    //     for(uint32_t i = 0; i < len; i++) {
+    //         Col col = read_col(in);
+    //         type.push(col);
+    //     }
+    //     return type;
+    // }
 
-    static inline void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
-        write_raw<uint32_t>(out, col.length());
-        write_col_header(out, col);
-        for(int i = 0; i < col.length(); i++) {
-            write_TypeCol(out,col[i]);
-        }
-    }
+    // static inline void write_TypeTypeCol(std::ostream& out, ColColCol& col) {
+    //     write_raw<uint32_t>(out, col.length());
+    //     write_col_header(out, col);
+    //     for(int i = 0; i < col.length(); i++) {
+    //         write_TypeCol(out,col[i]);
+    //     }
+    // }
 
-    static inline ColColCol read_TypeTypeCol(std::istream& in) {
-        uint32_t len = read_raw<uint32_t>(in);
-        ColColCol col = read_col_header(in);
-        for(uint32_t p = 0; p < len; p++) {
-            ColCol cc = read_TypeCol(in);
-            col.push(cc);
-        }
-        return col;
-    }
+    // static inline ColColCol read_TypeTypeCol(std::istream& in) {
+    //     uint32_t len = read_raw<uint32_t>(in);
+    //     ColColCol col = read_col_header(in);
+    //     for(uint32_t p = 0; p < len; p++) {
+    //         ColCol cc = read_TypeCol(in);
+    //         col.push(cc);
+    //     }
+    //     return col;
+    // }
 
-    static inline void write_ColColList(std::ostream& out, list<ColCol*> cols) {
-        write_raw<uint32_t>(out, cols.length());
-        for(int i=0;i<cols.length();i++) {
-            write_TypeCol(out,*cols[i]);
-        }
-    }
-    static inline list<ColCol> read_ColColList(std::ifstream& in) {
-        list<ColCol> to_return;
-        uint32_t len = read_raw<uint32_t>(in);
-        for(int i=0;i<len;i++) {
-            to_return << read_TypeCol(in);
-        }
-        return to_return;
-    }
+    // static inline void write_ColColList(std::ostream& out, list<ColCol*> cols) {
+    //     write_raw<uint32_t>(out, cols.length());
+    //     for(int i=0;i<cols.length();i++) {
+    //         write_TypeCol(out,*cols[i]);
+    //     }
+    // }
+    // static inline list<ColCol> read_ColColList(std::ifstream& in) {
+    //     list<ColCol> to_return;
+    //     uint32_t len = read_raw<uint32_t>(in);
+    //     for(int i=0;i<len;i++) {
+    //         to_return << read_TypeCol(in);
+    //     }
+    //     return to_return;
+    // }
 
     class Unit : public q_object {
         public:
@@ -1511,6 +1341,10 @@ namespace Acorn {
             ColColCol* types_ptr = &types; subunits.push(&types_ptr); 
         }
 
+        ~Unit() {
+            memset(subunits.storage,0,sizeof(void*));
+        }   
+
         void setup_standard_watchers() {
             Watcher def("core");
             def.stagestart = [this](Context& ctx){
@@ -1597,19 +1431,19 @@ namespace Acorn {
 
         ColColCol types;
         PtrColColCol subunits;
-        inline ColColCol* get_subunit(uint32_t idx) {return subunits[idx];}
+        inline ColColCol* get_subunit(uint32_t idx) {return &subunits[idx];}
         ColCol& operator[](uint16_t index) {return types[index];}
 
-        ColColCol setup_mailbox_subunit() {
-            ColColCol mailbox;
-            ColCol instr_plate; instr_plate.label = "Instructions";
-            mailbox.push(instr_plate);
-            mailbox.unlock();
-            return mailbox;
-        }
+        // ColColCol setup_mailbox_subunit() {
+        //     ColColCol mailbox;
+        //     ColCol instr_plate; instr_plate.label = "Instructions";
+        //     mailbox.push(instr_plate);
+        //     mailbox.unlock();
+        //     return mailbox;
+        // }
 
-        ColColCol sendunit = setup_mailbox_subunit();
-        ColColCol recvunit = setup_mailbox_subunit();
+        // ColColCol sendunit = setup_mailbox_subunit();
+        // ColColCol recvunit = setup_mailbox_subunit();
 
         virtual void init() {
            
@@ -1635,7 +1469,7 @@ namespace Acorn {
 
         inline Ptr get_ticket(Ptr storeptr, uint32_t size, uint32_t tag) {
             if(storeptr.cachelevel==0) {
-                Ptr ticket(storeptr.unit,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
+                Ptr ticket(storeptr.unit,storeptr.subunit,storeptr.pool,create_column(resolve_to_pool(storeptr),size,tag,true),0);
                 ticket.gen = resolve_to_col(ticket).gen;
                 return ticket;
             } else {
@@ -1735,9 +1569,10 @@ namespace Acorn {
 
 
         uint32_t reg_id(const std::string& label) {
+            
             //print("Registering: ",label," LEN: ",types[handler_type_id].length()," GLOBAL LEN: ",global[handler_type_id].length());
             uint32_t at = types[handler_type_id].length();
-            note_value(types[handler_type_id],label,sizeof(Ptr),ptr_id);
+            types[handler_type_id].add(label,sizeof(Ptr),ptr_id);
             types[handler_type_id][at].push_default();
             labels[at] = label;
             labels_lookup[label] = at;
@@ -1746,14 +1581,14 @@ namespace Acorn {
         }
 
         Ptr add_layout_to_col(uint32_t type) {
-            Ptr p(uid,layout_type_id,note_value(types[layout_type_id],std::to_string(type)+" Offsets",4,int_id),0);
-            note_value(types[layout_type_id],"Tags",4,int_id);
-            note_value(types[layout_type_id],"Sizes",4,int_id);
-            note_value(types[layout_type_id],"Labels",sizeof(Ptr),string_id);
-            note_value(types[layout_type_id],"Subtags",4,int_id);
-            note_value(types[layout_type_id],"Subsizes",4,int_id);
-            note_value(types[layout_type_id],"Ptrs",sizeof(Ptr),ptr_id);
-            note_value(types[layout_type_id],"Overloads",sizeof(Ptr4),ptr4_id);
+            Ptr p(uid,layout_type_id,types[layout_type_id].add_idx(std::to_string(type)+" Offsets",4,int_id),0);
+            types[layout_type_id].add("Tags",4,int_id);
+            types[layout_type_id].add("Sizes",4,int_id);
+            types[layout_type_id].add("Labels",sizeof(Ptr),string_id);
+            types[layout_type_id].add("Subtags",4,int_id);
+            types[layout_type_id].add("Subsizes",4,int_id);
+            types[layout_type_id].add("Ptrs",sizeof(Ptr),ptr_id);
+            types[layout_type_id].add("Overloads",sizeof(Ptr4),ptr4_id);
             types[handler_type_id][type].set(0,(void*)&p);
             return p;
         }
@@ -2582,22 +2417,23 @@ namespace Acorn {
         void offset_subunit_ptrs(ColColCol& cols, int offset, uint32_t greater_than_threshold = 0) {offset_subunit_ptrs(ColColCol_to_group(cols),offset,greater_than_threshold);}
     
 
-        void insert_pools(ColColCol& col3, list<ColCol*> cols, uint32_t at) {
-            offset_pool_ptrs(col3,cols.length(),at);
-            offset_pool_ptrs(cols,at);
-            for(int p=cols.length()-1;p>=0;p--) {
-                col3.insert(at,*cols[p]);
-            }
-        }
-        void insert_pools(ColColCol& col3, ColColCol& cols, uint32_t at) {insert_pools(col3,ColColCol_to_group(cols),at);}
+
+        // void insert_pools(ColColCol& col3, list<ColCol*> cols, uint32_t at) {
+        //     offset_pool_ptrs(col3,cols.length(),at);
+        //     offset_pool_ptrs(cols,at);
+        //     for(int p=cols.length()-1;p>=0;p--) {
+        //         col3.insert(at,*cols[p]);
+        //     }
+        // }
+        // void insert_pools(ColColCol& col3, ColColCol& cols, uint32_t at) {insert_pools(col3,ColColCol_to_group(cols),at);}
     
-        void push_pools(ColColCol& col3, list<ColCol*> cols) {
-            offset_pool_ptrs(cols,col3.length());
-            for(int p=0;p<cols.length();p++) {
-                col3.push(*cols[p]);
-            }
-        }
-        void push_pools(ColColCol& col3, ColColCol& cols) {push_pools(col3,ColColCol_to_group(cols));}
+        // void push_pools(ColColCol& col3, list<ColCol*> cols) {
+        //     offset_pool_ptrs(cols,col3.length());
+        //     for(int p=0;p<cols.length();p++) {
+        //         col3.push(*cols[p]);
+        //     }
+        // }
+        // void push_pools(ColColCol& col3, ColColCol& cols) {push_pools(col3,ColColCol_to_group(cols));}
     
         //Implment later if needed
         // void insert_elements(Col& col, QCol elements, uint32_t at) {
@@ -2609,152 +2445,152 @@ namespace Acorn {
             return to_return;
         }
 
-        ColColCol take_pools(ColColCol& col3, uint32_t from, uint32_t to) {
-            QCol raw = col3.take_range(from,to);
-            offset_pool_ptrs(col3, -(int)(to - from), from);
-            ColColCol to_return;
-            uint32_t count = to - from;
-            for(uint32_t i = 0; i < count; i++) {
-                ColCol& cc = *(ColCol*)raw.qget(i * sizeof(ColCol));
-                to_return.push(cc);
-            }
-            offset_pool_ptrs(to_return, -(int)(from));
-            return to_return;
-        }
-        void remove_pools(ColColCol& col3, uint32_t from, uint32_t to) {ColColCol returned = take_pools(col3,from,to);}
+        // ColColCol take_pools(ColColCol& col3, uint32_t from, uint32_t to) {
+        //     QCol raw = col3.take_range(from,to);
+        //     offset_pool_ptrs(col3, -(int)(to - from), from);
+        //     ColColCol to_return;
+        //     uint32_t count = to - from;
+        //     for(uint32_t i = 0; i < count; i++) {
+        //         ColCol& cc = *(ColCol*)raw.qget(i * sizeof(ColCol));
+        //         to_return.push(cc);
+        //     }
+        //     offset_pool_ptrs(to_return, -(int)(from));
+        //     return to_return;
+        // }
+        // void remove_pools(ColColCol& col3, uint32_t from, uint32_t to) {ColColCol returned = take_pools(col3,from,to);}
 
-        void copy_subgraph_col(ColColCol& col3, ColColCol& subgraph, Ptr& target, map<uint32_t,uint32_t>& pool_aliases, list<map<uint32_t,uint32_t>>& col_aliases, bool should_bundle) {
-            uint32_t target_pool = target.pool;
-            uint32_t target_idx = target.idx;
+        // void copy_subgraph_col(ColColCol& col3, ColColCol& subgraph, Ptr& target, map<uint32_t,uint32_t>& pool_aliases, list<map<uint32_t,uint32_t>>& col_aliases, bool should_bundle) {
+        //     uint32_t target_pool = target.pool;
+        //     uint32_t target_idx = target.idx;
             
-            uint32_t& poolalias = target.pool;
-            uint32_t& colalias = target.idx;
-            if(pool_aliases.hasKey(target_pool)) {
-                poolalias = pool_aliases.get(target_pool);
-            } else {
-                if(should_bundle&&subgraph.length()>1) {
-                    poolalias = 1;
-                    pool_aliases.put(target_pool, 1);
-                } else {
-                    ColCol innercopypool = col3[target_pool]; innercopypool.clear();
-                    poolalias = col_aliases.length();
-                    pool_aliases.put(target_pool,poolalias);
-                    subgraph.push(innercopypool);
-                    col_aliases.push(map<uint32_t,uint32_t>{});
-                }
-            }
+        //     uint32_t& poolalias = target.pool;
+        //     uint32_t& colalias = target.idx;
+        //     if(pool_aliases.hasKey(target_pool)) {
+        //         poolalias = pool_aliases.get(target_pool);
+        //     } else {
+        //         if(should_bundle&&subgraph.length()>1) {
+        //             poolalias = 1;
+        //             pool_aliases.put(target_pool, 1);
+        //         } else {
+        //             ColCol innercopypool = col3[target_pool]; innercopypool.clear();
+        //             poolalias = col_aliases.length();
+        //             pool_aliases.put(target_pool,poolalias);
+        //             subgraph.push(innercopypool);
+        //             col_aliases.push(map<uint32_t,uint32_t>{});
+        //         }
+        //     }
             
-            if(col_aliases[poolalias].hasKey(target_idx)&&!should_bundle) {
-                colalias = col_aliases[poolalias].get(target_idx);
-            } else {
-                Col& col = col3[target_pool][target_idx];
-                Col outercopycol = col; outercopycol.clear();
-                colalias = subgraph[poolalias].length();
-                subgraph[poolalias].push(outercopycol);
-                col_aliases[poolalias].put(target_idx,colalias);
+        //     if(col_aliases[poolalias].hasKey(target_idx)&&!should_bundle) {
+        //         colalias = col_aliases[poolalias].get(target_idx);
+        //     } else {
+        //         Col& col = col3[target_pool][target_idx];
+        //         Col outercopycol = col; outercopycol.clear();
+        //         colalias = subgraph[poolalias].length();
+        //         subgraph[poolalias].push(outercopycol);
+        //         col_aliases[poolalias].put(target_idx,colalias);
 
-                for(int r=0;r<col.length();r++) {
-                    if(col.heterogenous) {
-                        //Add special seperate handeling later
-                    } else {
-                        void* field = col[r];
-                        if(is_ptr_alias(col.tag)) {
-                            Ptr p = *(Ptr*)field;
-                            if(is_live(p)) {
-                                copy_subgraph_col(col3,subgraph,p,pool_aliases,col_aliases,should_bundle);
-                            }
-                            subgraph[poolalias][colalias].push((void*)&p);
-                        } else {
-                            subgraph[poolalias][colalias].push(field);
-                        }
-                    }
-                }
-            }
-        }   
-        ColColCol copy_subgraph(ColColCol& col3, uint32_t target_pool, bool should_bundle = false) {
-            ColColCol to_return;
-            if(target_pool>=col3.length()) {throw_error("core:copy_subgraph target pool ",target_pool," is out of bounds for col3 len ",col3.length()); return to_return;}
-            ColCol& pool = col3[target_pool];
-            map<uint32_t,uint32_t> pool_aliases;
-            list<map<uint32_t,uint32_t>> col_aliases;
+        //         for(int r=0;r<col.length();r++) {
+        //             if(col.heterogenous) {
+        //                 //Add special seperate handeling later
+        //             } else {
+        //                 void* field = col[r];
+        //                 if(is_ptr_alias(col.tag)) {
+        //                     Ptr p = *(Ptr*)field;
+        //                     if(is_live(p)) {
+        //                         copy_subgraph_col(col3,subgraph,p,pool_aliases,col_aliases,should_bundle);
+        //                     }
+        //                     subgraph[poolalias][colalias].push((void*)&p);
+        //                 } else {
+        //                     subgraph[poolalias][colalias].push(field);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }   
+        // ColColCol copy_subgraph(ColColCol& col3, uint32_t target_pool, bool should_bundle = false) {
+        //     ColColCol to_return;
+        //     if(target_pool>=col3.length()) {throw_error("core:copy_subgraph target pool ",target_pool," is out of bounds for col3 len ",col3.length()); return to_return;}
+        //     ColCol& pool = col3[target_pool];
+        //     map<uint32_t,uint32_t> pool_aliases;
+        //     list<map<uint32_t,uint32_t>> col_aliases;
 
-            ColCol outercopypool = pool; outercopypool.clear();
-            uint32_t outerpoolalias = col_aliases.length();
-            pool_aliases.put(target_pool,outerpoolalias);
-            to_return.push(outercopypool);
-            col_aliases.push(map<uint32_t,uint32_t>{});
+        //     ColCol outercopypool = pool; outercopypool.clear();
+        //     uint32_t outerpoolalias = col_aliases.length();
+        //     pool_aliases.put(target_pool,outerpoolalias);
+        //     to_return.push(outercopypool);
+        //     col_aliases.push(map<uint32_t,uint32_t>{});
 
-            for(int c=0;c<pool.length();c++) {
-                Ptr target_ptr;
-                target_ptr.pool = target_pool; target_ptr.idx = c;
-                copy_subgraph_col(col3,to_return,target_ptr,pool_aliases,col_aliases,should_bundle);
-            }
-            return to_return;
-        }
+        //     for(int c=0;c<pool.length();c++) {
+        //         Ptr target_ptr;
+        //         target_ptr.pool = target_pool; target_ptr.idx = c;
+        //         copy_subgraph_col(col3,to_return,target_ptr,pool_aliases,col_aliases,should_bundle);
+        //     }
+        //     return to_return;
+        // }
 
 
-        void partition_pool(ColCol& pool, std::function<bool(Col&)> should_be_left, Col& imap, Col& jmap, Ptr example = deadptr) {
-            if(!is_live(example)) {
-                example = Ptr(&pool,0,0);
-            } else {
-                if(example.cachelevel>2||example.cachelevel==0) {
-                    example.pool = resolve_to_subunit(example).indexof(&pool);
-                }
-            }
-            int i = 0, j = pool.length()-1;
-            while(i < j) {
-                while(i<=j&& should_be_left(pool[i])) i++;
-                while(i<=j&&!should_be_left(pool[j])) j--;
-                if(i < j) {
-                    Ptr iptr = example; iptr.idx = i; iptr.gen = pool[i].gen;
-                    Ptr jptr = example; jptr.idx = j; jptr.gen = pool[j].gen;
-                    imap.put(iptr,&jptr,ptr_id);
-                    jmap.put(jptr,&iptr,ptr_id);
-                    std::swap(pool[i], pool[j]);
-                    i++; j--;
-                }
-            }
-        }
-        void prepare_subunit_for_compaction(ColColCol& sub) {
-            Col imap(sizeof(Ptr),ptr_id);
-            Col jmap(sizeof(Ptr),ptr_id);
-            Ptr example_ptr = Ptr(&sub,0,0,0);
-            for(uint32_t i=0;i<sub.length();i++) {
-                partition_pool(sub[i],[](Col& col){return col.live.load();},imap,jmap,example_ptr);
-                sub[i].free.clear();
-            }
-            //print_column(jmap);
-            apply_mapping(sub,jmap);
-            Col freemap(sizeof(Ptr),ptr_id);
-            for(uint32_t p=0;p<sub.length();p++) {
-                for(int i=sub[p].length()-1;i>=0;i--) {
-                    if(sub[p][i].live) {
-                        break;
-                    } else {
-                        Ptr ptr(&sub,p,i,0); ptr.gen = sub[p][i].gen;
-                        freemap.put(ptr,&deadptr,ptr_id);
-                    }
-                }
-            }
-            apply_mapping(sub,freemap);
-            //print_column(freemap);
-        }
+        // void partition_pool(ColCol& pool, std::function<bool(Col&)> should_be_left, Col& imap, Col& jmap, Ptr example = deadptr) {
+        //     if(!is_live(example)) {
+        //         example = Ptr(&pool,0,0);
+        //     } else {
+        //         if(example.cachelevel>2||example.cachelevel==0) {
+        //             example.pool = resolve_to_subunit(example).indexof(&pool);
+        //         }
+        //     }
+        //     int i = 0, j = pool.length()-1;
+        //     while(i < j) {
+        //         while(i<=j&& should_be_left(pool[i])) i++;
+        //         while(i<=j&&!should_be_left(pool[j])) j--;
+        //         if(i < j) {
+        //             Ptr iptr = example; iptr.idx = i; iptr.gen = pool[i].gen;
+        //             Ptr jptr = example; jptr.idx = j; jptr.gen = pool[j].gen;
+        //             imap.put(iptr,&jptr,ptr_id);
+        //             jmap.put(jptr,&iptr,ptr_id);
+        //             std::swap(pool[i], pool[j]);
+        //             i++; j--;
+        //         }
+        //     }
+        // }
+        // void prepare_subunit_for_compaction(ColColCol& sub) {
+        //     Col imap(sizeof(Ptr),ptr_id);
+        //     Col jmap(sizeof(Ptr),ptr_id);
+        //     Ptr example_ptr = Ptr(&sub,0,0,0);
+        //     for(uint32_t i=0;i<sub.length();i++) {
+        //         partition_pool(sub[i],[](Col& col){return col.live.load();},imap,jmap,example_ptr);
+        //         sub[i].free.clear();
+        //     }
+        //     //print_column(jmap);
+        //     apply_mapping(sub,jmap);
+        //     Col freemap(sizeof(Ptr),ptr_id);
+        //     for(uint32_t p=0;p<sub.length();p++) {
+        //         for(int i=sub[p].length()-1;i>=0;i--) {
+        //             if(sub[p][i].live) {
+        //                 break;
+        //             } else {
+        //                 Ptr ptr(&sub,p,i,0); ptr.gen = sub[p][i].gen;
+        //                 freemap.put(ptr,&deadptr,ptr_id);
+        //             }
+        //         }
+        //     }
+        //     apply_mapping(sub,freemap);
+        //     //print_column(freemap);
+        // }
 
-        void apply_mapping(list<ColCol*> sub, Col& mapping) {
-            for(uint32_t p=0;p<sub.length();p++) {
-                for(uint32_t i=0;i<sub[p]->length();i++) {
-                    opperate_on_ptrs(sub[p]->get(i),[&](Ptr& ptr){
-                        if(mapping.hasKey(&ptr,sizeof(Ptr))) {
-                            ptr = *(Ptr*)mapping.get(ptr);
-                        }
-                    });
-                }
-            }
-        }
-        inline void apply_mapping(ColCol* pool, Col& mapping)   {apply_mapping(list<ColCol*>{pool},mapping);}
-        inline void apply_mapping(ColCol& pool, Col& mapping)   {apply_mapping(&pool,mapping);}
-        inline void apply_mapping(ColColCol& sub, Col& mapping) {apply_mapping(ColColCol_to_group(sub),mapping);}
-        inline void apply_mapping(ColColCol* sub, Col& mapping) {apply_mapping(*sub,mapping);}
+        // void apply_mapping(list<ColCol*> sub, Col& mapping) {
+        //     for(uint32_t p=0;p<sub.length();p++) {
+        //         for(uint32_t i=0;i<sub[p]->length();i++) {
+        //             opperate_on_ptrs(sub[p]->get(i),[&](Ptr& ptr){
+        //                 if(mapping.hasKey(&ptr,sizeof(Ptr))) {
+        //                     ptr = *(Ptr*)mapping.get(ptr);
+        //                 }
+        //             });
+        //         }
+        //     }
+        // }
+        // inline void apply_mapping(ColCol* pool, Col& mapping)   {apply_mapping(list<ColCol*>{pool},mapping);}
+        // inline void apply_mapping(ColCol& pool, Col& mapping)   {apply_mapping(&pool,mapping);}
+        // inline void apply_mapping(ColColCol& sub, Col& mapping) {apply_mapping(ColColCol_to_group(sub),mapping);}
+        // inline void apply_mapping(ColColCol* sub, Col& mapping) {apply_mapping(*sub,mapping);}
 
         uint32_t find_pools_start(ColColCol& col3, uint32_t from, uint32_t start_tag) {
             if(from==0) return 0;
@@ -2838,277 +2674,6 @@ namespace Acorn {
             return -1;
         }
 
-        Message make_message(ColColCol& in, uint32_t from, uint32_t to, uint32_t status) {
-            Message m = Ptr(&in,0,push_column(in[0],message_total_size,message_id),0);
-            resolve_to_col(m).heterogenous = true;
-            m.from() = from; m.to() = to; m.status() = status;
-            return m;
-        }
-
-        Header emplace_message(ColColCol& in, uint32_t status = 0) {
-            Header header = make_header(in);
-            header.add_ribbon();
-            make_message(in,header.pool,header.pool+1,status);
-            return header;
-        }
-
-        void send_message(list<ColCol*> messagepools) {
-            if(sendunit.try_lock_forever()) {
-                ColCol& instrs = sendunit[0];
-                uint32_t from = sendunit.length();
-                uint32_t to = from+messagepools.length();
-                uint32_t status = 0;
-
-                ColCol* header = find_pool(messagepools,headerpool_id);
-                if(header) {
-                    Ptr refptr = *(Ptr*)header->get(0)[0]; //Getting the first Ptr from the ribbon so we know how to offset
-                    ColColCol mesagepools_copy; //If we did a proper copy out then this wouldn't be a problem
-                    for(int i=0;i<messagepools.length();i++) {
-                        ColCol msgcopy = *messagepools[i];
-                        mesagepools_copy.push(msgcopy);
-                    }
-                    offset_pool_ptrs(mesagepools_copy,-refptr.pool); //We also wouldn't need to offset
-                    adopt_ptrs(mesagepools_copy,&sendunit);
-                    push_pools(sendunit,mesagepools_copy);
-                    make_message(sendunit,from,to,status);
-                } else {
-                    throw_error("Failed to send message because there was no header pool");
-                }
-                sendunit.unlock();
-            }
-        }
-        //The pool needs to be in types
-        void send_message(uint32_t pool) {send_message({&types[pool]});}
-
-        Header make_header(ColColCol& in) {
-            uint32_t at = in.length();
-            ColCol pool; pool.tag = headerpool_id;
-            in.push(pool);
-            return Ptr(&in,at,0,0);
-        }
-
-        uint32_t make_headerpool(ColColCol& in, std::string send_to, std::string message) {
-            Header header = make_header(in);
-            header.add_ribbon();
-            header.putString("Send to", send_to);
-            header.putString("Message", message);
-            return header.pool;
-        }
-
-        void send_message(std::string to, std::string message) {
-            send_message(make_headerpool(types,to,message));
-        }
-
-        uint32_t courier_type_id = 0;
-        void become_courier(bool auto_start = true) {
-            unit_label = "Thorn";
-            ColCol couriertype;
-            courier_type_id = types.length();
-            couriertype.label = "Leg";
-            types.push(couriertype);
-            if(auto_start) {
-                start_thread([this](){
-                    run_courier();
-                });
-            }
-        }
-
-        void courier_pick_up_messages(g_ptr<Unit> unit) {
-            if(courier_type_id==0) {
-                throw_error("Unit ",uid," is not a courier, can't pick up mesages");
-                return;
-            }
-
-            if(unit->sendunit.try_lock_for(0.005)) {
-                ColCol& instrs = unit->sendunit[0];
-
-                list<Message> messages;
-                for(int i=0;i<instrs.length();i++) {
-                    if(!instrs[i].live) continue;
-                    Message msg = Ptr(&instrs,i,0);
-                    messages.push(msg);
-                }
-                messages.sort([](Message a, Message b){return a.from()>b.from();});
-                for(int i=0;i<messages.length();i++) {
-                    // print("Courier found an instruction to iterate over in ",unit->unit_label);
-                    // unit->print_column(resolve_to_col(messages[i]));
-                    Message msg = messages[i];                
-                    if(msg.status()==0) {
-                        list<ColCol*> sample = unit->gather_pools(unit->sendunit,msg.from(),msg.to());
-                        ColCol* header_ptr = find_pool(sample,headerpool_id);
-                        if(header_ptr) {
-                            Header header = makePtr(unit->sendunit,header_ptr);
-                            if(header.ribbon().hasKey("Send to")) {
-                                string send_to_list = header.getString("Send to");
-                                list<std::string> send_to = split_str(send_to_list.to_std(),',');
-
-                                //Has valid recipiants
-                                ColColCol group = unit->take_pools(unit->sendunit,msg.from(),msg.to());
-                                adopt_ptrs(group);
-
-                                for(int s=0;s<send_to.length();s++) {
-                                    ColCol& leg = types[courier_type_id];
-                                    Message record = deadptr;
-                                    Col* col = nullptr;
-                                    if(is_str_num(send_to[s])) {
-                                        uint32_t asnum = std::stoi(send_to[s]);
-                                        if(leg.hasKey(asnum)) {
-                                            col = (Col*)leg.Col::get((void*)&asnum,4);
-                                        }
-                                    } else {
-                                        if(leg.hasKey(send_to[s])) {
-                                            col = (Col*)leg.Col::get(send_to[s]);
-                                        }
-                                    }
-                                    if(col) {
-                                        record = Ptr(col,col->length()); col->push_default();
-                                    } else {
-                                        uint32_t ncol_at = push_column(leg,message_total_size,message_id);
-                                        leg[ncol_at].heterogenous = true;
-                                        record = Ptr(&leg,ncol_at,0);
-                                        CCol key;
-                                        if(is_str_num(send_to[s])) {
-                                            key.element_size = 4;
-                                            key.tag = int_id;
-                                            uint32_t asnum = std::stoi(send_to[s]);
-                                            key.hash = hashBytes((void*)&asnum, 4);
-                                            key.push((void*)&asnum);
-                                        } else {
-                                            key.element_size = send_to[s].length(); 
-                                            key.tag = string_id;
-                                            key.hash = hashBytes(send_to[s].data(), send_to[s].length());
-                                            ((QString&)key) = send_to[s];
-                                        }
-                                        key.index = ncol_at;
-                                        leg.cells.scan_for_slot(std::move(key));
-                                    }     
-                                    record.from() = types.length(); record.to() = types.length()+sample.length(); record.status() = 0;
-                                    ColColCol copy_to_store = group;
-                                    push_pools(types,copy_to_store);
-                                }
-
-                                // editTextFile("printout.txt",[&](std::string& source){source+="Pickup from "+unit->unit_label+"\n";});
-                                // dump_unit(false,"printout.txt",14);
-                            } else {
-                                throw_error("core:courier_pick_up_messages encountered a message whose headerpool has no field 'Send to'!");
-                            }
-                            recycle_column(msg);
-                        } else {
-                            throw_error("core:courier_pick_up_messages encountered a message with no headerpool "
-                            "send message was bypassed or some memory was corrupted!");
-                            break;
-                        }
-                    } else {
-                        //For when I add more status codes
-                    }
-                }
-                unit->sendunit.unlock();
-            }
-        }
-        void courier_drop_off_messages(g_ptr<Unit> unit) {
-            if(courier_type_id==0) {
-                throw_error("Unit ",uid," is not a courier, can't drop off mesages");
-                return;
-            }
-
-            uint32_t asnum = unit->uid;
-            ColCol& leg = types[courier_type_id];
-            Col* col = nullptr;
-            if(leg.hasKey(unit->unit_label)) {
-                col = (Col*)leg.Col::get(unit->unit_label);
-            } else if(leg.hasKey(asnum)) {
-                col = (Col*)leg.Col::get((void*)&asnum,4);
-            }
-            if(col&&col->live&&!col->empty()) {
-                if(unit->recvunit.try_lock_for(0.005)) {
-                    list<Message> messages;
-                    for(int i=0;i<col->length();i++) {
-                        Message msg = Ptr(col,i);
-                        messages.push(msg);
-                    }
-                    messages.sort([](Message a, Message b){return a.from()>b.from();});
-                    for(int i=0;i<messages.length();i++) {
-                        Message msg = messages[i];
-                        if(msg.status()==0) {
-                            ColColCol group = take_pools(types,msg.from(),msg.to());
-
-                            uint32_t recv_at = unit->recvunit.length();
-                            unit->make_message(unit->recvunit,recv_at,recv_at+group.length(),0);
-
-                            unit->adopt_ptrs(group,&unit->recvunit);
-                            unit->push_pools(unit->recvunit,group);
-
-                            for(int t=0;t<leg.length();t++) {
-                                Col& tube = leg[t];
-                                if(tube.storage!=col->storage&&!tube.empty()&&tube.live) {
-                                    for(int m=0;m<tube.length();m++) {
-                                        Message tube_msg = Ptr(&tube,m);
-                                        uint32_t removed = msg.to() - msg.from();
-                                        if(tube_msg.from()>=msg.to()) {
-                                            tube_msg.from() -= removed;
-                                            tube_msg.to() -= removed;
-                                        } else if(tube_msg.from()>=msg.from()) {
-                                            throw_error(red("core:courier_drop_off_messages encountered a message which pointed into a taken range, corrupted!"));
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            //For when I add more status codes
-                        }
-                    }
-                    unit->recvunit.unlock();
-                }
-                col->clear();
-
-                // editTextFile("printout.txt",[&](std::string& source){source+="Drop off at "+unit->unit_label+"\n";});
-                // dump_unit(false,"printout.txt",14);
-            }
-        }
-        void run_courier() {
-            while(running) {
-                list<g_ptr<Unit>> snapshot;
-                {
-                    std::lock_guard<std::mutex> lock(units_mutex);
-                    snapshot = units;
-                }
-                for(auto& unit : snapshot) {
-                    if(unit.getPtr()==this) continue;
-                    courier_pick_up_messages(unit);
-                    courier_drop_off_messages(unit);
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        }
-
-        ColColCol check_messages() {
-            if(recvunit.try_lock(0.005)) {
-                ColCol& instrs = recvunit[0];
-                for(int i=0;i<instrs.length();i++) {
-                    if(!instrs[i].live) continue;
-                    Message msg = Ptr(&instrs, i, 0);
-                    if(msg.status()==0) {
-                        ColColCol group = take_pools(recvunit,msg.from(),msg.to());
-                        recycle_column(msg);
-                        for(int t=0;t<instrs.length();t++) {
-                            if(!instrs[t].live) continue;
-                            Message instr = Ptr(&instrs,t,0);
-                            uint32_t removed = msg.to() - msg.from();
-                            if(instr.from()>=msg.to()) {
-                                instr.from() -= removed;
-                                instr.to() -= removed;
-                            } else if(instr.from()>=msg.from()) {
-                                throw_error(red("core:check_messages encountered a message which pointed into a taken range, corrupted!"));
-                            }
-                        }
-                        recvunit.unlock();
-                        return group;
-                    }                        
-                }
-                recvunit.unlock();
-            }
-            return col3_ref;
-        }
 
         enum class SnapField : uint8_t {
             //QCol fields
@@ -3118,7 +2683,7 @@ namespace Acorn {
             //Col fields
             Hetero = 10, Label = 11, Cells = 12, Free = 13,
             //Structural
-            Cols = 14, End = 255,
+            Cols = 14, Spec = 15, End = 255,
         };
 
         template<typename T>
@@ -3132,42 +2697,113 @@ namespace Acorn {
             write_raw<uint8_t>(out, (uint8_t)field); write_raw<uint32_t>(out, s.size()); out.write(s.data(), s.size());
         }
 
-        void snapshot_qcol(std::ostream& out, QCol& col, bool include_data) {
+
+        void snapshot_ccol(std::ostream& out, CCol& col) {
+            snapshot_string(out, SnapField::Tag, labels[col.tag]);
+            snapshot_field<uint32_t>(out, SnapField::Hash, col.hash);
+            snapshot_field<uint32_t>(out, SnapField::Index, col.index);
             snapshot_field<uint32_t>(out, SnapField::Size, col.size);
-            if(include_data) {
+            if(col.storage && col.size > 0) {
                 write_raw<uint8_t>(out, (uint8_t)SnapField::Data);
-                write_raw<uint32_t>(out, col.size); 
+                write_raw<uint32_t>(out, col.size);
                 out.write((const char*)col.storage, col.size);
             }
             snapshot_end(out);
         }
-        QCol load_snapshot_qcol(std::istream& in, bool include_data) {
-            QCol col;
+        void load_snapshot_ccol(std::istream& in, CCol& col) {
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Tag: {
+                        std::string s(len, '\0');
+                        in.read(s.data(), len);
+                        uint32_t zero = 0;
+                        col.tag = labels_lookup.getOrDefault(s, zero);
+                        break;
+                    }
+                    case SnapField::Hash:  col.hash  = read_raw<uint32_t>(in); break;
+                    case SnapField::Index: col.index = read_raw<uint32_t>(in); break;
+                    case SnapField::Size:  col.resize(read_raw<uint32_t>(in)); break;
+                    case SnapField::Data:  in.read((char*)col.storage, len); col.size = len; break;
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+        }
+        
+        void snapshot_qcellcol(std::ostream& out, QCellCol& cells) {
+            uint32_t count = 0;
+            list<CCol*> to_save;
+            for(uint32_t i = 0; i < cells.length(); i++) {
+                if(cells.get(i).storage) {
+                    count++;
+                    to_save << &cells.get(i);
+                }
+            }
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols);
+            write_raw<uint32_t>(out, count);
+            for(uint32_t i = 0; i < to_save.length(); i++) snapshot_ccol(out, *to_save[i]);
+            snapshot_end(out);
+        }
+        void load_snapshot_qcellcol(std::istream& in, QCellCol& cells) {
+            while(true) {
+                SnapField field = (SnapField)read_raw<uint8_t>(in);
+                uint32_t len = read_raw<uint32_t>(in);
+                if(field == SnapField::End) break;
+                switch(field) {
+                    case SnapField::Cols: {
+                        uint32_t count = len;
+                        for(uint32_t i = 0; i < count; i++) {
+                            CCol c;
+                            load_snapshot_ccol(in, c);
+                            c.hash = hashBytes(c.storage, c.size);
+                            cells.scan_for_slot(std::move(c));
+                        }
+                        break;
+                    }
+                    default: in.seekg(len, std::ios::cur); break;
+                }
+            }
+        }
+        
+
+        void snapshot_qcol(std::ostream& out, QCol& col, bool include_data) {
+            snapshot_field<uint32_t>(out, SnapField::Size, col.size);
+            if(include_data && col.storage) {
+                write_raw<uint8_t>(out, (uint8_t)SnapField::Data);
+                write_raw<uint32_t>(out, col.size);
+                out.write((const char*)col.storage, col.size);
+            }
+            snapshot_end(out);
+        }
+        void load_snapshot_qcol(std::istream& in, QCol& col, bool include_data) {
             while(true) {
                 SnapField field = (SnapField)read_raw<uint8_t>(in);
                 uint32_t len = read_raw<uint32_t>(in);
                 if(field == SnapField::End) break;
                 switch(field) {
                     case SnapField::Size: col.resize(read_raw<uint32_t>(in)); break;
-                    case SnapField::Data: if(include_data) {in.read((char*)col.storage, len); col.size = len;} else {in.seekg(len, std::ios::cur);} break;
+                    case SnapField::Data: if(include_data) {in.read((char*)col.storage, len);} else {in.seekg(len, std::ios::cur);} break;
                     default: in.seekg(len, std::ios::cur); break;
                 }
             }
-            return col;
         }
 
-        void snapshot_ccol(std::ostream& out, CCol& col, bool include_data) {
-            snapshot_qcol(out, col, include_data);
+        void snapshot_tcol(std::ostream& out, TCol& col) {
             snapshot_field<uint32_t>(out, SnapField::Esize, col.element_size);
             snapshot_string(out, SnapField::Tag, labels[col.tag]);
             snapshot_field<uint32_t>(out, SnapField::Hash, col.hash);
             snapshot_field<uint32_t>(out, SnapField::Index, col.index);
-            snapshot_field<uint8_t>(out, SnapField::Live, col.live);
             snapshot_field<uint16_t>(out, SnapField::Gen, col.gen);
+            snapshot_field<uint8_t>(out, SnapField::Spec, (uint8_t)col.specialization);
             snapshot_end(out);
-        }        
-        CCol load_snapshot_ccol(std::istream& in, bool incldue_data) {
-            CCol col = load_snapshot_qcol(in,incldue_data);
+
+            bool should_include_data = true;
+            if(col.specialization==Spec::COL||col.specialization==Spec::PTR_COL) {should_include_data = false;}
+            snapshot_qcol(out, col, should_include_data);
+        }
+        void load_snapshot_tcol(std::istream& in, TCol& col) {
             while(true) {
                 SnapField field = (SnapField)read_raw<uint8_t>(in);
                 uint32_t len = read_raw<uint32_t>(in);
@@ -3181,64 +2817,36 @@ namespace Acorn {
                         col.tag = labels_lookup.getOrDefault(s, zero);
                         break;
                     }
-                    case SnapField::Hash:  col.hash = read_raw<uint32_t>(in); break;
+                    case SnapField::Hash:  col.hash  = read_raw<uint32_t>(in); break;
                     case SnapField::Index: col.index = read_raw<uint32_t>(in); break;
-                    case SnapField::Live:  col.live = read_raw<uint8_t>(in); break;
-                    case SnapField::Gen:   col.gen = read_raw<uint16_t>(in); break;
+                    case SnapField::Gen:   col.gen   = read_raw<uint16_t>(in); break;
+                    case SnapField::Spec:  col.specialization = (Spec)read_raw<uint8_t>(in); break;
                     default: in.seekg(len, std::ios::cur); break;
                 }
             }
-            return col;
-        }
-
-
-        void snapshot_qcellcol(std::ostream& out, QCellCol& col) {
-            uint32_t count = 0;
-            list<CCol*> to_save;
-            for(uint32_t i = 0; i < col.length(); i++) {
-                if(col.get(i).storage) {
-                    count++;
-                    to_save << &col.get(i);
-                }
-            }
-            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols); write_raw<uint32_t>(out, count);
-            for(uint32_t i = 0; i < to_save.length(); i++) snapshot_ccol(out, *to_save[i], true);
-            snapshot_end(out);
+            bool should_include_data = true;
+            if(col.specialization==Spec::COL||col.specialization==Spec::PTR_COL) {should_include_data = false;}
+            load_snapshot_qcol(in, col, should_include_data);
         }
         
-        QCellCol load_snapshot_qcellcol(std::istream& in) {
-            QCellCol col;
-            while(true) {
-                SnapField field = (SnapField)read_raw<uint8_t>(in);
-                uint32_t len = read_raw<uint32_t>(in);
-                if(field == SnapField::End) break;
-                switch(field) {
-                    case SnapField::Cols: {
-                        uint32_t count = len;
-                        for(uint32_t i = 0; i < count; i++) {
-                            CCol c = load_snapshot_ccol(in, true);
-                            col.scan_for_slot(std::move(c));
-                        }
-                        break;
-                    }
-                    default: in.seekg(len, std::ios::cur); break;
-                }
-            }
-            return col;
-        }
-
-        void snapshot_col(std::ostream& out, Col& col, bool include_data) {
-            snapshot_ccol(out, col, include_data);
+        void snapshot_col(std::ostream& out, Col& col) {
             snapshot_qcellcol(out, col.cells);
+            snapshot_tcol(out, col);
             snapshot_field<bool>(out, SnapField::Hetero, col.heterogenous);
             snapshot_string(out, SnapField::Label, col.label.to_std());
-            write_raw<uint8_t>(out, (uint8_t)SnapField::Free);    write_raw<uint32_t>(out, col.free.length() * 4);
-            for(int i = 0; i < col.free.length(); i++) write_raw<uint32_t>(out, col.free[i]);
+            write_raw<uint8_t>(out, (uint8_t)SnapField::Free);
+            write_raw<uint32_t>(out, col.free.length() * 4);
+            for(uint32_t i = 0; i < col.free.length(); i++) write_raw<uint32_t>(out, col.free[i]);
+            if(col.specialization == Spec::COL) {
+                write_raw<uint8_t>(out, (uint8_t)SnapField::Cols);
+                write_raw<uint32_t>(out, col.length());
+                for(uint32_t i = 0; i < col.length(); i++) snapshot_col(out, *(Col*)col[i]);
+            }
             snapshot_end(out);
         }
-        Col load_snapshot_col(std::istream& in, bool include_data) {
-            Col col = load_snapshot_ccol(in,include_data);
-            col.cells = load_snapshot_qcellcol(in);
+        void load_snapshot_col(std::istream& in, Col& col) {
+            load_snapshot_qcellcol(in,col.cells);
+            load_snapshot_tcol(in, col);
             while(true) {
                 SnapField field = (SnapField)read_raw<uint8_t>(in);
                 uint32_t len = read_raw<uint32_t>(in);
@@ -3256,93 +2864,26 @@ namespace Acorn {
                         for(uint32_t i = 0; i < count; i++) col.free << read_raw<uint32_t>(in);
                         break;
                     }
-                    default: in.seekg(len, std::ios::cur); break;
-                }
-            }
-            return col;
-        }
-
-        void snapshot_colcol(std::ostream& out, ColCol& col) {
-            snapshot_col(out, col,false);
-            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols);  write_raw<uint32_t>(out, col.length());
-            for(uint32_t i = 0; i < col.length(); i++) snapshot_col(out, col[i], true);
-            snapshot_end(out);
-        }
-        ColCol load_snapshot_colcol(std::istream& in) {
-            ColCol col = load_snapshot_col(in,false);
-            col.clear();
-            while(true) {
-                SnapField field = (SnapField)read_raw<uint8_t>(in);
-                uint32_t len = read_raw<uint32_t>(in);
-                if(field == SnapField::End) break;
-                switch(field) {
                     case SnapField::Cols: {
                         uint32_t count = len;
+                        col.size = 0;
                         for(uint32_t i = 0; i < count; i++) {
-                            Col c = load_snapshot_col(in,true);
-                            col.push(c);
+                            load_snapshot_col(in, col.add());
                         }
                         break;
                     }
                     default: in.seekg(len, std::ios::cur); break;
                 }
             }
-
-            // if(!col.cells.empty()) {
-            //     for(int i=0;i<col.cells.length();i++) {
-            //         CCol& cell = col.cells.get(i);
-            //         if(cell.storage) {
-            //             std::string tpr((const char*)cell.storage,cell.size);
-            //             print("Loaded: ",tpr," for ",cell.index);
-            //         }
-            //     }
-            // }
-
-            return col;
-        }
-        
-        void snapshot_colcollist(std::ostream& out, list<ColCol*> cols) {
-            write_raw<uint32_t>(out, cols.length());
-            for(int i=0;i<cols.length();i++) {
-                snapshot_colcol(out,*cols[i]);
-            }
-        }
-
-        void snapshot_colcolcol(std::ostream& out, ColColCol& col) {
-            snapshot_col(out, col, false);
-            write_raw<uint8_t>(out, (uint8_t)SnapField::Cols);  write_raw<uint32_t>(out, col.length());
-            for(uint32_t i = 0; i < col.length(); i++) snapshot_colcol(out, col[i]);
-            snapshot_end(out);
-        }
-        ColColCol load_snapshot_colcolcol(std::istream& in) {
-            ColColCol col = load_snapshot_col(in,false);
-            col.clear();
-            while(true) {
-                SnapField field = (SnapField)read_raw<uint8_t>(in);
-                uint32_t len = read_raw<uint32_t>(in);
-                if(field == SnapField::End) break;
-                switch(field) {
-                    case SnapField::Cols: {
-                        uint32_t count = len;
-                        for(uint32_t i = 0; i < count; i++) {
-                            ColCol c = load_snapshot_colcol(in);
-                            col.push(c);
-                        }
-                        break;
-                    }
-                    default: in.seekg(len, std::ios::cur); break;
-                }
-            }
-            return col;
         }
 
 
         void save_subunit(ColColCol* subunit, bool snapshot = true) {
             auto out = openWriteStream(subunit->label.to_std());
             if(snapshot) {
-                snapshot_colcolcol(out, *subunit);
+                snapshot_col(out, *subunit);
             } else {
-                write_TypeTypeCol(out,*subunit);
+                write_col(out,*subunit);
             }
             out.close();
         }
@@ -3365,7 +2906,7 @@ namespace Acorn {
                     throw_error("unit:load_subunit path not found: ", path, ": ", e.what());
                     return;
                 }
-                (*subunit) = std::move(load_snapshot_colcolcol(in));
+                load_snapshot_col(in,*subunit);
                 adopt_ptrs(*subunit,subunit);
                 in.close();
                 subunit->unlock();
@@ -3383,17 +2924,18 @@ namespace Acorn {
                 return deadptr;
             }
             if(!subunits.hasKey(path)) {
-                subunit = new ColColCol(std::move(load_snapshot_colcolcol(in)));
+                at = subunits.add_idx();
+                subunit = &subunits[at];
+                load_snapshot_col(in,*subunit);
+                subunits.addcell(at,path.data(),path.size(),string_id);
                 adopt_ptrs(*subunit,subunit);
-                at = subunits.length();
-                subunits.qput((void*)&subunit,path.data(),path.size(),string_id);
                 subunit->unlock();
             } else {
                 at = subunits.getidx(path.data(),path.size());
-                subunit = subunits.get(at);
+                subunit = &subunits[at];
                 if((overwrite_cache||subunit->empty())&&subunit->try_lock_forever()) {
                     if((overwrite_cache||subunit->empty())) {
-                        (*subunit) = std::move(load_snapshot_colcolcol(in));
+                        load_snapshot_col(in,*subunit);
                         adopt_ptrs(*subunit,subunit);
                     }
                     subunit->unlock();
@@ -3514,6 +3056,8 @@ namespace Acorn {
             to_return+=(node.x()!=-1.0f?"("+std::to_string((int)node.x())+","+std::to_string((int)node.y())+")":"");
             return to_return;
         }
+
+
         
         //Verbosity levels
         //0 = smallest print
@@ -3757,7 +3301,7 @@ namespace Acorn {
 
         uint32_t indexof_subunit(uint8_t* subunit_storage) {
             for(int i=0;i<subunits.length();i++) {
-                if(((Col*)subunits[i])->storage==subunit_storage) {
+                if(subunits[i].storage==subunit_storage) {
                     return i;
                 }
             }
@@ -3768,12 +3312,97 @@ namespace Acorn {
             editTextFile("printout.txt",[text](std::string& source){source+=text;});
         }
 
+
+        inline void basic_save_test() {
+            print("SAVE TEST");
+            ColColCol unit;
+            ColCol& pool = unit[unit.add_idx()];
+            print("POOL 1");
+            Col& col = pool.add();
+            col.element_size = 4;
+            int a = 6; int b = 9; int c = 12;
+            col.push((void*)&a);  col.put("test_a",(void*)&b);  col.put("test_b",(void*)&c);
+            col.label = "col1";
+    
+            print("POOL 2");
+            ColCol& pool_2 = unit[unit.add_idx()];
+            Col& col_2 = pool_2.add();
+            col_2.element_size = 4;
+            col_2.push((void*)&c); col_2.put("test_a",(void*)&a);  col_2.put("test_b",(void*)&b);
+            col_2.label = "col2";
+    
+            print(*(int*)unit[0][0][0]," : ",*(int*)unit[1][0][0]," : ",*(int*)unit[0][0][2]," : ",*(int*)unit[1][0][2]);
+            print(*(int*)unit[0][0].get("test_a")," : ",*(int*)unit[1][0].get("test_a"));
+    
+            auto out = openWriteStream("savetest.gsu");
+            print("SAVING");
+            snapshot_col(out,unit);
+            out.close();
+        }
+    
+        inline uint32_t add_column(Col& col, size_t size = 0, uint32_t tag = 0) {
+            Col ncol(size);
+            ncol.tag = tag;
+            col.push((void*)&ncol);
+            return col.length()-1;
+        }
+    
+
         void test_pool_groups() {
-            Col overloads(4,int_id);
-            overloads.put("dot-\"iter\"-int-string",&func_call_id,string_id);
-            overloads.put("plus-int",&method_call_id,string_id);
-            print(labels[*(int*)overloads.get("dot-\"iter\"-int-string")]);
-            print(labels[*(int*)overloads.get("plus-int")]);
+            Log::rig rig;
+
+            int ITS = 1000;
+
+            Col oldcol; oldcol.element_size = sizeof(Col);
+            ColCol newcol; newcol.element_size = sizeof(Col);
+
+            rig.add_process("clean",[&](int i){
+                if(i==0) {
+                    oldcol.clear();
+                    oldcol.capacity = 0;
+                    newcol.clear();
+                    newcol.capacity = 0;
+                }
+            });
+            rig.add_process("old_add",[&](int i){
+                add_column(oldcol,0,0);
+            });
+            rig.add_process("new_add",[&](int i){
+                newcol.add();
+            });
+
+            rig.add_comparison("old_add","new_add");
+
+            rig.run(1000,true,ITS);
+
+            for(int i = 0; i < 2; i++) {
+                int new_its = (int)std::pow(ITS, i+1);
+                print("ITS: ", new_its);
+                rig.run(1000,false,new_its);
+            }
+            
+            print("old_col length: ", oldcol.length());
+            print("new_col length: ", newcol.length());
+
+            // basic_save_test();
+            // ColColCol unit;
+            // auto in = openReadStream("savetest.gsu");
+            // print("LOADING");
+            // load_snapshot_col(in,unit);
+            // print("LOADED");
+            // in.close();
+    
+            // print(*(int*)unit[0][0][0]," : ",*(int*)unit[1][0][0]," : ",*(int*)unit[0][0][2]," : ",*(int*)unit[1][0][2]);
+            // print(*(int*)unit[0][0].get("test_a")," : ",*(int*)unit[1][0].get("test_a"));
+            // print(unit[1][0].label);
+
+            
+
+            // Col overloads(4,int_id);
+            // overloads.put("dot-\"iter\"-int-string",&func_call_id,string_id);
+            // overloads.put("plus-int",&method_call_id,string_id);
+            // print(labels[*(int*)overloads.get("dot-\"iter\"-int-string")]);
+            // print(labels[*(int*)overloads.get("plus-int")]);
 
 
 
@@ -4311,64 +3940,64 @@ namespace Acorn {
 
 
         void test_ptr_mapping() {
-            print("Testing Ptr mapping");
-            ColColCol* sub = subunits.create();
-            ColCol pool;
-            for(int i=0;i<12;i++) {
-                Col c; c.tag = int_id; c.element_size = 4;
-                c.push(&i);
-                pool.push(c);
-            }
-            Acorn::recycle_column(pool,3);
-            Acorn::recycle_column(pool,6);
-            Acorn::recycle_column(pool,9);
-            Acorn::recycle_column(pool,10);
-            sub->push(pool);
-            ColCol ptr_pool;
-            for(int i=0;i<12;i++) {
-                Col c(sizeof(Ptr),ptr_id);
-                Ptr p(sub,0,i,0); p.gen = sub->get(0)[i].gen;
-                c.push(&p);
-                ptr_pool.push(c);
-            }
-            sub->push(ptr_pool);
+            // print("Testing Ptr mapping");
+            // ColColCol* sub = subunits.create();
+            // ColCol pool;
+            // for(int i=0;i<12;i++) {
+            //     Col c; c.tag = int_id; c.element_size = 4;
+            //     c.push(&i);
+            //     pool.push(c);
+            // }
+            // Acorn::recycle_column(pool,3);
+            // Acorn::recycle_column(pool,6);
+            // Acorn::recycle_column(pool,9);
+            // Acorn::recycle_column(pool,10);
+            // sub->push(pool);
+            // ColCol ptr_pool;
+            // for(int i=0;i<12;i++) {
+            //     Col c(sizeof(Ptr),ptr_id);
+            //     Ptr p(sub,0,i,0); p.gen = sub->get(0)[i].gen;
+            //     c.push(&p);
+            //     ptr_pool.push(c);
+            // }
+            // sub->push(ptr_pool);
 
-            Col imap(sizeof(Ptr),ptr_id);
-            Col jmap(sizeof(Ptr),ptr_id);
-            Ptr example_ptr = Ptr(sub,0,0,0);
-            partition_pool(sub->get(0),[](Col& col){return col.live.load();},imap,jmap,example_ptr);
-            sub->get(0).free.clear();
-            apply_mapping(*sub,jmap);
-            Col freemap(sizeof(Ptr),ptr_id);
-            for(int i=0;i<sub->get(0).length();i++) {
-                if(!sub->get(0)[i].live) {
-                    Ptr p(sub,0,i,0); p.gen = sub->get(0)[i].gen;
-                    freemap.put(p,&deadptr,ptr_id);
-                }
-            }
-            apply_mapping(*sub,freemap);
-            //dump_subunit(*sub,true);
+            // Col imap(sizeof(Ptr),ptr_id);
+            // Col jmap(sizeof(Ptr),ptr_id);
+            // Ptr example_ptr = Ptr(sub,0,0,0);
+            // partition_pool(sub->get(0),[](Col& col){return col.live.load();},imap,jmap,example_ptr);
+            // sub->get(0).free.clear();
+            // apply_mapping(*sub,jmap);
+            // Col freemap(sizeof(Ptr),ptr_id);
+            // for(int i=0;i<sub->get(0).length();i++) {
+            //     if(!sub->get(0)[i].live) {
+            //         Ptr p(sub,0,i,0); p.gen = sub->get(0)[i].gen;
+            //         freemap.put(p,&deadptr,ptr_id);
+            //     }
+            // }
+            // apply_mapping(*sub,freemap);
+            // //dump_subunit(*sub,true);
 
-            print(subunit_info(*sub));
-            print("COMPACTING");
-            compact(sub);
-            print(subunit_info(*sub));
+            // print(subunit_info(*sub));
+            // print("COMPACTING");
+            // compact(sub);
+            // print(subunit_info(*sub));
         }
 
 
         void test_courier() {
-            start_thread([this](){
-                while(true) {
-                    ColColCol msgpools = check_messages();
-                    if(msgpools.empty()) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    } else {
-                        adopt_ptrs(msgpools,&msgpools);
-                        Header header = makePtr(msgpools,find_pool(msgpools,headerpool_id));
-                        print(unit_label," recived a message: ",header.getString("Message"));
-                    }
-                }
-            });
+            // start_thread([this](){
+            //     while(true) {
+            //         ColColCol msgpools = check_messages();
+            //         if(msgpools.empty()) {
+            //             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            //         } else {
+            //             adopt_ptrs(msgpools,&msgpools);
+            //             Header header = makePtr(msgpools,find_pool(msgpools,headerpool_id));
+            //             print(unit_label," recived a message: ",header.getString("Message"));
+            //         }
+            //     }
+            // });
         }   
 
       
@@ -4493,6 +4122,17 @@ namespace Acorn {
             }
         
             return false;
+        }
+
+        std::string position_of_node(Node node) {
+            std::string to_return = "";
+            float x = -1.0f; float y = -1.0f;
+            if(node_source_position(node, x, y)) {
+                if(y>=0) {to_return+=("("+std::to_string((int)y + 1));}
+                if(x>=0) {to_return+=(","+std::to_string((int)x + 1));} 
+                if(!to_return.empty()){to_return+=")";}
+            }
+            return to_return;
         }
 
         std::string enrich_error_msg(Context& ctx, std::string& msg) {
@@ -5062,12 +4702,13 @@ namespace Acorn {
 
         void save_acorn(const std::string& path) {
             auto out = openWriteStream(path);
-            write_TypeTypeCol(out,types);
-    
+            write_col(out,types);
+            out.close();
         }
         void load_acorn(const std::string& path) {
             auto in = openReadStream(path);
-            types = read_TypeTypeCol(in);
+            read_col(in,types);
+            in.close();
             init();
             ERROR_FLAG = false;
         }

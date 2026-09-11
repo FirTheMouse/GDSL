@@ -1,0 +1,1003 @@
+Scroll to bottom for modern syntax.
+
+"test" {
+    in executing {
+        print(source);
+    }
+}
+
+ctxsource("Hello world");
+test;
+
+ctxsource("Goodbye world");
+test;
+
+Node n;
+Node j;
+n.type = 3;
+n.children.push(j);
+j.name = "Joe";
+j.type = 6;
+print("Child: ",n.children.get(0).type);
+
+Test 2
+Node n;
+Node m;
+m.type = 8;
+n.children.push(m);
+n.type = 6;
+print(n.type," | ",n.children.length," | ",n.children.get(0).type," | ",n.children(0).type);
+
+
+
+
+string s = "hello world";
+print("Just hello: ",s.slice(0,s.find(" ")));
+print("Just world: ",s.slice(s.find(" ")+1,s.length));
+print("Last l: ",s.substr(s.find("l",0,3),2));
+
+list Node nodes;
+Node n;
+Node m;
+n.name = "N"; m.name = "M";
+print(n.name,"/",m.name);
+nodes.push(n); nodes.push(m);
+nodes.get(0) = m;
+print(nodes.get(0).name,"/",nodes.get(1).name,"/",n.name,"/",m.name);
+
+
+
+
+int a = 5;
+print(a);
+int b = 6;
+print(b);
+string s = "wub";
+print(s);
+int c = 7;
+int d = 8;
+d = b;
+print(b," : ",c);
+
+
+M stage torture test:
+
+int x = 0;
+string s = "title";
+while(x<10) {
+    int b = x*2;
+    if(b<8) {
+        print(b," is less than 8 ",s);
+    } else {
+        print(b," is more than 8",s);
+    }
+    x++;
+}
+string m = "M";
+print("And m: ",m);
+
+
+Full test:
+
+##
+register wub;
+"wub" {
+    in executing {
+        ctx.source+=" BONG"+" BING";
+        print(ctx.source);
+    }
+}
+##
+
+ctx.source = "twing";
+print(ctx.source);
+wub;
+print(ctx.source);
+wub;
+
+Demo:
+
+int fibonacci(int n) {
+    if(n < 2) {
+        return n;
+    }
+    int a = fibonacci(n-1);
+    int b = fibonacci(n-2);
+    return a + b;
+}
+int fib5 = fibonacci(5);
+print(fib5);
+
+int factorial(int n) {
+    if(n < 2) {
+        return 1;
+    }
+    return n * factorial(n-1);
+}
+int fact5 = factorial(5);
+print(fact5);
+
+int sum_to(int n) {
+    int total = 0;
+    int i = 0;
+    while(i < n) {
+        total = total + i;
+        i++;
+    }
+    return total;
+}
+int sum10 = sum_to(10);
+print(sum10);
+
+
+Test 4
+
+wub {
+    int x;
+    int y;
+
+    int sayHi(int times, wub* m) {
+        (*m).x = 9;
+        for(int i=0;i<times;i++) {
+            print("Hi");
+            x++;
+        }
+        return times+1;
+    }
+}
+
+
+
+wub w;
+w.x = 8;
+wub n;
+print(w.sayHi(3,&n)," ",w.x,"/",n.x);
+
+Test 5
+
+Node n;
+Node m;
+Ptr int nums;
+nums.push(3);
+nums.push(6);
+nums.get(0) = 7;
+nums.put(n,11);
+nums.put(m,14);
+nums.put("test",16);
+print(nums.get(0),"/",nums.get(1),"/",nums.get(m),"/",nums.get(n),"/",nums.get(2),"/",nums.get("test"));
+
+Test 6
+
+Ptr Ptr Ptr int double_nested;
+Ptr Ptr int nested;
+Ptr int nums;
+nums.push(3);
+nums.push(8);
+nested.push(nums);
+Ptr int tums;
+tums.push(12);
+tums.push(14);
+nested.push(tums);
+double_nested.push(nested);
+print(double_nested.get(0).get(0).get(0));
+print(double_nested.get(0).get(0).get(1));
+print(double_nested.get(0).get(1).get(0));
+print(double_nested.get(0).get(1).get(1));
+
+Test 7
+
+int a = 5;
+int* nums = &a;
+nums.push(6);
+nums.push(8);
+(&a).push(9);
+print(nums.get(0),"/",nums.get(1),"/",nums.get(2),"/",(&a).get(0),"/",nums.get(3));
+
+
+Test 8
+Currently broken, revist this later to fix up how objects work, there's a number of special cases to investage.
+The x is being confused for an argument because it's in scope is the func decl and the result list doesn't have it as a child (because it's in a print) : consider doing a full depth search to fix this in resolve_identifer.
+
+wub {
+    Ptr int nums;
+    int x;
+    int print_list() {
+            print(x);
+            print(nums.get(i));
+    } 
+}
+
+wub n; n.x = 8;
+n.nums.push(2); n.nums.push(4); n.nums.push(6);
+wub m; m.x = 12;
+m.nums.push(3); m.nums.push(6); m.nums.push(9);
+
+n.print_list;
+m.print_list;
+
+
+Test 9 duck typing and type inspection
+
+for(int i=0;i<3;i++) {
+    if(i<2) {
+        a = i;
+    } else {
+        a = to_string(i);
+    }
+
+    int vofa = V#a;
+    if(vofa==(#int)) {
+        print("A is an int");
+    } else if(vofa==(#string)) {
+        print("A is a string");
+    }
+}
+
+Test 10 inital version of closures
+
+int a = 5; int b = 6;
+
+func f = [a, b](string s, int v){
+    print("A: ",a," B: ",b);
+    print("S: ",s," V: ",v);
+    return 9;
+};
+
+print(f("wub",6));
+print(f);
+
+f = [a](string sh, int* vh) {
+    print("A2: ",a);
+    sh = "flumpf";
+    print("S2: ",sh," V2: ",*vh);
+    (*vh)++;
+    return 2;
+};
+
+string w = "wubs";
+int x = 0;
+for(int i=0;i<3;i++) {
+    print(f(w,&x));
+    print(w,": ",x);
+}
+
+Test 11 closures, capture by refrence, and collections
+
+Ptr func fs;
+fs.push([](string sA) {
+    print("I was passed ",sA);
+    return 1;
+});
+for(int i=0;i<4;i++) {
+    if(i==1) {
+        fs << [i](string sB) {
+            print("I'm the ",i,"st function and I was passed ",sB);
+            return i*2;
+        };
+    } else if(i==2) {
+        fs << [i](string sB) {
+            print("I'm the ",i,"nd function and I was passed ",sB);
+            return i*2;
+        };
+    } else if(i==3) {
+        fs << [i](string sB) {
+            print("I'm the ",i,"rd function and I was passed ",sB);
+            return i*2;
+        };
+    } else {
+        fs << [&](string sB) {
+            print("There wasn't a function setup for me, so I captured i by refrence, it's: ",i);
+            return i*2;
+        };
+    }   
+}
+
+func f = fs.get(0);
+print(f("One"));
+f = fs.get(1);
+print(f("Zero"));
+f = fs.get(2);
+print(f("One"));
+f = fs.get(3);
+print(f("Two"));
+f = fs.get(4);
+print(f("Three"));
+
+
+
+
+Test 10 running mistakes
+
+for(int i=0;i<5;i++) {
+    MISTAKE(i);
+    catch {print("Error caught: ",unit_errors.get(0));}
+    print("TEST ", i, " FINISHED");
+}
+
+
+Backup:
+
+##
+    //set_binding_powers(#query_for,4,2);
+    // "query_for" { in assembling {
+    //     take_right(1);
+    // } }
+
+    //set_binding_powers(#query_in,4,2);
+    // "query_in" { in assembling {
+    //     take_left(1);
+    //     take_right(1);
+    // } }
+##
+
+query; 
+    from all in c with label "type" (where value is "travel");
+
+endquery;
+
+DEBUG_ROOT_X_BRIEF;
+
+Test 11 standard data structure testing:
+
+Ptr int p;
+p.put("One",1); p.put("Two",2); p.put("Three",3);
+print(p.get("One"),p.get("Three"),p.get("Two"));
+
+ColColCol t = utypes;
+ColCol pool = utypes.add;
+
+pool.label("Test Pool");
+
+Ptr ribbon = pool.add;
+ribbon.tag(#int); ribbon.element_size(4);
+ribbon.push(6); ribbon.push(3);
+
+pool.push(p);
+
+Ptr p2 = pool.add;
+p2.tag(#int); p2.element_size(4);
+p2.put("Testing",36); p2.put("Other",99);
+
+ColCol cc = utypes.get(15);
+
+cc.get(1).label("Pushed pool");
+cc.get(2).label("Created pool");
+
+print("Indexof 1: ",pool.indexof(p2)," OR ",pool.indexof(pool.get(1)));
+
+dump_unit(true);
+
+
+A wide variety of tests:
+
+##
+    Ptr string abbv;
+    abbv.push("TX"); abbv.push("GA"); abbv.push("FL");
+
+    Ptr int tally_by_state;
+    global void compute_tally_by_state(int depth) {
+        print(depth," BEFORE: ");
+        print_col(abbv);
+        if(depth>3) {return;}
+        else {compute_tally_by_state(depth+1);}
+        for(int i=0;i<abbv.length;i++) {
+            string abvr = abbv[i];
+            if(tally_by_state.has(abvr)) {
+                print("Tally by state has ",abvr,": ",tally_by_state[abvr]);
+            } else {
+                print("Added tally ",abvr,": ",3-i);
+                tally_by_state.put(abvr,3-i);
+            }
+        }
+        print(depth," AFTER: ");
+        print_col(abbv);
+    }
+
+    global void test_string_recursion(int depth) {
+        //print(depth," BEFORE: ");
+        string s;
+        s+="W";
+        //print(cast_to(#ptr,s),"> ",s);
+        if(depth>3) {return;}
+        else {test_string_recursion(depth+1);}
+        s+="U";
+        Ptr& pp = s;
+        DEBUG_ROOT_X_BRIEF;
+        //print(depth," AFTER: ",cast_to(#ptr,s));
+        //print(cast_to(#ptr,s),"> ",s);
+    }
+
+    Ptr char wub = "WUB";
+    global void test_string_overwritting(int depth) {
+        print(depth," BEFORE: ");
+        print(wub);
+        if(depth>2) {return;}
+        else {test_string_overwritting(depth+1);}
+        if(true) {
+            print(wub[0]);
+            DEBUG_ROOT_X_BRIEF;
+        }
+        print(depth," AFTER: ");
+        print(wub);
+    }
+
+    global int test_func {
+        print("You called the test func!");
+        return 6;
+    }
+    global int test_func_two {
+        print("You called the second test func!");
+        return 9;
+    }
+
+##
+##
+    "string" {
+        on ".\"reveal\"" {
+            log(col_to_string(ctx.node.c0.value.data));
+        }
+    }
+    register check_root_loc;
+    "check_root_loc" {
+        in executing {
+            log("LOC: ",ctx.root.value.loc);
+        }
+    }
+##
+
+int counter = 0;
+string lab_recursion(string word) {
+    counter++;
+    if(counter>10) {
+        return "STACK ERROR";
+    }
+    if(word.length<4) {
+        return lab_recursion(word+"T")+"T";
+    } else {
+        return word;
+    }
+}
+for(int i=0;i<1;i++) {
+    //print(lab_recursion(to_string(i)));
+    // udump;
+    // ures;
+    //print(pool_info(2));
+}
+
+// if(true) {
+//     int addOne(int num) {
+//         int temp_num = 2;
+//         num = num+temp_num;
+//         return num;
+//     }
+
+//     print(addOne(3));
+//     print(addOne(6));
+//     DEBUG_ROOT_X_BRIEF;
+// }
+
+// string global_string = "";
+// void lab_recursion(string word) {
+//     string local_word = word+"T";
+//     global_string+="T";
+//     print(IV#global_string," : ",IV#local_word," : ",IV#word);
+//     if(local_word.length<4) {
+//         lab_recursion(local_word);
+//     }
+//     print(IV#global_string," : ",IV#local_word," : ",IV#word);
+// }
+// for(int i=0;i<1;i++) {
+//     lab_recursion(to_string(i));
+//     print(pool_info(2));
+// }
+
+// void lab_recursion(int num) {
+//     int local_num = num+1;
+//     if(local_num<4) {
+//         lab_recursion(local_num);
+//     }
+//     print(local_num);
+// }
+// for(int i=0;i<3;i++) {
+//     lab_recursion(i);
+//     print(pool_info(2));
+// }
+
+// void lab_recursion(string word) {
+//     hide_block {
+//         string local_word = word+"T";
+//         print(IV#word,": ",local_word);
+//         newline(IV#local_word);
+//         local_word.reveal;
+//         if(local_word.length<4) {
+//             log(~&lab_recursion);
+//             lab_recursion(local_word);
+//             log(~&lab_recursion);
+//         }
+//         log(IV#local_word);
+//         local_word.reveal;
+//         print(IV#word,": ",local_word);
+//         endline;
+//     }
+// }
+// for(int i=0;i<3;i++) {
+//     lab_recursion(to_string(i));
+//     udump;
+//     ures;
+//     print(pool_info(2));
+// }
+
+
+
+// for(int i=0;i<1000;i++) {
+//     test_string_recursion(0);
+//     print(pool_info(2));
+// }
+
+Signatures testing
+
+##
+    register wub;
+    "wub" {
+        in executing {
+            subprocess(ctx);
+            if(ctx.node.type!=#wub) {
+                execut(ctx.node);
+            } else {
+                print("WUBBING!");
+                print(ctx.node.children.get(0).name," -W- ",ctx.node.children.get(1));
+            }
+        }
+    }
+    register twub;
+    "twub" {
+        in executing {
+            subprocess(ctx);
+            if(ctx.node.type!=#twub) {
+                execut(ctx.node);
+            } else {
+                print("Twubbing!");
+                print(ctx.node.children.get(0)," -T- ",ctx.node.children.get(1));
+            }
+        }
+    }
+    register thrub;
+    "thrub" {
+        in executing {
+            int old_type = ctx.node.type;
+            subprocess(ctx);
+            if(old_type!=ctx.node.type) {
+                execut(ctx.node);
+            } else {
+                print("thrubbing.");
+                print(ctx.node.children.get(0)," -H- ",ctx.node.children.get(1));
+            }
+        }
+    }
+##
+
+Ptr Ptr stuff;
+Ptr int num; num.push(6);
+Ptr string str; str.push("six");
+stuff.push(num); stuff.push(str);
+
+test_overload(#int,"+int",#wub);
+test_overload(#int,"+string",#twub);
+
+print(*(stuff[0])," ",*(stuff[1]));
+
+for(int i=0;i<2;i=i+1) {
+    4+(*(stuff[i]));
+}
+
+New cursour algebra:
+
+// ##
+//     "int" {
+//         on ".'tst'(int,[](int))" {
+//             print("TRIGERED");
+//         }
+//         on ".'tft'(int,function)" {
+//             print("TRIGERED F");
+//         }
+//     }
+// ##
+
+// int n = 3; int a = 9;
+
+// a.tst(3,[n,i](int i){});
+
+// func f = [](){};
+
+// a.tft(3,f);
+
+
+// int l = 19;
+// Ptr func funcs;
+// for(int n=0;n<3;n++) {
+//     func f = [n,l](int i){
+//         print(n,": ",i);
+//         print(IV#n);
+//     }
+//     funcs.push(f);
+// }
+// func fu = funcs[1];
+// fu(11);
+
+##
+    "ptr" {
+        on ".'iter'(function)" Ptr {
+            print("Got func");
+        }
+        on ".'iter'([]())" Ptr {
+            print("Got lambda");
+        }
+
+        on ".'iter'([](any))" Ptr {
+            print("Got undefined");
+        }
+    }
+##
+
+Ptr int nums; nums.push(3); nums.push(6); nums.push(9); nums.push(12);
+
+print(*nums[+][+]);
+print(*nums[++]);
+nums++;
+print(nums[-?]);
+print(nums?--?);
+
+nums.iter([nums](num){
+    print("Num: ",num);
+    if(num-?) {
+        print(*-num);
+    }
+    if(num+?) {
+        print(*+num);
+    }
+    if(num++?) {
+        print(*++num);
+    }
+    if(?+num) {
+        print(*(&num)[+]);
+    }
+});
+
+
+
+func f = [](n){print("Num: ",n);}
+nums.iter(f);
+
+
+ColCol l = utypes.add;
+string s = l.add(char);
+s = "word";
+s.iter([](c){
+    print(c);
+    if(c+?) {
+        print("+",*+c);
+    }
+});
+cast_to(#string,l.add(char)) = "hello";
+l.iter([](cc){
+    (&cc).iter([](c){
+        if(c-?) {
+            print(*-c);
+        }
+    });
+});
+
+
+void countdown(int n) {
+    if(n < 0) return;
+    print(n);
+    if(n-?) {print("was: ",*-n);}
+    if(n+?) {print("Last time: ",*+n);}
+    countdown(n - 1);
+}
+countdown(3);
+countdown(5);
+
+
+##
+    "int" {
+        on "?-" {
+            print("Query of: ",ctx.node);
+        }
+    }
+##
+
+print("Testing:");
+?-9;
+
+
+[:]Reserved for later:
+
+print("Testing thing");
+Ptr Ptr rbnptr;
+Ribbon rbn = rbnptr;
+rbn.thing = 89;
+print(rbn.thing);
+if(true) {
+    for(int i=0;i<2;i++) {
+        if(i==0) {
+            rbn.do = [](int b){
+                print("Hello world: ",b);
+            };
+        } else {
+            rbn.do = [](int a){
+                print("Gooodbye world: ",a);
+            }   
+        }
+        rbn.do(9);
+        rbn.do(19);
+    }
+}
+
+More testing:
+
+Ptr int nums; nums.push(3); nums.push(6); nums.push(9); nums.push(12);
+print(nums[2]);
+
+nums.put("Wub",8);
+nums << ["TWub",16];
+
+nums.qub = 29;
+
+print(nums.Wub);
+
+nums.iter([](n,i){
+    print(i,": ",n);
+    if(n-?) {
+        (&-n).celllabel(to_string(n));
+    }
+}).cells([](key,val){
+    if(!val-?) {
+        print("CELLS");
+    }
+    print(key,": ",val);
+});
+
+Even more testing:
+
+
+ColCol pool = utypes.add;
+pool["Numbers"].retype(int).push(9).push(10);
+
+print("Testing thing");
+Ribbon rbn = pool.add(Ptr);
+rbn.thing = "Hello";
+rbn.number = 18;
+rbn.other = "Goodbye";
+print(rbn.thing);
+print(rbn);
+print_col(rbn);
+print(*+rbn.as(Ptr).thing);
+
+print(rbn.?number," ",rbn.has("number")," ",rbn.has(number)," ",rbn.?numer," ",rbn.has("numer"));
+
+##
+    "int" {
+        on ".string" {
+            int old_type = ctx.node.type;
+            subprocess(ctx);
+            if(ctx.node.type!=old_type) {execut(ctx.node);}
+            else {print("Int stringing with ",ctx.node.c1.value.get);}
+        }
+    }
+    "string" {
+        on ".string" {
+            int old_type = ctx.node.type;
+            subprocess(ctx);
+            if(ctx.node.type!=old_type) {execut(ctx.node);}
+            else{print("String stringing with ",ctx.node.c1.value.get);}
+        }
+    }
+##
+
+rbn.iter([](e,i){
+    print(i,": ",e);
+    e."term";
+});
+
+    Ptr Ribbon rbs;
+    for(int i=0;i<3;i++) {
+        Ribbon rb(
+            names: "joe";
+            votes: 16;
+        );
+        rb.init(
+            fields: i;
+            numbers: [int];
+            more: [1,2,i,4];
+        );
+        rbs << rb;
+    }
+    rbs.iter([](r){
+        print(r.names," ",r.votes," ",r.fields);
+        r.numbers.push(6);
+        r.numbers.push(12);
+        r.more.iter([](i){
+            print("I: ",i);
+        });
+        r.numbers.iter([](nn){
+            print("NN: ",nn);
+        });
+    });
+
+
+
+if(true) {
+    string p = "hello";
+    print("P: ",p);
+
+    string s(
+        one: 'A';
+        two: 'B';
+        'C';
+        'D';
+        three: 'E';
+    );
+    print("S: ",s);
+    s.iter([](c){
+        print(": ",c);
+    });
+    s.cells([](key,c){
+        print(key,": ",c);
+    });
+}
+
+for(int i=0;i<3;i++) {
+    pool.Ribbon.init(
+        name: "Joe";
+        age: i;
+    );
+}
+dump_pool(pool,true);
+
+
+ColColCol sub = usubunits.add("savetest.gsu");
+for(int i=0;i<3;i++) {
+    sub.add.Ribbon(
+        name: "Franky"; age: 42;
+    );
+}
+dump_subunit(sub,true);
+
+
+Modern YAPA syntax:
+
+Ptr int nums; 
+nums.init(
+    One: 1,
+    Two: 2,
+    3,
+    Four: 4
+);
+nums.do(n => {
+    n=n*2;
+    if(n+?) print("NEXT: ",*+n);   
+}).cells((key,val) => print(key,": ",val));
+nums.keys(key => print(key));
+
+ColCol pool = utypes.add;
+Object thing = pool.Object(
+    Numbers: [4,8,6,12];
+    Name: "Joe";
+);
+thing.behaviour = [](int a){
+    print("A: ",a);
+};
+thing.behaviour(6);
+thing.Numbers.do(e => {
+    thing.behaviour(e);
+});
+thing.property = 28;
+print("Thing.property: ",thing.property);
+
+Object other; 
+other.init(
+    Number: 19;
+);
+other.Thing = thing;
+print(other.Number," : ",other.Thing.property);
+
+DEBUG_ROOT_X(1);
+dump_pool(pool,true);
+
+
+
+
+
+
+
+
+
+Challange from a stranger
+
+// bool expr_flag = false;
+// if(true) {
+//     Ptr int a; a.init(1,2,3);
+//     a.do(e => print("A: ",e));
+//     Ptr int b; b.init(0,1,12);
+//     b.do(e => print("B: ",e));
+
+//     b.validate_offests_and_lock(a);
+//     print("THIS SHOULD NOT PRINT");
+//     catch {
+//         expr_flag = true;
+//     }
+// }
+// print("Caught some exception while atetmpting to validate");
+// if(true) {
+//     Ptr int a; a.init(1,2,3,6);
+//     a.do(e => print("A_2: ",e));
+//     Ptr int b; b.init(0,1,2,3);
+//     b.do(e => print("B_2: ",e));
+
+//     b.validate_offests_and_lock(a);
+//     print("THIS SHOULD PRINT");
+// }
+
+
+// Test 2:
+
+// ##
+//     register "testing_qual";
+//     "testing_qual" {
+//         in executing {
+//             print("Testing qual fired!");
+//             print(SN#(ctx.node));
+//         }
+//     }
+// ##
+
+// if(true) {
+//     Ptr int a; 
+//     a.init(1,2,3);
+//     a.do(e => print("A: ",e));
+//     Ptr int b; 
+//     b.bind_by(offset_qual,a);
+//     b.bind_by(testing_qual,a);
+//     b.init(0,1,12);
+//     b.do(e => print("B: ",e));
+
+
+
+//     if(true) {
+//         b.assert_bound_by(offset_qual);
+//         a.assert_bound_by(offset_qual);
+//     }
+
+//     print("B getting 1:");
+//     print(b.get(1));
+//     print("B getting 2 (should be out of bounds): ");
+//     print(b.get(2));
+// }
+
+
+// Test 3:
+
+Ptr int a; a.init(0,1,2);
+int n = a.length;
+int k = a.length-1;
+rprint("This should pass");
+a[k];
+rprint("This should error");
+a[n];
+
+RESULT:
+
+TEST START
+This should pass
+This should error
+ERROR: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
+5|0|0|G3253 RESOLVING_PASS Source at: 2|499|0|G128 Index: 7 
+VAR_DECL a | Ptr_INIT a.init | EQUALS = | EQUALS = | rprint | Ptr_IDXGET [ | rprint | >Ptr_IDXGET [[IDENTIFIER a, IDENTIFIER n] | 
+  Node: 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] 
+  Left: 3|535|0 rprint rprint [4|580|0](UNDEFINED)(0,5)[C:1]{ROOT}[Q: 3|549|0>LPAREN, 3|540|0>RPAREN, 3|541|0>END] 
+  Root: 3|0|0|G812 ROOT ROOT [C:8] 
+  Qual: 3|562|0 length_relation_qual[4|581|0](ptr[32]:int[4]{ROOT:3|0|0|G812}) 
+  Value: [4|587|0](int[4]{ROOT:3|0|0|G812}) 
+ERROR IN RESOLVING_PASS ON LINE 7: Violated length relation, 3|543|0 Ptr_IDXGET:GROUP [ [4|607|0](int[4])(1,6)[C:2]{ROOT}[Q: 3|545|0>RBRACKET, 3|546|0>END] is defined by the length of the container it is attempting to index
+TEST FINISHED

@@ -130,6 +130,22 @@ inline std::string add_commas(int num) {
         }
         return escaped;
     }
+    inline std::string html_unescape_string(const std::string& content) {
+        std::string out;
+        for(size_t i = 0; i < content.size(); i++) {
+            if(content[i] == '&') {
+                if(content.compare(i, 4, "&lt;") == 0) {out += '<'; i += 3;}
+                else if(content.compare(i, 4, "&gt;") == 0) {out += '>';i += 3;}
+                else if(content.compare(i, 5, "&amp;") == 0) {out += '&';i += 4;}
+                else if(content.compare(i, 6, "&apos;") == 0) {out += '\'';i += 5;}
+                else if(content.compare(i, 6, "&quot;") == 0) {out += '"';i += 5;}
+                else if(content.compare(i, 6, "&nbsp;") == 0) {out += ' ';i += 5;}
+                else {out += '&';}
+            }
+            else {out += content[i];}
+        }
+        return out;
+    }
 
     inline std::string color_of_string(const std::string& str) {
         uint32_t hash = 0;

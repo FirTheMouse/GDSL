@@ -198,7 +198,9 @@ namespace Acorn {
         if(YAPA_level>1) {
             ctx.node().value().set((void*)&ptr);
         } else if(is_indirect) {
-            Ptr inner = *(Ptr*)resolve_ptr(ptr);
+            void* ptrdata = resolve_ptr(ptr);
+            CHECK_ERROR("Bad data at Ptr: ",Ptr_to_string(ptr,ptr.cachelevel));
+            Ptr inner = *(Ptr*)ptrdata;
             Col& innercol = resolve_to_col(inner);
             if(innercol.tag==function_id&&key.has_qual(lparen_id)) {
                 key.type(lambda_call_id);
@@ -677,6 +679,19 @@ namespace Acorn {
             ctx.node().value().set((void*)&p);
         });
 
+        overload_type(id,".'key'",label+"_KEY",make_value(string_id,sizeof(Ptr),0,char_id,1),[this,id,YAPA_level](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr p = ctx.node().getPtr(0);
+            string output = resolve_string_ticket(ctx.node());
+            Col& cellcol = resolve_YAPA_ptr(p,YAPA_level+1);
+            CCol* cell = cellcol.cells.find_cell(p[YAPA_level+1]);
+            if(cell) {
+                output = ((QString&)*cell).to_std();
+            } else {
+                output = "";
+            }
+        });
+
         auto do_iter = [this,YAPA_level,is_indirect](Context& ctx, Ptr& ptr, Node body, Node element, Node index, bool backwards = false, std::function<bool()> behaviour = nullptr) {
             Col& col = resolve_YAPA_ptr(ptr, YAPA_level);
             uint32_t len = col.length();
@@ -796,6 +811,9 @@ namespace Acorn {
             Node body = ctx.node().right().c0().scope();
             bool b = true;
             do_iter(ctx,ptr,body,arg.c0(),(arg.children().length()>1?arg.c1():deadptr),false,[&](){
+                if((!is_live(body.owner().value())||!is_live(body.owner().value().data_ptr()))&&body.children().length()==1) {
+                    body.owner().value(body.children()[0].value());
+                }
                 if(!body.owner().getBool()) {
                     b = false;
                     return false;
@@ -814,6 +832,9 @@ namespace Acorn {
             Node body = ctx.node().right().c0().scope();
             bool b = false;
             do_iter(ctx,ptr,body,arg.c0(),(arg.children().length()>1?arg.c1():deadptr),false,[&](){
+                if((!is_live(body.owner().value())||!is_live(body.owner().value().data_ptr()))&&body.children().length()==1) {
+                    body.owner().value(body.children()[0].value());
+                }
                 if(body.owner().getBool()) {
                     b = true;
                     return false;
@@ -832,6 +853,9 @@ namespace Acorn {
             Node body = ctx.node().right().c0().scope();
             bool b = true;
             do_iter(ctx,ptr,body,arg.c0(),(arg.children().length()>1?arg.c1():deadptr),false,[&](){
+                if((!is_live(body.owner().value())||!is_live(body.owner().value().data_ptr()))&&body.children().length()==1) {
+                    body.owner().value(body.children()[0].value());
+                }
                 if(body.owner().getBool()) {
                     b = false;
                     return false;
@@ -850,12 +874,60 @@ namespace Acorn {
             Node body = ctx.node().right().c0().scope();
             bool b = true;
             do_iter(ctx,ptr,body,arg.c0(),(arg.children().length()>1?arg.c1():deadptr),false,[&](){
+                if((!is_live(body.owner().value())||!is_live(body.owner().value().data_ptr()))&&body.children().length()==1) {
+                    body.owner().value(body.children()[0].value());
+                }
                 if(body.owner().getBool()) {
                     ctx.node().value(arg.c0().value());
                     return false;
                 }
                 return true;
             });
+        });
+
+        overload_type(id,list<std::string>{".'starts'(any)"}, label+"_STARTS", make_value(bool_id,1), [this,do_iter,id,YAPA_level](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr ptr = ctx.node().getPtr(0);
+            Value comp = ctx.node().right().c0().value();
+            bool b = false;
+            if(is_live(comp.data_ptr())) {
+                Col& mydata = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(is_ptr_alias(comp.type())) {
+                    Col& data = resolve_to_col(*(Ptr*)comp.get());
+                    if(data.tag==mydata.tag&&mydata.size>=data.size) {
+                        b = (memcmp(data.storage,mydata.storage,data.size)==0);
+                    }
+                } else {
+                    Col& data = comp.data_col();
+                    if(mydata.tag==comp.type()) {
+                        b = (memcmp(data.storage,mydata.storage,mydata.element_size)==0);
+                    }
+                }
+            }
+            ctx.node().value().set((void*)&b);
+        });
+        overload_type(id,list<std::string>{".'ends'(any)"}, label+"_ENDS", make_value(bool_id,1), [this,do_iter,id,YAPA_level](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr ptr = ctx.node().getPtr(0);
+            Value comp = ctx.node().right().c0().value();
+            bool b = false;
+            if(is_live(comp.data_ptr())) {
+                Col& mydata = resolve_YAPA_ptr(ptr,YAPA_level);
+                if(is_ptr_alias(comp.type())) {
+                    Col& data = resolve_to_col(*(Ptr*)comp.get());
+                    if(data.tag==mydata.tag&&mydata.size>=data.size) {
+                        uint32_t offset = mydata.size-data.size;
+                        b = (memcmp(data.storage,mydata.storage+offset,data.size)==0);
+                    }
+                } else {
+                    if(mydata.tag==comp.type()) {
+                        Col& data = comp.data_col();
+                        uint32_t offset = mydata.size-data.size;
+                        b = (memcmp(data.storage,mydata.storage+offset,mydata.element_size)==0);
+                    }
+                }
+            }
+            ctx.node().value().set((void*)&b);
         });
 
         //Needs a lot more extra handeling, this is just a stub for now.
@@ -870,7 +942,28 @@ namespace Acorn {
             Node body = ctx.node().right().c0().scope();
             bool b = true;
             do_iter(ctx,ptr,body,arg.c0(),(arg.children().length()>1?arg.c1():deadptr),true,[&](){
+                if((!is_live(body.owner().value())||!is_live(body.owner().value().data_ptr()))&&body.children().length()==1) {
+                    body.owner().value(body.children()[0].value());
+                }
                 if(body.owner().getBool()) {
+                    col.removeAt(arg.c0().value().data_ptr().sidx);
+                }
+                return true;
+            });
+            ctx.node().value().set((void*)&ptr);
+        });
+        overload_type(id,list<std::string>{".'filter'(=>)"}, label+"_FILTER", make_value(id,sizeof(Ptr)), [this,do_iter,id,YAPA_level](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr& ptr = ctx.node().getPtr(0);
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            Node arg = ctx.node().right().c0().left();
+            Node body = ctx.node().right().c0().scope();
+            bool b = true;
+            do_iter(ctx,ptr,body,arg.c0(),(arg.children().length()>1?arg.c1():deadptr),true,[&](){
+                if((!is_live(body.owner().value())||!is_live(body.owner().value().data_ptr()))&&body.children().length()==1) {
+                    body.owner().value(body.children()[0].value());
+                }
+                if(!body.owner().getBool()) {
                     col.removeAt(arg.c0().value().data_ptr().sidx);
                 }
                 return true;
@@ -1295,6 +1388,29 @@ namespace Acorn {
                 //recycle_column(ctx.node().getPtr(0));
             });
         }
+
+        overload_type(id,list<std::string>{".'fields'"}, label+"_FIELDS", make_value(ptr_id,sizeof(Ptr),0,int_id,4), [this,id,YAPA_level](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr& ptr = ctx.node().getPtr(0);
+            Ptr p = resolve_ticket(ctx.node(),4,int_id);
+            resolve_to_col(p).clear();
+            for(int i=ptr.cachelevel-1;i>=0;i--) {
+                uint32_t field = ptr[i+1];
+                resolve_to_col(p).push((void*)&field);
+            }
+            if(resolve_overload(ctx.root())) {
+                mark_and_skip(ctx);
+            }
+        });
+
+
+
+        overload_type(id,list<std::string>{".'info'"}, label+"_INFO", make_value(string_id,sizeof(Ptr)), [this,id,YAPA_level](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr& ptr = ctx.node().getPtr(0);
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            resolve_string_ticket(ctx.node()) = subunit_info((ColColCol&)col);
+        });
 
         overload_type(id,list<std::string>{".'clone'"}, label+"_CLONE", make_value(id,sizeof(Ptr)), [this,id,YAPA_level](Context& ctx){
             uint32_t old_type = ctx.node().type();

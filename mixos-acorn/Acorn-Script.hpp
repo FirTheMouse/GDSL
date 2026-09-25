@@ -42,7 +42,7 @@ namespace Acorn {
                     return n.getPtr();
                 } else {
                     Ptr p = deadptr;
-                    if(is_live(in)) {
+                    if(is_live(in)){
                         p = get_ticket(in,size,type);
                     } else {
                         p = get_ticket(name_store_id,size,type);

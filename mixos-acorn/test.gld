@@ -1,18 +1,29 @@
-int addOne(int n) {
-    return n+1;
-}
-
-int i = 5;
-print("Hello world ",addOne(i));
 
 ColColCol sub = usubunits.add("savetest.gsu");
-ColCol pool = sub.add;
-pool.add(int).init(1,Num: 2,3,Wub: 4,5);
+ColCol ledger = sub.add("Ledger");
+ledger.add(Ptr,"sessions").clear_lock;
+ColCol users = sub.add("Users");
+users.clear_lock;
+Object user_fir = users.Object(
+    "username": "Fir";
+    "password": "pswd123";
+    "votes": [Ptr];
+    "locked": false;
+    "authourized": true;
+).register("a0001");
+ledger["sessions"].put("Fir",user_fir);
 
-print(pool[0][3]);
-print(pool[0].Num);
+if(true) {
+    print("Unit ",unit_uid," running");
+    string username = "Joe";
+    string password = "Pswd";
+    RemotePtr database = make_new_remote;
+    print(database.transact(k => {
+        int i = 5;
+        print("I: ",i," Username: ",username," Password: ",password);
+        print(IV#k);
+        return "Stringy";
+    }));
+    print("Unit ",unit_uid," done");
+}
 
-//sub.save;
-
-//  ColColCol sub = load_subunit("savetest.gsu");
-//  dump_subunit(sub,true);

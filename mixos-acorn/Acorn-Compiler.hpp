@@ -622,11 +622,19 @@ namespace Acorn {
             #define UDCN(x)
         #endif
 
+        void deep_copy_value(Value v, Value o) {
+            v.copy(o,true); //This already does 90% of the work, all we're really doign here is marshaling ptr reallocation
+            //assign(v,o); //This was causing problems, come back later and revise this.
+        }
+
         //Make this cleaner later, probably when I do the normalization update and get more equipment
         //Experiment with a version that doesn't copy *evrything*, this is the biggest performance problem  right now in TwigSnap
-        void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table) {
+        void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table, g_ptr<Unit> n_unit = nullptr) {
             UDCN(uspan->newline("Deep copying "+node_info(o));)
             UDCN(uspan->newline("Initial fields");)
+            if(!n_unit) {
+                {std::lock_guard<std::mutex> lock(units_mutex); n_unit = units[n.unit];}
+            }
             n.type(o.type());
             n.sub_type(o.sub_type());
             n.name(o.name().to_std());
@@ -644,8 +652,8 @@ namespace Acorn {
                     //This again needs to be fxied up as *local* function calls do need this copy for aliasing
                     //Add to list of things to fix when normalization rolls around
                 } else {
-                    Node newc = make_node();
-                    deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table);
+                    Node newc = n_unit->make_node();
+                    deep_copy_node(newc, o.children()[i], value_alias_table, node_alias_table,n_unit);
                     n.children() << newc;
                 }
             }
@@ -653,11 +661,11 @@ namespace Acorn {
             UDCN(uspan->newline("Copy quals");)
             n.quals().clear();
             for(int i = 0; i < o.quals().length(); i++) {
-                if(o.quals()[i].mute()) {
+                if(o.quals()[i].mute()&&n.unit==o.unit) {
                     n.quals() << o.quals()[i];
                 } else {
-                    Node newq = make_node();
-                    deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table);
+                    Node newq = n_unit->make_node();
+                    deep_copy_node(newq, o.quals()[i], value_alias_table, node_alias_table,n_unit);
                     n.quals() << newq;
                 }
             }
@@ -670,7 +678,7 @@ namespace Acorn {
                 if(is_live(o.value())) {
                     if(!o.has_qual(global_qual)) {
                         if(!is_live(n.value())) {
-                            n.value(make_value());
+                            n.value(n_unit->make_value());
                         }
                         deep_copy_value(n.value(),o.value());
                     } else {
@@ -689,7 +697,7 @@ namespace Acorn {
                     //print("Aliasing as ",aliased.idx);
                     n.scopes() << aliased;
                 } else if(o.scopes()[i].owner()==o) {
-                    Node news = make_node();
+                    Node news = n_unit->make_node();
                     n.scopes() << news;
                     //print("Deep copying as ",news.idx);
                     if(n.type()==func_decl_id) {
@@ -698,7 +706,7 @@ namespace Acorn {
                         node_alias_table.put(o.scopes()[i].idx, n.scopes()[i]);
                         //print("Put ",o.scopes()[i].idx," node alias for : ",node_info(n.scopes()[i]));
                     }
-                    deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table);
+                    deep_copy_node(news, o.scopes()[i], value_alias_table, node_alias_table,n_unit);
                     news.owner(n);
                 } else {
                     //print("Leaving untouched");
@@ -868,6 +876,7 @@ namespace Acorn {
         size_t equals_id = add_binary_operator('=', "EQUALS", 1, 1);
         size_t star_id = add_binary_operator('*',"STAR", 5, 7);
         size_t slash_id = add_binary_operator('/',"SLASH", 4, 5);
+        size_t percent_id = add_binary_operator('%',"PERCENT", 4, 5);
         size_t caret_id = add_binary_operator('^',"CARET", 8, 4);
         size_t dollar_id = add_binary_operator('$',"DOLLAR", 8, 9);
         size_t amp_id = add_binary_operator('&',"AMPERSAND", 4, 8);
@@ -1624,6 +1633,31 @@ namespace Acorn {
             start_stage(old_stage);
         }
 
+        void standard_direct_walk(Node root) {
+            Stage* old_stage = active_stage;
+            if(!walk_handlers.default_function) {
+                walk_handlers.default_function = [this](Context& ctx){standard_sub_process(ctx);};
+            }
+            start_stage(walk_handlers);
+            standard_direct_pass(root);
+            walk_handlers.handlers.clear();
+            walk_handlers.default_function = nullptr;
+            start_stage(old_stage);
+        }
+
+        uint32_t derive_scope_hash(Node root) {
+            uint32_t hash = 5381;
+            walk_handlers.default_function = [this,&hash](Context& ctx){
+                Col& name = ctx.node().name_col();
+                for(uint32_t i = 0; i < name.length(); i++) {
+                    hash = ((hash << 5) + hash) + *(uint8_t*)name.qget(i);
+                }
+                standard_sub_process(ctx);
+            };
+            standard_direct_walk(root);
+            return mix32_final(hash);
+        }
+
 
         inline void open_signature(std::string& signature) {
             if(!signature.empty()) {
@@ -2279,10 +2313,7 @@ namespace Acorn {
             }
         }
 
-        void deep_copy_value(Value v, Value o) {
-            v.copy(o,true); //This already does 90% of the work, all we're really doign here is marshaling ptr reallocation
-            //assign(v,o); //This was causing problems, come back later and revise this.
-        }
+
 
 
         Node instantiate_template_scope(Node call, Node decl, Context& ctx, bool args_already_synced = false) {
@@ -3282,6 +3313,27 @@ namespace Acorn {
                 int result =      
                     *(int*)p1
                     /
+                    *(int*)p2
+                ;
+                ctx.node().value().set((void*)&result);
+            };
+
+            r_handlers[percent_id] = [this](Context& ctx){
+                if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
+                standard_sub_process(ctx);
+                resolve_overload(ctx);
+                if(!is_live(ctx.node().value())) ctx.node().value(make_value(int_id,4));
+            };
+            x_handlers[percent_id] = [this](Context& ctx){
+                uint32_t old_type = ctx.node().type();
+                standard_sub_process(ctx);
+                if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+                void* p1 = ctx.node().children()[0].value().get();
+                void* p2 = ctx.node().children()[1].value().get();
+                DEBUG_ONLY(if(ERROR_FLAG){return;})
+                int result =      
+                    *(int*)p1
+                    %
                     *(int*)p2
                 ;
                 ctx.node().value().set((void*)&result);

@@ -1551,6 +1551,7 @@ namespace Acorn {
                 if(ptr_colors.hasKey(key)) {ptr_colors.get(key)(pstring);}
                 return pstring;
             #else
+                //ptr_to_string(p.cache)+"|"
                 return Ptr_to_string(p,p.cachelevel)+(p.gen>0?"|G"+std::to_string(p.gen):"");
             #endif
         }

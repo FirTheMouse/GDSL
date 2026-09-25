@@ -65,6 +65,7 @@ namespace Acorn {
     }
 
     inline uint32_t hashBytes(const void* data, uint32_t size) {
+        if(size==4) {return *(uint32_t*)data;}
         uint32_t hash = 5381;
         const uint8_t* bytes = (const uint8_t*)data;
         for(uint32_t i = 0; i < size; i++) {
@@ -195,25 +196,25 @@ namespace Acorn {
             memset(this, 0, sizeof(Ptr));
             subunit = _subunit; pool = _pool; idx = _idx; sidx = _sidx;
             cache = _cache; cachelevel = 4;
-            specialization = 2;
+            specialization = 1;
         }
         Ptr(void* _cache, uint32_t _pool, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             pool = _pool; idx = _idx; sidx = _sidx;
             cache = _cache; cachelevel = 3;
-            specialization = 2;
+            specialization = 1;
         }
         Ptr(void* _cache, uint32_t _idx, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             idx = _idx; sidx = _sidx;
             cache = _cache; cachelevel = 2;
-            specialization = 2;
+            specialization = 1;
         }
         Ptr(void* _cache, uint32_t _sidx) {
             memset(this, 0, sizeof(Ptr));
             sidx = _sidx;
             cache = _cache; cachelevel = 1;
-            specialization = 2;
+            specialization = 1;
         }
         Ptr() { memset(this, 0, sizeof(Ptr)); specialization = 1;}
         Ptr(uint8_t spec) {memset(this, 0, sizeof(Ptr)); specialization = spec;}
@@ -771,6 +772,20 @@ namespace Acorn {
             else {throw_error("QCellCol:find_cell_idx no cell was found for idx ",idx); return 0;}
         }
 
+        CCol* getCellByHash(uint32_t h) {
+            if(capacity == 0) return nullptr;
+            uint32_t pos = h%capacity;
+            uint32_t traversed = 0;
+            while(traversed<capacity) {
+                CCol& c = get(pos);
+                if(!c.storage) {return nullptr;}
+                if(c.hash==h) {return &c;}
+                traversed++;
+                pos = (pos+1)%capacity;
+            }
+            return nullptr;
+        }
+
         CCol* find_cell(const void* key, uint32_t key_size) {
             if(capacity == 0) return nullptr;
             uint32_t h = hashBytes(key, key_size);
@@ -925,6 +940,14 @@ namespace Acorn {
             c.index = idx;
             return c;
         }
+        CCol makecell(uint32_t idx, uint32_t h) {
+            CCol c;
+            uint8_t dummy = 1;
+            c.store(&dummy, 1);
+            c.index = idx;
+            c.hash = h;
+            return c;
+        }
 
         void qput(const void* element, const void* key, uint32_t key_size, uint32_t key_tag) {
             CCol c = makecell(length(),key,key_size,key_tag);
@@ -965,6 +988,21 @@ namespace Acorn {
             else return get(idx);
         }
         inline bool hasKey(const void* key, uint32_t key_size) {return cells.hasKey(key,key_size);}
+        
+        inline bool hasKeyByHash(uint32_t h) {return cells.getCellByHash(h)!=nullptr;}
+        uint32_t getidxByHash(uint32_t h) {
+            CCol* c = cells.getCellByHash(h);
+            if(c) {return c->index;} 
+            else {
+                throw_error("Col:getidxByHash Hash not found: ",h);
+                return 0;
+            }
+        }
+        inline void* getByHash(uint32_t h) {
+            uint32_t idx = getidxByHash(h);
+            if(ERROR_FLAG) {return nullptr;}
+            else return get(idx);
+        }
 
         void put(const std::string& str, const void* element, uint32_t tag = 0) {qput(element,str.data(),str.length(),tag);}
         void* get(const std::string& str) {return get(str.data(), str.length());}

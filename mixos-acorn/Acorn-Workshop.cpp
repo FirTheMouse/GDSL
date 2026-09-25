@@ -11,8 +11,6 @@ namespace Acorn {
                 sync_identifier(ctx);
             }
         });
-
-
         add_function("fill_capture",[this](Context& ctx){
             standard_sub_process(ctx);
             string output = resolve_string_ticket(ctx.node());
@@ -28,6 +26,39 @@ namespace Acorn {
             }
             output = result;
         },sizeof(Ptr),string_id);
+
+        
+
+        add_function("run_in_new_unit",[this](Context& ctx){
+            standard_sub_process(ctx);
+            g_ptr<Workshop_Unit> workshop = make_unit<Workshop_Unit>();
+            workshop->uargs << uargs;
+            std::string unitcode = ctx.node().getString(0).to_std();
+            workshop->start_thread([workshop, unitcode]() mutable {
+                workshop->run(workshop->process(unitcode));
+            });
+        });
+
+        add_function("is_value_ptr",[this](Context& ctx){
+            standard_sub_process(ctx);
+            bool b = is_ptr_alias(ctx.node().c0().value().type());
+            ctx.node().set((void*)&b);
+        },1,bool_id);
+        add_function("YAPA_level_of_value",[this](Context& ctx){
+            standard_sub_process(ctx);
+            uint32_t myid = ctx.node().c0().value().type();
+            int i = -1;
+            for(int YAPA_level=0;YAPA_level<YAPAs.length();YAPA_level++) {
+                if(i>0) {break;}
+                for(int y=0;y<YAPAs[YAPA_level].length();y++) {
+                    if(YAPAs[YAPA_level][y]==myid) {
+                        i = YAPA_level; break;
+                    }
+                }
+            }
+            ctx.node().set((void*)&i);
+        },4,int_id);
+
 
         add_function("pebble_refragment",[this](Context& ctx){
             standard_sub_process(ctx);

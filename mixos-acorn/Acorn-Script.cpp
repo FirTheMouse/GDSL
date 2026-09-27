@@ -1413,14 +1413,19 @@ namespace Acorn {
         });
 
         overload_type(id,list<std::string>{".'clone'"}, label+"_CLONE", make_value(id,sizeof(Ptr)), [this,id,YAPA_level](Context& ctx){
-            uint32_t old_type = ctx.node().type();
-            standard_sub_process(ctx);
-            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            if(YAPA_sub_process(ctx,id)) return;
             Ptr& ptr = ctx.node().getPtr(0);
-            CHECK_ERROR("Invalid Ptr for "+labels[id]+" clone");
             Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
-            
-            ctx.node().value().set((void*)&ptr);
+            Ptr p = get_ticket(ptr,ctx.node().value().size(),ctx.node().value().type());
+
+            Col& dest = resolve_to_col(p);
+            Col& src = resolve_to_col(ptr);
+            dest.clear(); dest.resize(src.size);
+            dest.tag = src.tag; dest.element_size = src.element_size; dest.specialization = src.specialization;
+            dest.cells = src.cells;
+            memcpy(dest.storage,src.storage,src.size);
+
+            ctx.node().value().set((void*)&p);
         });
 
 

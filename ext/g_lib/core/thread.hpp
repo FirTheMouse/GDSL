@@ -93,6 +93,44 @@ void run(std::function<void()> toRun,float speed = -1) {
     impl = std::thread(&Thread::simulationLoop, this);
 }
 
+void run_blocking_with_stack_size(std::function<void()> func, size_t stack_size) {
+    shouldStopThread = false;
+#if defined(__APPLE__) || defined(__linux__)
+    auto* func_ptr = new std::function<void()>(std::move(func));
+
+    auto* attr = new pthread_attr_t;
+    pthread_attr_init(attr);
+    pthread_attr_setstacksize(attr, stack_size);
+
+    auto* raw_thread = new pthread_t;
+    int result = pthread_create(raw_thread, attr, [](void* arg) -> void* {
+        auto* f = static_cast<std::function<void()>*>(arg);
+        (*f)();
+        delete f;
+        return nullptr;
+    }, func_ptr);
+
+    pthread_attr_destroy(attr);
+    delete attr;
+
+    if (result != 0) {
+        std::cerr << "[ERROR] pthread_create failed with stack_size="
+                  << stack_size << ", error=" << result << std::endl;
+        delete func_ptr;
+        delete raw_thread;
+        impl = std::thread([this, func]() { func(); });
+        return;
+    }
+
+    impl = std::thread([raw_thread]() {
+        pthread_join(*raw_thread, nullptr);
+        delete raw_thread;
+    });
+#else
+    std::cerr << "[WARN] run_blocking_with_stack_size: custom stack size not supported on this platform, using default." << std::endl;
+    impl = std::thread([this, func]() { func(); });
+#endif
+}
 void run_raw(std::function<void()> func) {
     shouldStopThread = false;
     impl = std::thread([this, func]() {

@@ -59,6 +59,68 @@ namespace Acorn {
             ctx.node().set((void*)&i);
         },4,int_id);
 
+        r_handlers[group_id] = [this](Context& ctx){
+            if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
+            standard_sub_process(ctx);
+            resolve_overload(ctx);
+            if(!is_live(ctx.node().value())) {
+                if(ctx.node().children().length()>0) {
+                    Value firstval = ctx.node().c0().value();
+                    ctx.node().value(make_value(ptr_id,sizeof(Ptr),0,firstval.type(),firstval.size()));
+                } else {
+                    ctx.node().value(make_value(ptr_id,sizeof(Ptr),0,duck_id,0));
+                }
+            }
+        };
+        x_handlers[group_id] = [this](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            
+            uint32_t children_count = ctx.node().children().length();
+            if(ctx.node().sub_type()==duck_id) {
+                for(uint32_t i=0;i<children_count;i++) {
+                    Value childval = ctx.node().children()[i].value();
+                    if(childval.type()!=duck_id) {
+                        ctx.node().value().sub_type(childval.type());
+                        ctx.node().value().sub_size(childval.size());
+                        break;
+                    }
+                }
+            }
+            if(ctx.node().sub_type()==duck_id) {
+                throw_error("Group can not intilize because none of it's values have a discernible type");
+                return;
+            }   
+
+            Col& col = resolve_to_col(resolve_ticket(ctx.node(),ctx.node().value().sub_size(),ctx.node().value().sub_type()));
+            col.clear();
+            col.reserve(children_count*ctx.node().value().sub_size());
+            for(uint32_t i=0;i<children_count;i++) {
+                col.push(ctx.node().get(i));
+            }
+        };
+
+        add_function("children_to_string",[this](Context& ctx){
+            resolve_string_ticket(ctx.node()) = children_to_string(ctx.node().getContext(0));
+        },sizeof(Ptr),string_id);
+
+        add_function("CHECK_STACK",[this](Context& ctx){
+            pthread_t self = pthread_self();
+            void* stack_addr = pthread_get_stackaddr_np(self); // top of stack (highest address)
+            size_t stack_size = pthread_get_stacksize_np(self); // total size
+        
+            int local_var;
+            void* current_sp = &local_var;
+        
+            // stack grows down, stack_addr is the high end, so bottom = stack_addr - stack_size
+            void* stack_bottom = (char*)stack_addr - stack_size;
+            ptrdiff_t remaining = (char*)current_sp - (char*)stack_bottom;
+        
+            printf("Stack total: %zu bytes (%.2f MB), remaining to bottom: %ld bytes (%.2f MB)\n",
+                   stack_size, stack_size / (1024.0*1024.0),
+                   remaining, remaining / (1024.0*1024.0));
+        });
 
         add_function("pebble_refragment",[this](Context& ctx){
             standard_sub_process(ctx);

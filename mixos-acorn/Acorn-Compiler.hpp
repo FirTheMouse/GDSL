@@ -2522,7 +2522,7 @@ namespace Acorn {
             }
         }
 
-        std::string children_to_string(Context& ctx, node_col children) {
+        std::string children_to_string(Context ctx) {
             std::string to_print = "";
             for(int i=0;i<ctx.node().children().length();i++) {
                 Node c = ctx.node().children()[i];
@@ -2539,11 +2539,11 @@ namespace Acorn {
         }
 
         uint32_t print_id = add_function("print",[this](Context& ctx){ 
-            print(children_to_string(ctx,ctx.node().children()));
+            print(children_to_string(ctx));
         });
         uint32_t return_id = make_tokenized_keyword("return");
         uint32_t stageprint_id = add_function("stageprint",[this](Context& ctx){ 
-            print("[",active_stage->label,"] ",children_to_string(ctx,ctx.node().children()));
+            print("[",active_stage->label,"] ",children_to_string(ctx));
         });
 
         uint32_t true_id = add_function("true",[this](Context& ctx){

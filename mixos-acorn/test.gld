@@ -1,29 +1,20 @@
-
-ColColCol sub = usubunits.add("savetest.gsu");
-ColCol ledger = sub.add("Ledger");
-ledger.add(Ptr,"sessions").clear_lock;
-ColCol users = sub.add("Users");
-users.clear_lock;
-Object user_fir = users.Object(
-    "username": "Fir";
-    "password": "pswd123";
-    "votes": [Ptr];
-    "locked": false;
-    "authourized": true;
-).register("a0001");
-ledger["sessions"].put("Fir",user_fir);
-
-if(true) {
-    print("Unit ",unit_uid," running");
-    string username = "Joe";
-    string password = "Pswd";
-    RemotePtr database = make_new_remote;
-    print(database.transact(k => {
-        int i = 5;
-        print("I: ",i," Username: ",username," Password: ",password);
-        print(IV#k);
-        return "Stringy";
-    }));
-    print("Unit ",unit_uid," done");
+Ptr listOf(int depth) {
+    if(depth<2) {
+        return listOf(2);
+    }
+    Ptr nums = [1,2,3,4,5];
+    return nums.clone;
 }
 
+void main {
+    Ptr int nums = listOf(0); nums.push(18);
+    Ptr int tums = listOf(0); tums.push(19);
+
+    Ptr numsf = nums.clone.filter(n => {n<4});
+    numsf.do(c =>  print((&c).celllabel,": ",c));
+    print("NUMS: ");
+    nums.do(c =>  print((&c).celllabel,": ",c));
+    print("TUMS: ");
+    tums.do(c =>  print((&c).celllabel,": ",c));
+}
+main;

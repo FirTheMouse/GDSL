@@ -1677,13 +1677,13 @@ namespace Acorn {
             });
 
             add_function("newline",[this](Context& ctx){
-                uspan->newline(children_to_string(ctx,ctx.node().children()));
+                uspan->newline(children_to_string(ctx));
             });
             add_function("endline",[this](Context& ctx){
                 uspan->endline();
             });
             add_function("log",[this](Context& ctx){
-                uspan->log(children_to_string(ctx,ctx.node().children()));
+                uspan->log(children_to_string(ctx));
             });
             add_function("udump",[this](Context& ctx){
                 uspan->print_all();
@@ -1722,22 +1722,22 @@ namespace Acorn {
             },sizeof(Ptr),string_id);
 
             add_function("tstart",[this](Context& ctx){ //uspan_time_start
-                uspan->start_timer(children_to_string(ctx,ctx.node().children()));
+                uspan->start_timer(children_to_string(ctx));
             });
             add_function("ttime",[this](Context& ctx){ //uspan_time_end
                 string output = resolve_string_ticket(ctx.node());
-                output = ftime(uspan->get_time(children_to_string(ctx,ctx.node().children())));
+                output = ftime(uspan->get_time(children_to_string(ctx)));
             },sizeof(Ptr),string_id);
             add_function("ttime_s",[this](Context& ctx){
-                int time = (int)uspan->timers.get(children_to_string(ctx,ctx.node().children())).time_s();
+                int time = (int)uspan->timers.get(children_to_string(ctx)).time_s();
                 ctx.node().value().set((void*)&time);
             },4,int_id);
             add_function("tstop",[this](Context& ctx){ //uspan_time_end
                 string output = resolve_string_ticket(ctx.node());
-                output = ftime(uspan->end_timer(children_to_string(ctx,ctx.node().children())));
+                output = ftime(uspan->end_timer(children_to_string(ctx)));
             },sizeof(Ptr),string_id);
             add_function("tstopp",[this](Context& ctx){ //uspan_time_end + print
-                std::string str = children_to_string(ctx,ctx.node().children());
+                std::string str = children_to_string(ctx);
                 print(str,": ",ftime(uspan->end_timer(str)));
             });
 

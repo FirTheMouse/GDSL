@@ -27,12 +27,6 @@ namespace Acorn {
             output = result;
         },sizeof(Ptr),string_id);
 
-        add_function("type_of",[this](Context& ctx){
-            standard_sub_process(ctx);
-            uint32_t type = ctx.node().c0().value().type();
-            ctx.node().value().set((void*)&type);
-        },4,int_id);
-
         
 
         add_function("run_in_new_unit",[this](Context& ctx){
@@ -72,9 +66,12 @@ namespace Acorn {
             if(!is_live(ctx.node().value())) {
                 if(ctx.node().children().length()>0) {
                     Value firstval = ctx.node().c0().value();
-                    ctx.node().value(make_value(ptr_id,sizeof(Ptr),0,firstval.type(),firstval.size()));
+                    ctx.node().value(make_value(ctx.root(),ptr_id,sizeof(Ptr)));
+                    ctx.node().value().sub_type(firstval.type());
+                    ctx.node().value().sub_size(firstval.size());
                 } else {
-                    ctx.node().value(make_value(ptr_id,sizeof(Ptr),0,duck_id,0));
+                    ctx.node().value(make_value(ctx.root(),ptr_id,sizeof(Ptr)));
+                    ctx.node().value().sub_type(duck_id);
                 }
             }
         };
@@ -111,22 +108,22 @@ namespace Acorn {
             resolve_string_ticket(ctx.node()) = children_to_string(ctx.node().getContext(0));
         },sizeof(Ptr),string_id);
 
-        // add_function("CHECK_STACK",[this](Context& ctx){
-        //     pthread_t self = pthread_self();
-        //     void* stack_addr = pthread_get_stackaddr_np(self); // top of stack (highest address)
-        //     size_t stack_size = pthread_get_stacksize_np(self); // total size
+        add_function("CHECK_STACK",[this](Context& ctx){
+            pthread_t self = pthread_self();
+            void* stack_addr = pthread_get_stackaddr_np(self); // top of stack (highest address)
+            size_t stack_size = pthread_get_stacksize_np(self); // total size
         
-        //     int local_var;
-        //     void* current_sp = &local_var;
+            int local_var;
+            void* current_sp = &local_var;
         
-        //     // stack grows down, stack_addr is the high end, so bottom = stack_addr - stack_size
-        //     void* stack_bottom = (char*)stack_addr - stack_size;
-        //     ptrdiff_t remaining = (char*)current_sp - (char*)stack_bottom;
+            // stack grows down, stack_addr is the high end, so bottom = stack_addr - stack_size
+            void* stack_bottom = (char*)stack_addr - stack_size;
+            ptrdiff_t remaining = (char*)current_sp - (char*)stack_bottom;
         
-        //     printf("Stack total: %zu bytes (%.2f MB), remaining to bottom: %ld bytes (%.2f MB)\n",
-        //            stack_size, stack_size / (1024.0*1024.0),
-        //            remaining, remaining / (1024.0*1024.0));
-        // });
+            printf("Stack total: %zu bytes (%.2f MB), remaining to bottom: %ld bytes (%.2f MB)\n",
+                   stack_size, stack_size / (1024.0*1024.0),
+                   remaining, remaining / (1024.0*1024.0));
+        });
 
         add_function("pebble_refragment",[this](Context& ctx){
             standard_sub_process(ctx);

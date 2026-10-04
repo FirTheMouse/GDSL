@@ -629,11 +629,11 @@ namespace Acorn {
 
         //Make this cleaner later, probably when I do the normalization update and get more equipment
         //Experiment with a version that doesn't copy *evrything*, this is the biggest performance problem  right now in TwigSnap
-        void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table, g_ptr<Unit> n_unit = nullptr) {
+        void deep_copy_node(Node n, Node o, map<uint32_t,Value>& value_alias_table, map<uint32_t,Node>& node_alias_table, g_ptr<Nodenet_Unit> n_unit = nullptr) {
             UDCN(uspan->newline("Deep copying "+node_info(o));)
             UDCN(uspan->newline("Initial fields");)
             if(!n_unit) {
-                {std::lock_guard<std::mutex> lock(units_mutex); n_unit = units[n.unit];}
+                {std::lock_guard<std::mutex> lock(units_mutex); n_unit = as<Nodenet_Unit>(units[n.unit]);}
             }
             n.type(o.type());
             n.sub_type(o.sub_type());
@@ -3424,10 +3424,9 @@ namespace Acorn {
 
 
         void test_compiler() {
-            Node root = tokenize("[](int i, int b)");
+            Node root = tokenize("int i = 5; print(i);");
             start_stage(a_handlers);
             standard_direct_pass(root);
-            uspan->print_all();
             print(node_to_string(root));
         }
     };

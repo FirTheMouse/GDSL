@@ -97,7 +97,12 @@ namespace Acorn {
             standard_sub_process(ctx);
             string str = (string&)*(Ptr*)ctx.node().children()[0].value().get();
             Node n = compile_literal(str.to_std());
+            if(is_live(ctx.node().value())) {
+                recycle_value(ctx.node().value());
+            }
             ctx.node().value(n.value());
+            n.value(deadptr);
+            recycle_node(n.in_scope());
         },0,duck_id);
         uint32_t to_type_id = make_tokenized_keyword("to_type");
         uint32_t DEBUG_ROOT_id = make_tokenized_keyword("DEBUG_ROOT");
@@ -717,6 +722,10 @@ namespace Acorn {
             standard_sub_process(ctx);
             Context c = (Context&)*(Ptr*)ctx.node().children()[0].value().get();
             standard_sub_process(c);
+        });
+        uint32_t std_contprocess_id = add_function("contprocess",[this](Context& ctx){
+            Context c = (Context&)*(Ptr*)ctx.node().children()[0].value().get();
+            standard_travel_pass(c.node().scope(),c.sub());
         });
 
         //Investigate why this isn't working later
@@ -1972,27 +1981,27 @@ namespace Acorn {
                     }
                 }
             };
-            x_handlers[prefix_node_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&is_first_type_qual(ctx)&&!is_live(ctx.value().data_ptr())) {
-                    Node n = make_node();
-                    ctx.node().value().init_data();
-                    ctx.value().set((void*)&n);
-                }
-            };
-            x_handlers[prefix_value_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&is_first_type_qual(ctx)) {
-                    Value v = make_value();
-                    ctx.node().value().init_data();
-                    ctx.value().set((void*)&v);
-                }
-            };
-            x_handlers[prefix_context_id] = [this](Context& ctx){
-                if(is_live(ctx.value())&&is_first_type_qual(ctx)) {
-                    Context c = make_context();
-                    ctx.node().value().init_data();
-                    ctx.value().set((void*)&c);
-                }
-            };
+            // x_handlers[prefix_node_id] = [this](Context& ctx){
+            //     if(is_live(ctx.value())&&is_first_type_qual(ctx)&&!is_live(ctx.value().data_ptr())) {
+            //         Node n = make_node();
+            //         ctx.node().value().init_data();
+            //         ctx.value().set((void*)&n);
+            //     }
+            // };
+            // x_handlers[prefix_value_id] = [this](Context& ctx){
+            //     if(is_live(ctx.value())&&is_first_type_qual(ctx)) {
+            //         Value v = make_value();
+            //         ctx.node().value().init_data();
+            //         ctx.value().set((void*)&v);
+            //     }
+            // };
+            // x_handlers[prefix_context_id] = [this](Context& ctx){
+            //     if(is_live(ctx.value())&&is_first_type_qual(ctx)) {
+            //         Context c = make_context();
+            //         ctx.node().value().init_data();
+            //         ctx.value().set((void*)&c);
+            //     }
+            // };
 
             x_handlers[literal_id] = [this](Context& ctx){
                 std::string name = ctx.node().name().to_std();
@@ -2304,7 +2313,6 @@ namespace Acorn {
                 ctx.state(standard_travel_pass(ctx.node().scopes()[0]));
             };
 
- 
             r_handlers[in_id] = [this](Context& ctx){
                 if(!ctx.node().children().empty()&&is_live(ctx.node().in_scope())&&is_live(ctx.node().in_scope().owner())) {
                     ctx.node().quals() << copy_as_token(ctx.node());
@@ -2332,11 +2340,8 @@ namespace Acorn {
                     start_stage(old_stage);
                     
                 };
-
-                uint32_t stage_id = *(uint32_t*)types[handler_type_id][stages_id].get(stage_name);
-                while(types[handler_type_id][target_type].length()<=stage_id) types[handler_type_id][target_type].push_default();
                 Node target_scope = this_node.scopes()[0];
-                types[handler_type_id][target_type].set(stage_id,(void*)&target_scope);
+                types[handler_type_id][target_type].put(stage_name,(void*)&target_scope);
             };
 
             n_handlers[on_id] = [this](Context& ctx){ //Add a proper n_take_right later, like we had in GDSL
@@ -3039,48 +3044,48 @@ namespace Acorn {
 
             add_function("STAMP_SOURCE",[this](Context& ctx){
 
-                Node node = ctx.node().in_scope();
-                float old_at_z = at_z;
-                if(ctx.node().children().length()==1) {
-                    standard_sub_process(ctx);
-                    node = ctx.node().getNode(0);
-                    if(node.z()>0) {
-                        at_z = node.z();
-                    }
-                }
+                // Node node = ctx.node().in_scope();
+                // float old_at_z = at_z;
+                // if(ctx.node().children().length()==1) {
+                //     standard_sub_process(ctx);
+                //     node = ctx.node().getNode(0);
+                //     if(node.z()>0) {
+                //         at_z = node.z();
+                //     }
+                // }
 
-                writeFile("printout.txt",fnodenet_to_string(node,Stamper{[this](Node n, list<int>& offsets){
-                    std::string to_return = n.name().to_std();
-                    if(n.type()!=0) {
-                        list<char> extra_escapes; 
-                        if(is_live(n.value())&&n.value().type()==string_id) {
-                            if(!n.quals().empty()&&n.quals()[0].name().to_std()=="'") {
-                                extra_escapes << '\'';
-                            } else {
-                                extra_escapes << '"';
-                            }
-                        }
-                        std::string nreturn = escape_string(to_return,false,extra_escapes);
-                        //std::string nreturn = "<span class='"+labels[n.type()]+"'>"+to_return+"</span>";
-                        while((int)n.y()>=offsets.length()) {offsets<<0;}
-                        n.x(n.x()+offsets[(int)n.y()]);
-                        offsets[(int)n.y()]+=nreturn.length()-to_return.length();
-                        to_return = nreturn;
-                    }
-                    return to_return;
-                },[this](Node n){
-                    list<Node> stamps;
-                    map<uint64_t,bool> visited;
-                    Log::Line l; l.start();
-                    collect_stamps(n,stamps,visited,false);
-                    stamps.sort([](Node a, Node b){
-                        int ay = (int)a.y(), by = (int)b.y();
-                        if(ay != by) return ay < by;
-                        return (int)a.x() < (int)b.x();
-                    });
-                    return stamps;
-                }}));
-                at_z = old_at_z;
+                // writeFile("printout.txt",fnodenet_to_string(node,Stamper{[this](Node n, list<int>& offsets){
+                //     std::string to_return = n.name().to_std();
+                //     if(n.type()!=0) {
+                //         list<char> extra_escapes; 
+                //         if(is_live(n.value())&&n.value().type()==string_id) {
+                //             if(!n.quals().empty()&&n.quals()[0].name().to_std()=="'") {
+                //                 extra_escapes << '\'';
+                //             } else {
+                //                 extra_escapes << '"';
+                //             }
+                //         }
+                //         std::string nreturn = escape_string(to_return,false,extra_escapes);
+                //         //std::string nreturn = "<span class='"+labels[n.type()]+"'>"+to_return+"</span>";
+                //         while((int)n.y()>=offsets.length()) {offsets<<0;}
+                //         n.x(n.x()+offsets[(int)n.y()]);
+                //         offsets[(int)n.y()]+=nreturn.length()-to_return.length();
+                //         to_return = nreturn;
+                //     }
+                //     return to_return;
+                // },[this](Node n){
+                //     list<Node> stamps;
+                //     map<uint64_t,bool> visited;
+                //     Log::Line l; l.start();
+                //     collect_stamps(n,stamps,visited,false);
+                //     stamps.sort([](Node a, Node b){
+                //         int ay = (int)a.y(), by = (int)b.y();
+                //         if(ay != by) return ay < by;
+                //         return (int)a.x() < (int)b.x();
+                //     });
+                //     return stamps;
+                // }}));
+                // at_z = old_at_z;
             });
 
             e_handlers[make_tokenized_keyword("LBF_E")] = [this](Context& ctx){print("Launching blackfeather in e stage"); launch_blackfeather(unit_root);};
@@ -3144,10 +3149,6 @@ namespace Acorn {
             ERROR_FLAG = true;
         }
 
-        void deresolve_nodes(Node root) {
-            walk_nodenet(root,[](Node n){n.resolved(false);});
-        }
-
         Node compile_literal(const std::string& literal) {
             float old_at_x = at_x; float old_at_y = at_y;
             at_x = 0.0f; at_y =0.0f;
@@ -3166,6 +3167,7 @@ namespace Acorn {
             t_handlers.run(n.type())(ctx);
             m_handlers.run(n.type())(ctx);
             x_handlers.run(n.type())(ctx);
+            deep_recycle_context(ctx);
             return n;
         }
 

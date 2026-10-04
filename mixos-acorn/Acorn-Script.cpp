@@ -999,6 +999,7 @@ namespace Acorn {
                     }   
                 }
                 if(is_live(element)) {
+                    element.value().data_ptr().sidx=0; //Kludge because it's 10:30pm and I have no clue whose descending it!
                     switch(YAPA_level) {
                         case 4: {
                             if(element.value().type()==duck_id) {
@@ -1114,6 +1115,14 @@ namespace Acorn {
             Ptr ptr = ctx.node().getPtr(0);
             Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
             col.live.store(0);
+        });
+        overload_type(id,".'clear_all_locks'",label+"_CLEAR_ALL_LOCKS",deadptr,[this,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr ptr = ctx.node().getPtr(0);
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+            clear_all_col_locks(col);
         });
 
         overload_type(id,".'unlock'",label+"_UNLOCK",deadptr,[this,id,YAPA_level](Context& ctx){

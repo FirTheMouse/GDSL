@@ -66,8 +66,7 @@ namespace Acorn {
             //Lazy version that doesn't care about tags or sizes
             uint32_t idx = col.free.pop();
             Col& ncol = col[idx];
-            ncol.erase(); ncol.element_size = size; ncol.tag = tag;  
-            ncol.live = true;
+            ncol.erase(); ncol.element_size = size; ncol.tag = tag;
             return idx; 
             
             // for(int i=0;i<col.free.length();i++) {
@@ -93,16 +92,55 @@ namespace Acorn {
         }
         return at;
     }
+    inline Col& create_and_return_column(ColCol& col, uint32_t size, uint32_t tag) {
+        uint32_t idx = create_column(col,size,tag);
+        return col[idx];
+    }
     static void recycle_column(ColCol& col, uint32_t id) {
         CHECK_ERROR("Tried to recycle ",id," while an error was active");
-       Col* c = ((Col*)col.sget(id));
-       if(c) {
-        c->live = false;
-        c->gen++;
-        col.free.push(id);
-       } else {
+        Col* c = ((Col*)col.sget(id));
+        if(c) {
+            DEBUG_ONLY( 
+                if(col.free.has(id)) {
+                    //print("Attempted to double recycle column at ",id);
+                    return;
+                }
+            )
+            c->gen++;
+            col.free.push(id);
+        } else {
         throw_error("core:recycle_column unable to recycle ",id);
-       }
+        }
+    }
+
+    static void nuke(Col& col) {
+        col.free.clear();
+        for(uint32_t i=0;i<col.length();i++) {
+            col.free.push(i);
+            Col* subcol = nullptr;
+            if(col.specialization==Spec::COL) {
+                subcol = (Col*)col.get(i);
+            } else if(col.specialization==Spec::PTR_COL) {
+                subcol = *(Col**)col.get(i);
+            }
+            if(subcol) {
+                subcol->gen++;
+                nuke(*subcol);
+            }
+        }
+    }
+    static void nuke_subunit(ColColCol& sub) {
+        for(uint32_t p=0;p<sub.length();p++) {
+            ColCol& pool = sub[p];
+            pool.free.clear();
+            if(!pool.empty()) {
+                for(uint32_t i=pool.length()-1;i>=0;i--) {
+                    pool[i].gen++;
+                    pool.free.push(i);
+                    if(i==0) break;
+                }
+            }
+        }
     }
     
     inline ColColCol& cache_as_unit(const Ptr& p) { 
@@ -244,10 +282,8 @@ namespace Acorn {
 
     inline Ptr get_ticket_from_unit(Ptr p, uint32_t type_id, uint32_t size, uint32_t tag);
     inline uint32_t find_pool_tag_in_unit(Ptr p, uint32_t tag);
+    inline uint32_t find_pool_key_in_unit(Ptr p, const std::string& key);
     inline uint32_t size_of_from_unit(Ptr p, uint32_t tag);
-
-
-
 
     struct string : Ptr {
         string() {}
@@ -579,7 +615,7 @@ namespace Acorn {
 
 
     inline string get_global_string_ticket() {
-        Ptr ticket((uint32_t)0,name_store_id,create_column(global[name_store_id],1,char_id),0);
+        Ptr ticket(&global,name_store_id,create_column(global[name_store_id],1,char_id),0);
         return ticket;
     }
 
@@ -868,6 +904,22 @@ namespace Acorn {
         void resume() {running = true;}
         bool has_stopped = false;
 
+
+
+        inline Ptr get_ticket(Ptr in, ColCol& pool, uint32_t size, uint32_t tag) {
+            DEBUG_ONLY(if(!is_live(in)||(in.cachelevel<3&&in.cachelevel!=0)) {throw_error("core:get_ticket needs a live, level 3+ Ptr to inherit from"); return deadptr;})
+            ColColCol& sub = resolve_to_subunit(in);
+            Ptr ticket = in;
+            ticket.pool = sub.indexof(&pool);
+            DEBUG_ONLY(if(&sub[ticket.pool]!=&pool) {throw_error("core:get_ticket pool does not belong to the subunit of the Ptr it inherits from"); return deadptr;})
+            ticket.idx  = create_column(pool,size,tag,true);
+            ticket.sidx = 0;
+            ticket.gen  = resolve_to_col(ticket).gen;
+            ticket.make_owning();
+            return ticket;
+        }
+        inline Ptr get_ticket(Ptr in, ColCol& pool, uint32_t tag) {return get_ticket(in,pool,size_of(tag),tag);}
+
         inline Ptr get_ticket(uint32_t type_id, uint32_t size, uint32_t tag, ColColCol* in = nullptr) {
             if(!in) in = &types;
             if(type_id>=in->length()) {throw_error("Unable to create a ticket: an invalid type id ",type_id," was given"); return deadptr;}
@@ -965,7 +1017,7 @@ namespace Acorn {
                 return pstring;
             #else
                 //ptr_to_string(p.cache)+"|"
-                return Ptr_to_string(p,p.cachelevel)+(p.gen>0?"|G"+std::to_string(p.gen):"");
+                return Ptr_to_string(p,p.cachelevel)+(p.gen>0?"|G"+std::to_string(p.gen):"")+(is_owning(p)?"*":"");
             #endif
         }
 
@@ -1015,7 +1067,6 @@ namespace Acorn {
             CHECK_ERROR("Error while recycling ",Ptr_to_string(p,p.cachelevel),is_live(p)?"":"[X]");
         }
         
-
         std::string tag_to_str(uint32_t tag, void* data) {
             DEBUG_ONLY(if(ERROR_FLAG) {return "ERROR";})
             if(tag==int_id) {
@@ -1260,7 +1311,7 @@ namespace Acorn {
             return to_return;
         }
         std::string unit_info() {
-            std::string to_return = "Unit "+std::to_string(uid)+" : "+col_info(subunits)+"\n===============\n";
+            std::string to_return = "Unit "+std::to_string(uid)+" : "+col_info(subunits)+"\n---------------\n";
             for(uint32_t i=0;i<subunits.length();i++) {
                 to_return+="---------------\n";
                 to_return+=subunits[i].label.empty()?"Subunit "+std::to_string(i):subunits[i].label.to_std();
@@ -1353,7 +1404,6 @@ namespace Acorn {
             // }
         }
 
-
         map<uint32_t,bool> init_ptr_aliases() {
             map<uint32_t,bool> to_return;
             to_return.put(ptr_id,true); to_return.put(string_id,true); 
@@ -1412,9 +1462,29 @@ namespace Acorn {
             }
         }   
 
+        inline void opperate_on_ptrs(Ptr p,std::function<void(Ptr&)> opp) {
+            Col& col = resolve_to_col(p);
+            uint32_t col_len = col.length();
+            if(col.heterogenous) {
+                if(!layouts.hasKey(col.tag)) {throw_error("core:opperate_on_ptrs no layout was found for heterogenous col of tag: "+labels[col.tag]); return;}
+                _layout& l = layouts.get(col.tag);
+                for(uint32_t row = 0; row < col_len; row++) {
+                    for(uint32_t f = 0; f < l.offsets.length(); f++) {
+                        if(!is_ptr_alias(l.tags[f])) continue;
+                        Ptr& ptr = *(Ptr*)resolve_to_col(p).qget(row * l.total_size + l.offsets[f]);
+                        opp(ptr);
+                    }
+                }
+            } else if(is_ptr_alias(col.tag)) {
+                for(int r=0;r<col_len;r++) {
+                    Ptr& ptr = *(Ptr*)resolve_to_col(p)[r];
+                    opp(ptr);
+                }
+            }
+        }
         inline void opperate_on_ptrs(Col& col,std::function<void(Ptr&)> opp) {
             if(col.heterogenous) {
-                if(!layouts.hasKey(col.tag)) return;
+                if(!layouts.hasKey(col.tag)) {throw_error("core:opperate_on_ptrs no layout was found for heterogenous col of tag: "+labels[col.tag]); return;}
                 _layout& l = layouts.get(col.tag);
                 for(uint32_t row = 0; row < col.length(); row++) {
                     for(uint32_t f = 0; f < l.offsets.length(); f++) {
@@ -1964,6 +2034,19 @@ namespace Acorn {
             ColColCol& sub  = resolve_to_subunit(p);
             for(int i=0;i<sub.length();i++) {
                 if(sub[i].tag==tag) return i;
+            }
+        }
+        return 0;
+    }
+    inline uint32_t find_pool_key_in_unit(Ptr p, const std::string& key) {
+        if(p.cachelevel==3) {
+            ColColCol& sub  = resolve_to_subunit(p);
+            CCol* cell = sub.cells.find_cell(key.data(),key.length());
+            if(cell) {
+                return cell->index;
+            } else {
+                throw_error("core:find_pool_key_in_unit failed to find key ",key);
+                return 0;
             }
         }
         return 0;

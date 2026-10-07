@@ -65,6 +65,34 @@ namespace Acorn {
             ctx.node().set((void*)&i);
         },4,int_id);
 
+
+        add_function("string_is_alphanum",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string s = ctx.node().getString(0);
+            Col& col = s.col();
+            bool b = true;
+            for(uint32_t i=0;i<col.length();i++) {
+                unsigned char c = *(unsigned char*)col.sget(i);
+                if(!((c>='0'&&c<='9') || (c>='A'&&c<='Z') || (c>='a'&&c<='z'))) {
+                    b = false;
+                    break;
+                }
+            }
+            ctx.node().value().set((void*)&b);
+        },bool_id);
+        add_function("string_is_safe_filename",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string s = ctx.node().getString(0);
+            Col& col = s.col();
+            uint32_t len = col.length();
+            bool b = (len>0 && len<=32);
+            for(uint32_t i=0; b && i<len; i++) {
+                unsigned char c = *(unsigned char*)col.sget(i);
+                b = (c>='0'&&c<='9') || (c>='A'&&c<='Z') || (c>='a'&&c<='z') || c=='-' || c=='_';
+            }
+            ctx.node().value().set((void*)&b);
+        },bool_id);
+
         r_handlers[group_id] = [this](Context& ctx){
             if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
             standard_sub_process(ctx);
@@ -127,6 +155,11 @@ namespace Acorn {
         //            stack_size, stack_size / (1024.0*1024.0),
         //            remaining, remaining / (1024.0*1024.0));
         // });
+
+        add_function("to_raw_binary_string",[this](Context& ctx){
+            standard_sub_process(ctx);
+            resolve_string_ticket(ctx.node()) = to_bin(ctx.node().value().get(),ctx.node().value().size());
+        },sizeof(Ptr),string_id);
 
         add_function("pebble_refragment",[this](Context& ctx){
             standard_sub_process(ctx);

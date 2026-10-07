@@ -80,6 +80,19 @@ static inline std::string to_bin(uint32_t n) {
   return s;
 }
 
+static inline std::string to_bin(const void* data, uint32_t len) {
+  const uint8_t* bytes = (const uint8_t*)data;
+  std::string s;
+  s.reserve(len * 9);
+  for(int i = len-1; i >=0; i--) {
+      for(int b = 7; b >= 0; b--) {
+          s += ((bytes[i] >> b) & 1) ? '1' : '0';
+      }
+      if(i + 1 < len) s += ' ';
+  }
+  return s;
+}
+
 static inline  std::string to_hex(uint32_t n) {
   const char digits[] = "0123456789ABCDEF";
   std::string s = "0x";

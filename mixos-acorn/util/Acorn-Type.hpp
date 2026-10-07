@@ -501,9 +501,11 @@ namespace Acorn {
         char& at(uint32_t idx) {return *(char*)qget(idx);}
         char& operator[](uint32_t idx) {return *(char*)qget(idx);}
         void push(char c) {QCol::push((void*)&c,1);}
+        void push(const char* s, uint32_t len) {QCol::push(s,len);}
         uint32_t length() {return size;}
+        void clearAndPush(const char* s, uint32_t len) {clear(); push(s,len);}
 
-        void operator=(const std::string& s) {clear(); for(char c : s) push(c);}
+        void operator=(const std::string& s) {clear(); push(s.data(),s.length());}
         void operator=(const char* s) {clear(); while(*s) push(*s++);}
         bool operator==(const std::string& s) {
             if(size != s.length()) return false;

@@ -85,6 +85,29 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){return;})
             writeFile(path.to_std(),contents.to_std());
         });
+        void copy_file(const std::string& from, const std::string& to) {
+            std::error_code ec;
+            std::filesystem::path from_path(from);
+            std::filesystem::path to_path(to);
+        
+            if(std::filesystem::is_directory(to_path)) {
+                to_path /= from_path.filename();
+            }
+        
+            std::filesystem::create_directories(to_path.parent_path(), ec);
+            std::filesystem::copy_file(from_path, to_path,
+                std::filesystem::copy_options::overwrite_existing, ec);
+            if(ec) {
+                throw_error(red("webcorn:copy_file failed to copy "+from+" to "+to_path.string()+": "+ec.message()));
+            }
+        }
+        uint32_t copy_file_id = add_function("copy_file",[this](Context& ctx){
+            standard_sub_process(ctx);
+            string from = ctx.node().getString(0);
+            string to = ctx.node().getString(1);
+            CHECK_ERROR("Error while deriving arguments for file copy");
+            copy_file(from.to_std(),to.to_std());
+        });
         uint32_t compile_id = make_tokenized_keyword("compile");
 
         uint32_t live_qual = register_qual_ids("live");
@@ -147,7 +170,7 @@ namespace Acorn {
 
         bool YAPA_sub_process(Context& ctx, uint32_t id);
         void YAPA_init(Ptr push_to, Node node, bool is_indirect);
-        void YAPA_add(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, Ptr ptr, Ptr& p, uint32_t tag, string label, Value typeval);
+        void YAPA_add(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, Ptr ptr, Ptr& p, uint32_t tag, void* key, uint32_t key_size, uint32_t key_tag, Value typeval);
         void YAPA_get(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, bool key_on_right, bool error_on_key_not_found);
 
         list<list<uint32_t>> prep_YAPA_directory() {
@@ -254,7 +277,11 @@ namespace Acorn {
             standard_sub_process(ctx);
             Ptr p = ctx.node().getPtr(0);
             ColColCol& sub = resolve_to_subunit(p);
-            save_subunit(&sub);
+            if(ctx.node().children().length()>0) {
+                save_subunit(&sub,true,ctx.node().getString(0).to_std());
+            } else {
+                save_subunit(&sub);
+            }
         });
         uint32_t acquire_id = add_function("acquire",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -1763,20 +1790,16 @@ namespace Acorn {
             });
 
             add_function("green",[this](Context& ctx){
-                standard_sub_process(ctx);
-                resolve_string_ticket(ctx.node()) = green(ctx.node().getString(0).to_std());
+                resolve_string_ticket(ctx.node()) = green(children_to_string(ctx));
             },sizeof(Ptr),string_id);
             add_function("red",[this](Context& ctx){
-                standard_sub_process(ctx);
-                resolve_string_ticket(ctx.node()) = red(ctx.node().getString(0).to_std());
+                resolve_string_ticket(ctx.node()) = red(children_to_string(ctx));
             },sizeof(Ptr),string_id);
             add_function("blue",[this](Context& ctx){
-                standard_sub_process(ctx);
-                resolve_string_ticket(ctx.node()) = blue(ctx.node().getString(0).to_std());
+                resolve_string_ticket(ctx.node()) = blue(children_to_string(ctx));
             },sizeof(Ptr),string_id);
             add_function("yellow",[this](Context& ctx){
-                standard_sub_process(ctx);
-                resolve_string_ticket(ctx.node()) = yellow(ctx.node().getString(0).to_std());
+                resolve_string_ticket(ctx.node()) = yellow(children_to_string(ctx));
             },sizeof(Ptr),string_id);
 
             add_function("unit_has_arg",[this](Context& ctx){

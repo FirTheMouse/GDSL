@@ -2503,7 +2503,7 @@ namespace Acorn {
 
 
 
-        uint32_t add_function(const std::string& f, Handler x_handler, uint32_t size = 0, uint32_t return_type = 0) {
+        uint32_t add_function(const std::string& f, Handler x_handler, uint32_t size, uint32_t return_type) {
             Value val = register_value(f,size,return_type);
             keywords.put(f,val);
             uint32_t id = val.sub_type();
@@ -2516,6 +2516,8 @@ namespace Acorn {
             x_handlers[id] = x_handler;
             return id;
         }
+        uint32_t add_function(const std::string& f, Handler x_handler, uint32_t return_type) {return add_function(f,x_handler,size_of(return_type),return_type);}
+        uint32_t add_function(const std::string& f, Handler x_handler) {return add_function(f,x_handler,0,0);}
         void also_called(const std::string& alias, const std::string& f) {
             if(keywords.hasKey(f)) {
                 keywords.put(alias,keywords.get(f));

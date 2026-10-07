@@ -92,7 +92,7 @@ namespace Acorn {
     };
 
 
-    void Acorn_Script::YAPA_add(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, Ptr ptr, Ptr& p, uint32_t tag, string label, Value typeval) {
+    void Acorn_Script::YAPA_add(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, Ptr ptr, Ptr& p, uint32_t tag, void* key, uint32_t key_size, uint32_t key_tag, Value typeval) {
         Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
         uint32_t index = 0;
 
@@ -132,13 +132,13 @@ namespace Acorn {
         }
         CHECK_ERROR("Error while adding in "+labels[id]+" add");
         Col& colt = resolve_YAPA_ptr(ptr,YAPA_level);
-        if(is_live(label)&&label.length()>0) {
-            colt.addcell(index,label.col().storage,label.length(),string_id);
-            if(YAPA_level>1) {
+        if(key_size>0) {
+            colt.addcell(index,key,key_size,key_tag);
+            if(YAPA_level>1&&key_tag==string_id) {
                 if(colt.specialization==Spec::PTR_COL) {
-                    ((PtrColColCol&)colt)[index].label = label.to_std();
+                    ((PtrColColCol&)colt)[index].label.clearAndPush((const char*)key,key_size);
                 } else {
-                    ((ColCol&)colt)[index].label = label.to_std();
+                    ((ColCol&)colt)[index].label.clearAndPush((const char*)key,key_size);
                 }
             }
         }
@@ -159,7 +159,7 @@ namespace Acorn {
         uint32_t lookup_type = 0;
         if(is_live(key.value())&&key.value().type()!=0) {
             lookup_type = key.value().type();
-            if(is_ptr_alias(lookup_type)) {
+            if(is_ptr_alias(lookup_type)&&lookup_type!=ptr_id) {
                 Col& ccol = resolve_to_col(key.getPtr());
                 data = ccol.storage;
                 size = ccol.size;
@@ -170,7 +170,7 @@ namespace Acorn {
         } else {
             data = key.name().col().storage;
             size = key.name().length();
-            lookup_type = identifier_id;
+            lookup_type = string_id;
         }
         if(lookup_type==int_id) {
             int index = key.getInt();
@@ -190,7 +190,7 @@ namespace Acorn {
                     ptr.specialization = _DEADSPEC;
                     return; 
                 } else {
-                    YAPA_add(YAPA_level,id,is_indirect,ctx,ptr,ptr,YAPA_level>1?0:duck_id,key.value().type()==string_id?key.getString():key.name(),deadptr);
+                    YAPA_add(YAPA_level,id,is_indirect,ctx,ptr,ptr,YAPA_level>1?0:duck_id,data,size,lookup_type,deadptr);
                 }
             }
         }
@@ -404,7 +404,7 @@ namespace Acorn {
             uint32_t lookup_type = 0;
             if(is_live(key.value())&&key.value().type()!=0) {
                 lookup_type = key.value().type();
-                if(is_ptr_alias(lookup_type)) {
+                if(is_ptr_alias(lookup_type)&&lookup_type!=ptr_id) {
                     Col& ccol = resolve_to_col(key.getPtr());
                     data = ccol.storage;
                     size = ccol.size;
@@ -463,7 +463,7 @@ namespace Acorn {
             uint32_t lookup_type = 0;
             if(is_live(key.value())&&key.value().type()!=0) {
                 lookup_type = key.value().type();
-                if(is_ptr_alias(lookup_type)) {
+                if(is_ptr_alias(lookup_type)&&lookup_type!=ptr_id) {
                     Col& ccol = resolve_to_col(key.getPtr());
                     data = ccol.storage;
                     size = ccol.size;
@@ -990,13 +990,25 @@ namespace Acorn {
                 CCol* cell = cells[*i_ptr];
                 ptr[YAPA_level] = cell->index;
                 if(is_live(key)) {
-                    if(key.value().type()==string_id) {
-                        resolve_string_ticket(key) = ((QString&)*cell).to_std();
+                    if(key.value().type()!=cell->tag) {
+                        key.value().retype(cell->tag,size_of(cell->tag));
+                    }
+                    key.value().data_ptr().sidx=0; //Kludge because it's 10:30pm and I have no clue whose descending it!
+                    //is_ptr_alias(cell->tag)&&cell->tag!=ptr_id <- since subtype can't be derived we can't do the is_ptr_alias lookup, only strings here
+                    if(cell->tag==string_id) {
+                        Col& keycol = resolve_to_col(resolve_ticket(key,1,char_id,key));
+                        keycol.clear(); keycol.QCol::push(cell->storage,cell->size); 
                     } else {
-                        key.value().retype(string_id,sizeof(Ptr));
-                        key.value().data_ptr().sidx=0; //Kludge because it's 10:30pm and I have no clue whose descending it!
-                        resolve_string_ticket(key) = ((QString&)*cell).to_std();
-                    }   
+                        key.set(cell->storage);
+                    }
+
+                    // if(key.value().type()==string_id) {
+                    //     resolve_string_ticket(key) = ((QString&)*cell).to_std();
+                    // } else {
+                    //     key.value().retype(string_id,sizeof(Ptr));
+                    //     key.value().data_ptr().sidx=0; //Kludge because it's 10:30pm and I have no clue whose descending it!
+                    //     resolve_string_ticket(key) = ((QString&)*cell).to_std();
+                    // }   
                 }
                 if(is_live(element)) {
                     element.value().data_ptr().sidx=0; //Kludge because it's 10:30pm and I have no clue whose descending it!
@@ -1288,7 +1300,11 @@ namespace Acorn {
                 CHECK_ERROR("Invalid Ptr for "+labels[id]+" save");
                 ColColCol& subunit = resolve_to_subunit(ptr);
                 CHECK_ERROR("Failed to resolve Ptr to subunit in save");
-                save_subunit(&subunit);
+                if(ctx.node().right().children().length()>0) {
+                    save_subunit(&subunit,true,ctx.node().right().getString(0).to_std());
+                } else {
+                    save_subunit(&subunit);
+                }
             });
             overload_type(id,".'bounce'",label+"_BOUNCE",deadptr,[this,id,YAPA_level](Context& ctx){
                 uint32_t old_type = ctx.node().type();
@@ -1345,7 +1361,9 @@ namespace Acorn {
 
                 //Infer the label and type
                 Node args = ctx.node().right();
-                Ptr label = deadptr;
+                void* key_data = nullptr;
+                uint32_t key_size = 0;
+                uint32_t key_tag = 0;
                 Value typeval = deadptr;
                 uint32_t tag = 0;
                 for(int i=0;i<2;i++) {
@@ -1355,7 +1373,9 @@ namespace Acorn {
                         typeval = arg.value();
                     } else {
                         if(arg.value().type()==string_id) {
-                            label = arg.getPtr();
+                            key_data = arg.getString().col().storage;
+                            key_size = arg.getString().length();
+                            key_tag = string_id;
                         } else if(arg.value().type()==int_id) {
                             tag = arg.getInt();
                         }
@@ -1363,7 +1383,7 @@ namespace Acorn {
                 }
                 CHECK_ERROR("Bad args for add in "+labels[id]+" add");
                 Ptr p = ptr;
-                YAPA_add(YAPA_level,id,is_indirect,ctx,ptr,p,tag,label,typeval);
+                YAPA_add(YAPA_level,id,is_indirect,ctx,ptr,p,tag,key_data,key_size,key_tag,typeval);
                 ctx.node().value().set((void*)&p);
             });
         } else {

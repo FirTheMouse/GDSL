@@ -1785,8 +1785,8 @@ namespace Acorn {
         }
 
 
-        void save_subunit(ColColCol* subunit, bool snapshot = true) {
-            auto out = openWriteStream(subunit->label.to_std());
+        void save_subunit(ColColCol* subunit, bool snapshot = true, std::string otherpath = "") {
+            auto out = openWriteStream(otherpath.empty()?subunit->label.to_std():otherpath);
             if(snapshot) {
                 snapshot_col(out, *subunit);
             } else {

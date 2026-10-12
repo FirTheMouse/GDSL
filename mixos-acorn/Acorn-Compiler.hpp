@@ -289,6 +289,7 @@ namespace Acorn {
         size_t quote_id = add_token('"',"QUOTE");
         size_t comment_id = reg_id("COMMENT");
         size_t single_quote_id = add_token('\'',"SINGLE_QUOTE");
+        size_t backtick_id = add_token('`',"BACKTICK");
 
         Node tokenize(const std::string& code) {
 
@@ -3135,6 +3136,42 @@ namespace Acorn {
                     ctx.node().name().push(c);
                 }
             };
+            tokenizer_state_functions[backtick_id] = [this](Context& ctx) {
+                char c = ctx.source().at(ctx.index());
+
+                if(ctx.node().quals().empty()) {
+                    Node open_token = copy_as_token(ctx.node());
+                    ctx.node().quals() << open_token;
+                    ctx.node().type(string_id);
+                    ctx.node().name().col().clear();
+                }
+
+                if(c == '`') {
+                    ctx.state(0);
+                    Node closer = copy_as_token(ctx.node().quals()[0]);
+                    closer.x(at_x); closer.y(at_y);
+                    ctx.node().quals() << closer;
+                    if(ctx.node().name().length()==1) {
+                        ctx.node().type(char_id);
+                    }
+                } else if(c == '\\' && ctx.index()+1<ctx.source().length()) {
+                    char next = ctx.source().at(ctx.index() + 1);
+                    switch(next) {
+                        case 'n':  ctx.node().name().push('\n'); break;
+                        case 't':  ctx.node().name().push('\t'); break;
+                        case 'r':  ctx.node().name().push('\r'); break;
+                        default: at_x -= 1.0f; ctx.node().name().push(next); break;
+                    }
+                    at_x += 1.0f;
+                    ctx.index()++;
+                } else if(c == '\n') {
+                    ctx.node().name().push('\n');
+                    at_y += 1.0f;
+                    at_x = -1.0f;
+                } else {
+                    ctx.node().name().push(c);
+                }
+            };
             r_handlers[equals_equals_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
                 resolve_overload(ctx);
@@ -3144,6 +3181,11 @@ namespace Acorn {
                 uint32_t old_type = ctx.node().type();
                 standard_sub_process(ctx);
                 if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+                bool b = false;
+                if(is_ptr_alias(ctx.node().left().value().type())&&is_ptr_alias(ctx.node().right().value().type())) {
+                    b = ctx.node().getPtr(0)==ctx.node().getPtr(1);
+                }
+                ctx.node().value().set((void*)&b);
             };
 
             r_handlers[langle_id] = [this](Context& ctx){

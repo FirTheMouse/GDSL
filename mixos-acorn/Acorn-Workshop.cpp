@@ -65,6 +65,40 @@ namespace Acorn {
             ctx.node().set((void*)&i);
         },4,int_id);
 
+        add_function("max",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int num = std::max(ctx.node().getInt(0),ctx.node().getInt(1));
+            ctx.node().value().set((void*)&num);
+        },int_id);
+        add_function("min",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int num = std::min(ctx.node().getInt(0),ctx.node().getInt(1));
+            ctx.node().value().set((void*)&num);
+        },int_id);
+
+        x_handlers[make_tokenized_keyword("repeat")] = [this](Context& ctx) {
+            standard_sub_process(ctx);
+            Node scope = ctx.node().scopes()[0];
+            int times = ctx.node().getInt(0);
+            for(int i=0;i<times;i++) {
+                uint32_t result = standard_travel_pass(scope, ctx.sub());
+                if(result > 0) {
+                    uint32_t kind = result % 4;
+                    if(kind == 2 || kind == 3) {//Break or continue
+                        if(result>=4) {
+                            result -= 4;//Consume one magnitude
+                            ctx.state(result);//And propagate up
+                        } 
+                        if(kind == 2) {break;} //Otherwise break away
+                        continue;
+                    } else { //If it's a return, pass it up
+                        ctx.state(result);
+                        break;
+                    }
+                }
+            }
+        };  
+
 
         add_function("string_is_alphanum",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -92,6 +126,11 @@ namespace Acorn {
             }
             ctx.node().value().set((void*)&b);
         },bool_id);
+
+        add_function("random",[this](Context& ctx){
+            node_col children = ctx.node().children();
+            process_node(ctx,children[randi(0,children.length()-1)]);
+        });
 
         r_handlers[group_id] = [this](Context& ctx){
             if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;

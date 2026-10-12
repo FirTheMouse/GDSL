@@ -196,7 +196,7 @@ namespace Acorn {
         inline void retype(uint32_t tag, uint32_t e_size) {
             if(is_live(data_ptr())) {
                 data_col().tag = tag; data_col().element_size = e_size;
-                if(data_col().empty()) {
+                while(data_ptr().sidx>=data_col().length()) {
                     data_col().push_default();
                 }
             }
@@ -478,6 +478,7 @@ namespace Acorn {
 
     inline Context Node::getContext() {DEBUG_ONLY(if(safety_check("node:getContext")){return deadptr;}) return getPtr();}  inline Context Node::getContext(uint32_t i) {DEBUG_ONLY(if(safety_check("node:getContext:i")){return deadptr;}) return getPtr(i);}
 
+
     inline bool init_type_pool() {
         global[handler_type_id].label = "handlers";
         global[layout_type_id].label = "layouts";
@@ -520,6 +521,16 @@ namespace Acorn {
         Context unit_ctx = deadptr;
         map<std::string, g_ptr<Stage>> stages;
         Node unit_root = deadptr;
+
+
+        inline void recycle(Ptr p) {
+            if(!is_live(p)) return;
+            opperate_on_ptrs(p,[this](Ptr& ptr){
+                recycle(ptr);
+                ptr = deadptr;
+            });
+            Acorn::recycle_column(resolve_to_pool(p),p.idx);
+        }
 
         void setup_standard_watchers() {
             Watcher def("core");

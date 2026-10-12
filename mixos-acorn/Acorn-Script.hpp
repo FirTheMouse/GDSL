@@ -851,8 +851,12 @@ namespace Acorn {
 
         uint32_t recycle_id = add_function("recycle",[this](Context& ctx){
             standard_sub_process(ctx);
-            Node to_recycle = (Node&)(*(Ptr*)ctx.node().children()[0].value().get());
-            recycle_node(to_recycle);
+            if(ctx.node().c0().value().type()==node_id) {
+                Node to_recycle = (Node&)(*(Ptr*)ctx.node().children()[0].value().get());
+                recycle_node(to_recycle);
+            } else if(is_ptr_alias(ctx.node().c0().value().type())) {
+                recycle(ctx.node().getPtr(0));
+            }
         });
 
         uint32_t cleanup_id = add_function("cleanup",[this](Context& ctx){
@@ -2414,9 +2418,17 @@ namespace Acorn {
             s_handlers[else_id] = s_handlers[if_id];
 
             x_handlers[if_id] = [this](Context& ctx) {
-                process_node(ctx, ctx.node().children()[0]);
-                DEBUG_ONLY(if(ERROR_FLAG) {return;});
-                if(*(bool*)ctx.node().children()[0].value().get()) {
+                standard_sub_process(ctx);
+                CHECK_ERROR("Error while evaluating children of if");
+                if(!is_live(ctx.node().c0().value())) {
+                    throw_error("Child of if has no value");
+                    return;
+                }
+                if(ctx.node().c0().value().type()!=bool_id) {
+                    throw_error("Child of if is not a bool");
+                    return;
+                }
+                if(ctx.node().getBool(0)) {
                     ctx.state(standard_travel_pass(ctx.node().scopes()[0],ctx.sub()));
                 }
                 else if(ctx.node().scopes().length()>1) {
@@ -2563,14 +2575,85 @@ namespace Acorn {
                 float old_at_x = at_x; float old_at_y = at_y; float old_at_z = at_z;
                 at_x = 0.0f; at_y = 0.0f; last_z++; at_z = last_z;
                 Node root = process(source);
-                Node inscope = ctx.node().in_scope();
-                if(is_live(inscope)) {
-                    resolve_to_col(root).qset(node_value_table_offset,(void*)&inscope.value_table_ptr(),sizeof(Ptr));
-                    resolve_to_col(root).qset(node_node_table_offset,(void*)&inscope.node_table_ptr(),sizeof(Ptr));
-                }
                 root.z(at_z);
                 at_x = old_at_x; at_y = old_at_y; at_z = old_at_z;
-                compile(root);
+
+                //UNIFY THIS WITH THE NORMAL COMPILE() LATER!!!
+
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                //Log::Line l; l.start();
+                start_logged_stage(a_handlers);
+                standard_direct_pass(root);
+                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
+                end_logged_stage();
+                
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                lemmatize_stages();
+                newline("Resolving keywords");
+                    a_pass_resolve_keywords(root.children());
+                endline();
+                for(int i=0;i<root.children().length();i++) {
+                    place_node_in_scope(root.children()[i],root);
+                }
+
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                start_logged_stage(n_handlers);
+                standard_direct_pass(root);
+                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
+                end_logged_stage();
+
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                start_logged_stage(s_handlers);
+                standard_direct_pass(root);
+                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
+                end_logged_stage();
+
+                Node inscope = ctx.node().in_scope();
+                if(is_live(inscope)) {
+                    value_col vals = inscope.value_table();
+                    list<CCol*> vcells = vals.col().allCells();
+                    for(int i=0;i<vcells.length();i++) {
+                        distribute_value(root,((QString&)(*(vcells[i]))).to_std(),vals[vcells[i]->index],0);
+                    }
+                    node_col nodes = inscope.node_table();
+                    list<CCol*> ncells = nodes.col().allCells();
+                    for(int i=0;i<ncells.length();i++) {
+                        distribute_node(root,((QString&)(*(ncells[i]))).to_std(),nodes[ncells[i]->index],0);
+                    }
+                }
+                
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                start_logged_stage(t_handlers);
+                standard_resolving_pass(root);
+                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
+                end_logged_stage();
+
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                start_logged_stage(r_handlers);
+                standard_resolving_pass(root);
+                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
+                end_logged_stage();
+
+                //No E stage for now while testing
+                // DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                // start_logged_stage(e_handlers);
+                // memory_backwards_pass(root);
+                // endline();
+
+                // if(prune) {
+                //     newline("Pruning dead nodes");
+                //         e_pass_prune_dead(root.children());
+                //     endline();
+                // }
+
+                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
+                start_logged_stage(m_handlers);
+                memory_backwards_pass(root);
+                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
+                end_logged_stage();
+                
+
+
                 start_logged_stage(x_handlers);
                 node.copy(root);
                 end_logged_stage();

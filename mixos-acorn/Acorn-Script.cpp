@@ -83,6 +83,7 @@ namespace Acorn {
                 } else {
                     Value puppet = make_value(c.value().type(),c.value().size());
                     puppet.data_ptr(dataptr);
+                    if(puppet.data_col().empty()) {puppet.data_col().push_default();}
                     assign(puppet,c.value());
                     recycle_value(puppet,false);
                 }
@@ -340,7 +341,7 @@ namespace Acorn {
             ctx.node().value().set((void*)&ptr);
         });
 
-        overload_type(id,".'take'(any)",label+"_TAKE",get_value,[this,id,YAPA_level](Context& ctx){
+        overload_type(id,".'take'(any)",label+"_TAKE",get_value,[this,id,YAPA_level,is_indirect](Context& ctx){
             uint32_t old_type = ctx.node().type();
             standard_sub_process(ctx);
             if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
@@ -348,12 +349,18 @@ namespace Acorn {
             CHECK_ERROR("Invalid Ptr for "+labels[id]+" take");
             Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
             Value arg = ctx.node().right().c0().value();
+            int index = 0;
             if(arg.type()==int_id) {
-                int index = *(int*)arg.get();
-                sync_value(ctx,&col);
-                ctx.node().value().set(col.get((uint32_t)index));
-                col.removeAt(index);
+                index = *(int*)arg.get();
+            } else if(arg.type()==ptr_id) {
+                index = col.getidx(arg.get(),arg.size());
+            } else if(is_ptr_alias(arg.type())) {
+                Col& argcol = resolve_to_col(*(Ptr*)arg.get());
+                index = col.getidx(argcol.storage,argcol.length());
             }
+            sync_value(ctx,&col);
+            ctx.node().value().set(col.get((uint32_t)index));
+            col.removeAt(index);
         });
         overload_type(id,".'pop'",label+"_POP",deadptr,[this,id,YAPA_level](Context& ctx){
             uint32_t old_type = ctx.node().type();
@@ -527,6 +534,46 @@ namespace Acorn {
             col.push_default();
         });
 
+
+        overload_type(id,".'insert_with'(any,any)",label+"_INSERT_WITH",make_value(id,sizeof(Ptr)),[this,id,is_indirect,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr for "+labels[id]+" insert with");
+            Col& col = resolve_YAPA_ptr(ptr,YAPA_level);
+
+            Node key = ctx.node().right().c0();
+            void* data = nullptr;
+            uint32_t size = 0;
+            uint32_t lookup_type = 0;
+            if(is_live(key.value())&&key.value().type()!=0) {
+                lookup_type = key.value().type();
+                if(is_ptr_alias(lookup_type)&&lookup_type!=ptr_id) {
+                    Col& ccol = resolve_to_col(key.getPtr());
+                    data = ccol.storage;
+                    size = ccol.size;
+                } else {
+                    data = key.value().get();
+                    size = key.value().size();
+                }
+            } else {
+                data = key.name().col().storage;
+                size = key.name().length();
+                lookup_type = identifier_id;
+            }
+
+            uint32_t at_idx = col.getidx(data,size);
+            CHECK_ERROR("Error in insert with");
+
+            if(YAPA_level>1) {
+                throw_error("YAPA:"+labels[id]+":insert_with can not insert to YAPA levels above 1");
+            } else {
+                col.insert(at_idx,ctx.node().right().c1().value().get());
+            }
+            ctx.node().value().set((void*)&ptr);
+        });
+
         overload_type(id,".'qset'(any,any)",label+"_QSET",deadptr,[this,id,YAPA_level](Context& ctx){
             uint32_t old_type = ctx.node().type();
             standard_sub_process(ctx);
@@ -695,14 +742,13 @@ namespace Acorn {
         auto do_iter = [this,YAPA_level,is_indirect](Context& ctx, Ptr& ptr, Node body, Node element, Node index, bool backwards = false, std::function<bool()> behaviour = nullptr) {
             Col& col = resolve_YAPA_ptr(ptr, YAPA_level);
             uint32_t len = col.length();
+            if(backwards&&len==0) {return;}
                         
             uint32_t i = 0;
             uint32_t* i_ptr = &i;
             if(is_live(index)) {
                 if(index.value().type()==duck_id) {
-                    index.value().data_col().tag = int_id; index.value().data_col().element_size = 4;
-                    index.value().data_col().push_default();
-                    index.value().type(int_id); index.value().size(4);   
+                    index.value().retype(int_id,size_of(int_id));
                     index.value().set((void*)&i);
                 }
                 i_ptr = (uint32_t*)index.value().get();
@@ -798,6 +844,16 @@ namespace Acorn {
             CHECK_ERROR("Invalid Ptr for "+labels[id]+" iter expr");
             Node arg = ctx.node().right().c0().left();
             do_iter(ctx,ptr,ctx.node().right().c0().scope(),arg.c0(),(arg.children().length()>1?arg.c1():deadptr));
+            ctx.node().value().set((void*)&ptr);
+        });
+        overload_type(id,list<std::string>{".'iter_rev'(=>)",".'do_back'(=>)"}, label+"_ITER_EXPR_REV", make_value(id,sizeof(Ptr)), [this,do_iter,id,YAPA_level](Context& ctx){
+            uint32_t old_type = ctx.node().type();
+            standard_sub_process(ctx);
+            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            Ptr& ptr = ctx.node().getPtr(0);
+            CHECK_ERROR("Invalid Ptr for "+labels[id]+" iter expr reverse");
+            Node arg = ctx.node().right().c0().left();
+            do_iter(ctx,ptr,ctx.node().right().c0().scope(),arg.c0(),(arg.children().length()>1?arg.c1():deadptr),true);
             ctx.node().value().set((void*)&ptr);
         });
 
@@ -929,6 +985,38 @@ namespace Acorn {
             }
             ctx.node().value().set((void*)&b);
         });
+
+        overload_type(id,list<std::string>{".'rand'"}, label+"_RAND", get_value, [this,id,YAPA_level,is_indirect](Context& ctx){
+            if(YAPA_sub_process(ctx,id)) return;
+            Ptr ptr = ctx.node().getPtr(0);
+            uint32_t len = resolve_YAPA_ptr(ptr,YAPA_level).length();
+            if(len==0) {return;}
+            ptr[YAPA_level] = randi(0,len-1);
+            if(YAPA_level>1) {
+                ctx.node().value().set((void*)&ptr);
+            } else if(is_indirect) {
+                void* ptrdata = resolve_ptr(ptr);
+                CHECK_ERROR("Bad data at Ptr: ",Ptr_to_string(ptr,ptr.cachelevel));
+                Ptr inner = *(Ptr*)ptrdata;
+                Col& innercol = resolve_to_col(inner);
+                Node key = ctx.node().right();
+                if(innercol.tag==function_id&&key.has_qual(lparen_id)) {
+                    key.type(lambda_call_id);
+                    key.value().data_ptr(inner);
+                    key.value().type(innercol.tag); key.value().size(innercol.element_size);
+                    if(resolve_overload(ctx.node())) {
+                        standard_process(ctx);
+                    }
+                } else {
+                    ctx.node().value().data_ptr(inner);
+                    sync_value(ctx);
+                }
+            } else {
+                ctx.node().value().data_ptr(ptr);
+                sync_value(ctx);
+            }
+        });
+
 
         //Needs a lot more extra handeling, this is just a stub for now.
         overload_type(id,list<std::string>{".'erase_if'(=>)"}, label+"_ERASE_IF", make_value(id,sizeof(Ptr)), [this,do_iter,id,YAPA_level](Context& ctx){

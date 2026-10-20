@@ -27,12 +27,6 @@ namespace Acorn {
             output = result;
         },sizeof(Ptr),string_id);
 
-        add_function("type_of",[this](Context& ctx){
-            standard_sub_process(ctx);
-            uint32_t type = ctx.node().c0().value().type();
-            ctx.node().value().set((void*)&type);
-        },4,int_id);
-
         
 
         add_function("run_in_new_unit",[this](Context& ctx){
@@ -67,14 +61,192 @@ namespace Acorn {
 
         add_function("max",[this](Context& ctx){
             standard_sub_process(ctx);
-            int num = std::max(ctx.node().getInt(0),ctx.node().getInt(1));
-            ctx.node().value().set((void*)&num);
+            if(ctx.node().left().value().type()==float_id) {
+                float num = std::max(ctx.node().getFloat(0),ctx.node().getFloat(1));
+                ctx.node().value().type(float_id);
+                ctx.node().value().set((void*)&num);
+            } else {
+                int num = std::max(ctx.node().getInt(0),ctx.node().getInt(1));
+                ctx.node().value().set((void*)&num);
+            }
         },int_id);
         add_function("min",[this](Context& ctx){
             standard_sub_process(ctx);
-            int num = std::min(ctx.node().getInt(0),ctx.node().getInt(1));
-            ctx.node().value().set((void*)&num);
+            if(ctx.node().left().value().type()==float_id) {
+                float num = std::min(ctx.node().getFloat(0),ctx.node().getFloat(1));
+                ctx.node().value().type(float_id);
+                ctx.node().value().set((void*)&num);
+            } else {
+                int num = std::min(ctx.node().getInt(0),ctx.node().getInt(1));
+                ctx.node().value().set((void*)&num);
+            }
         },int_id);
+        add_function("abs",[this](Context& ctx){
+            standard_sub_process(ctx);
+            if(ctx.node().left().value().type()==float_id) {
+                float num = std::abs(ctx.node().getFloat(0));
+                ctx.node().value().type(float_id);
+                ctx.node().value().set((void*)&num);
+            } else {
+                float num = std::abs(ctx.node().getInt(0));
+                ctx.node().value().set((void*)&num);
+            }
+        },int_id);
+
+
+
+        add_function("SIM_flow_connection", [this](Context& ctx) {
+            standard_sub_process(ctx);
+        
+            Ptr connection = ctx.node().getPtr(0);
+        
+            Col& concol = resolve_to_col(connection);
+        
+            Ptr from = *(Ptr*)resolve_ptr(*(Ptr*)concol[0]);
+            Ptr to   = *(Ptr*)resolve_ptr(*(Ptr*)concol[1]);
+        
+            double diameter = *(float*)resolve_ptr(*(Ptr*)concol[2]);
+            double length   = *(float*)resolve_ptr(*(Ptr*)concol[3]);
+        
+            if(diameter<=0.0 || length<=0.0) return;
+        
+            auto kind_amount = [&](Ptr region, const std::string& kind) -> double {
+                Col& regcol = resolve_to_col(region);
+                double sum = 0.0;
+                Col& fluids = resolve_to_col(*(Ptr*)resolve_ptr(*(Ptr*)regcol.get(kind)));
+                for(uint32_t i=0;i<fluids.length();i++) {
+                    sum+=*(float*)fluids.sget(i);
+                }
+                return sum;
+            };
+        
+            auto pressure_at = [&](Ptr region, double liquid, double gas) -> double {
+                Col& regcol = resolve_to_col(region);
+                double volume = *(float*)resolve_ptr(*(Ptr*)regcol.get("Volume"));
+                double stiffness = *(float*)resolve_ptr(*(Ptr*)regcol.get("Stiffness"));
+        
+                double space = std::max(0.001, volume-liquid);
+                double gaspressure = gas/space;
+                double compression = std::max(0.0, liquid-volume)*stiffness;
+        
+                return gaspressure+compression;
+            };
+        
+            double fromfluid = kind_amount(from,"Fluid");
+            double fromgas = kind_amount(from,"Gas");
+            double tofluid = kind_amount(to,"Fluid");
+            double togas = kind_amount(to,"Gas");
+        
+            double pressure_difference = pressure_at(from, fromfluid, fromgas) - pressure_at(to, tofluid, togas);
+        
+            if(std::abs(pressure_difference)<1e-9) return;
+        
+            Ptr source = from;
+            Ptr target = to;
+        
+            if(pressure_difference<0.0) {
+                std::swap(source,target);
+                std::swap(fromfluid,tofluid);
+                std::swap(fromgas,togas);
+                pressure_difference = -pressure_difference;
+            }
+        
+            double diameter2 = diameter*diameter;
+            double conductance = diameter2*diameter2/length;
+            double proposed_flow = pressure_difference*conductance;
+        
+            double sourcevolume = *(float*)resolve_ptr(*(Ptr*)resolve_to_col(source).get("Volume"));
+            double gasvolume = fromgas>0.0
+                ? std::max(0.001, sourcevolume-fromfluid)
+                : 0.0;
+        
+            double mixturevolume = fromfluid+gasvolume;
+        
+            if(mixturevolume<=0.0) return;
+        
+            double maxfraction = std::min(1.0, proposed_flow/mixturevolume);
+        
+            auto remaining_difference = [&](double fraction) -> double {
+                double movedfluid = fromfluid*fraction;
+                double movedgas = fromgas*fraction;
+        
+                double sourcepressure = pressure_at(
+                    source,
+                    fromfluid-movedfluid,
+                    fromgas-movedgas
+                );
+        
+                double targetpressure = pressure_at(
+                    target,
+                    tofluid+movedfluid,
+                    togas+movedgas
+                );
+        
+                return sourcepressure-targetpressure;
+            };
+        
+            double fraction = maxfraction;
+        
+            // Fast path: the proposed transfer doesn't overshoot.
+            if(remaining_difference(maxfraction)<0.0) {
+                double low = 0.0;
+                double high = maxfraction;
+        
+                for(int i=0; i<20; ++i) {
+                    double middle = (low+high)*0.5;
+        
+                    if(remaining_difference(middle)>0.0) {
+                        low = middle;
+                    } else {
+                        high = middle;
+                    }
+                }
+        
+                fraction = low;
+            }
+        
+            if(fraction<=0.0) return;
+
+
+            auto transfer_fraction = [&](Ptr source_region,Ptr target_region,const std::string& category,double fraction) {
+                    Col& sourceobj = resolve_to_col(source_region);
+                    Col& targetobj = resolve_to_col(target_region);
+
+                    Col& src = resolve_to_col(*(Ptr*)resolve_ptr(*(Ptr*)sourceobj.get(category)));
+                    Col& dst = resolve_to_col(*(Ptr*)resolve_ptr(*(Ptr*)targetobj.get(category)));
+
+                    auto cells = src.allCells();
+
+                    for(uint32_t i=0; i<cells.length(); i++) {
+                        CCol* cell = cells[i];
+
+                        std::string kind = ((QString&)*cell).to_std();
+
+                        float& quantity = *(float*)src.sget(cell->index);
+
+                        float transferred = (float)(quantity*fraction);
+
+                        if(transferred<=0.0f) continue;
+
+                        quantity -= transferred;
+
+                        if(dst.hasKey(kind.data(),kind.size())) {
+                            float& target_quantity = *(float*)dst.get(kind);
+                            target_quantity += transferred;
+                        } else {
+                            dst.qput(
+                                &transferred,
+                                kind.data(),
+                                kind.size(),
+                                string_id
+                            );
+                        }
+                    }
+                };
+        
+            transfer_fraction(source,target,"Fluid",fraction);
+            transfer_fraction(source,target,"Gas",fraction);
+        });
 
         x_handlers[make_tokenized_keyword("repeat")] = [this](Context& ctx) {
             standard_sub_process(ctx);
@@ -112,6 +284,7 @@ namespace Acorn {
                     break;
                 }
             }
+    
             ctx.node().value().set((void*)&b);
         },bool_id);
         add_function("string_is_safe_filename",[this](Context& ctx){
@@ -131,48 +304,66 @@ namespace Acorn {
             node_col children = ctx.node().children();
             process_node(ctx,children[randi(0,children.length()-1)]);
         });
+        add_function("mult_by_factor",[this](Context& ctx){
+            standard_sub_process(ctx);
+            int a = ctx.node().getInt(0);
+            float f = ctx.node().getFloat(1);
+            int r = a*f;
+            ctx.node().value().set((void*)&r);
+        },4,int_id);
 
-        r_handlers[group_id] = [this](Context& ctx){
-            if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
+        add_function("subunit_info",[this](Context& ctx){
             standard_sub_process(ctx);
-            resolve_overload(ctx);
-            if(!is_live(ctx.node().value())) {
-                if(ctx.node().children().length()>0) {
-                    Value firstval = ctx.node().c0().value();
-                    ctx.node().value(make_value(ptr_id,sizeof(Ptr),0,firstval.type(),firstval.size()));
-                } else {
-                    ctx.node().value(make_value(ptr_id,sizeof(Ptr),0,duck_id,0));
-                }
-            }
-        };
-        x_handlers[group_id] = [this](Context& ctx){
-            uint32_t old_type = ctx.node().type();
-            standard_sub_process(ctx);
-            if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
+            ColColCol& sub = resolve_to_subunit(ctx.node().getPtr(0));
+            string output = resolve_string_ticket(ctx.node());
+            output = subunit_info(sub);
+        },sizeof(Ptr),string_id);
+
+
+        // r_handlers[group_id] = [this](Context& ctx){
+        //     if(is_live(ctx.node().value()) && ctx.node().value().type() != 0) return;
+        //     standard_sub_process(ctx);
+        //     resolve_overload(ctx);
+        //     if(!is_live(ctx.node().value())) {
+        //         if(ctx.node().children().length()>0) {
+        //             Value firstval = ctx.node().c0().value();
+        //             ctx.node().value(make_value(ctx.root(),ptr_id,sizeof(Ptr)));
+        //             ctx.node().value().sub_type(firstval.type());
+        //             ctx.node().value().sub_size(firstval.size());
+        //         } else {
+        //             ctx.node().value(make_value(ctx.root(),ptr_id,sizeof(Ptr)));
+        //             ctx.node().value().sub_type(duck_id);
+        //         }
+        //     }
+        // };
+        // x_handlers[group_id] = [this](Context& ctx){
+        //     uint32_t old_type = ctx.node().type();
+        //     standard_sub_process(ctx);
+        //     if(ctx.node().type()!=old_type) {standard_process(ctx); return;}
             
-            uint32_t children_count = ctx.node().children().length();
-            if(ctx.node().sub_type()==duck_id) {
-                for(uint32_t i=0;i<children_count;i++) {
-                    Value childval = ctx.node().children()[i].value();
-                    if(childval.type()!=duck_id) {
-                        ctx.node().value().sub_type(childval.type());
-                        ctx.node().value().sub_size(childval.size());
-                        break;
-                    }
-                }
-            }
-            if(ctx.node().sub_type()==duck_id) {
-                throw_error("Group can not intilize because none of it's values have a discernible type");
-                return;
-            }   
+        //     uint32_t children_count = ctx.node().children().length();
+        //     if(ctx.node().sub_type()==duck_id) {
+        //         for(uint32_t i=0;i<children_count;i++) {
+        //             Value childval = ctx.node().children()[i].value();
+        //             if(childval.type()!=duck_id) {
+        //                 ctx.node().value().sub_type(childval.type());
+        //                 ctx.node().value().sub_size(childval.size());
+        //                 break;
+        //             }
+        //         }
+        //     }
+        //     if(ctx.node().sub_type()==duck_id) {
+        //         throw_error("Group can not intilize because none of it's values have a discernible type");
+        //         return;
+        //     }   
 
-            Col& col = resolve_to_col(resolve_ticket(ctx.node(),ctx.node().value().sub_size(),ctx.node().value().sub_type()));
-            col.clear();
-            col.reserve(children_count*ctx.node().value().sub_size());
-            for(uint32_t i=0;i<children_count;i++) {
-                col.push(ctx.node().get(i));
-            }
-        };
+        //     Col& col = resolve_to_col(resolve_ticket(ctx.node(),ctx.node().value().sub_size(),ctx.node().value().sub_type()));
+        //     col.clear();
+        //     col.reserve(children_count*ctx.node().value().sub_size());
+        //     for(uint32_t i=0;i<children_count;i++) {
+        //         col.push(ctx.node().get(i));
+        //     }
+        // };
 
         add_function("children_to_string",[this](Context& ctx){
             resolve_string_ticket(ctx.node()) = children_to_string(ctx.node().getContext(0));
@@ -194,11 +385,6 @@ namespace Acorn {
         //            stack_size, stack_size / (1024.0*1024.0),
         //            remaining, remaining / (1024.0*1024.0));
         // });
-
-        add_function("to_raw_binary_string",[this](Context& ctx){
-            standard_sub_process(ctx);
-            resolve_string_ticket(ctx.node()) = to_bin(ctx.node().value().get(),ctx.node().value().size());
-        },sizeof(Ptr),string_id);
 
         add_function("pebble_refragment",[this](Context& ctx){
             standard_sub_process(ctx);

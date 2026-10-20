@@ -1,39 +1,5 @@
-
-void recurseOne(string s, int depth) {
-    print(depth,": ",s);
-
-    if(depth<3) {
-        for(int i=s.length-1;i>=0;i=i-1) {
-            string child = s.slice(0,i);
-            if(child.length>0) {
-                recurseOne(child,depth+1);
-            }
-        }
-    }
-}
-
-void recurseTwo(string s, int depth) {
-    print(depth,": ",s);
-
-    if(depth<3) {
-        print("LOOP STARTING AT DEPTH ",depth);
-        s.do_back((c,indx) => {
-            print("DEPTH: ",depth," INDX: ",IV#indx);
-            string child = s.slice(0,indx);
-            if(child.length>0) {
-                print("BEFORE RECURSE DEPTH ",depth,", INDX: ",IV#indx," C: ",IV#c);
-                recurseTwo(child,depth+1);
-                print("AFTER RECURSE DEPTH ",depth,", INDX: ",IV#indx," C: ",IV#c);
-            }
-        });
-        print("LOOP FINISHED AT DEPTH ",depth);
-    }
-}
+int i = 5;
+print(i);
 
 
-if(true) {
-    print("==ONE");
-    recurseOne("Wub",0);
-    print("==TWO");
-    recurseTwo("Wub",0);
-}
+dump_unit(true);

@@ -1,0 +1,62 @@
+ColColCol sub = usubunits.add("savetest.gsu");
+    ColCol common = sub.add("Common");
+        Ptr names = common.add(string).init("Joe","Frank","Bob");
+        Ptr nums = common.add(int).init(6,8,10,12);
+    ColCol numbers = sub.add("Numbers");
+        Ptr countup = numbers.add(int).init(1,2,3,4,5,6);
+        Ptr countdown = numbers.add(int).init(6,5,4,3,2,1);
+        Ptr countbytwo = numbers.add(int).init(2,4,6,8,10,12);
+    ColCol objects = sub.add("Objects");
+        Object thingone = objects.Object(
+            Name: "Wub",
+            Age: 36,
+            Friends: [Object],
+        ).register("Wub");
+        Object thingtwo = objects.Object(
+            Name: "WubTwo",
+            Age: 88,
+            Friends: [Object],
+        ).register("WubTwo");
+        Object thingthree = objects.Object(
+            Name: "WubThree",
+            Age: 88,
+            Friends: [Object],
+        ).register("WubThree");
+
+        thingthree.Friends.push(thingone);
+        thingthree.Friends.push(thingtwo);
+        print("Friends: ",thingthree.Friends.length);
+
+        if(true) {
+            if("WubTwo"==thingthree.Friends.get(1).Name) {
+                print("YEUP");
+            }
+        }   
+
+        ##
+            set_binding_powers(#PLUS,5,6);
+            set_binding_powers(#RANGLE,4,5);
+        ##
+        if(true) {
+            DEBUG_ROOT_X(0);
+            if(1>2+3) {
+                print("A");
+            }
+            DEBUG_ROOT_X(0);
+        }
+
+    // names.do(s => {
+    //     DEBUG_ROOT_X(0);
+    //     if(s=="Frank") {
+    //         print("frank");
+    //     }
+    //     DEBUG_ROOT_X(0);
+    // });
+
+    // common.do(pool => {
+    //     pool.do(s => {
+    //         DEBUG_ROOT_X(1);
+    //         print("====",s+" Smith");
+    //         DEBUG_ROOT_X(1);
+    //     });
+    // });

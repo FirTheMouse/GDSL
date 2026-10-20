@@ -34,6 +34,7 @@ namespace Acorn {
     struct Workshop_Unit : public virtual Acorn_Script {
         Workshop_Unit(uint16_t _uid) : Unit(_uid) {init();}
         Workshop_Unit() {init();}
+        
        
         ColCol& resolve_pool_refrence(Node n) {
             if(n.value().type()==int_id) {

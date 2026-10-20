@@ -4,57 +4,14 @@
 #include "../ext/g_lib/core/thread.hpp"
 
 
-#define LOBOTOMIZE_M_STAGE 1
+
 
 namespace Acorn {
     struct Acorn_Script : public virtual Compiler_Unit {
         Acorn_Script(uint16_t _uid) : Unit(_uid) {init();}
         Acorn_Script() {init();}
 
-        //For my sanity
-        string resolve_string_ticket(Node n) {
-            if(is_live(n.value())) {
-                if(is_live(n.value().data_ptr())&&!n.value().data_col().empty()&&is_live(n.getPtr())) {
-                    return n.getString();
-                } else {
-                    Ptr p = get_ticket(name_store_id,1,char_id); 
-                    CHECK_ERROR_VAL(deadptr,"Bad ticket in resolve_string_ticket");
-                    n.value().set((void*)&p);
-                    return (string&)p;
-                }
-            }
-            return deadptr;
-        }
-
-        Ptr resolve_ticket_by_ptr(Ptr p, Col& col, uint32_t index, uint32_t width, uint32_t size, uint32_t type) {
-            if(is_live(p)) {
-                return p;
-            } else {
-                p = get_ticket(name_store_id,size,type); 
-                col.qset(index, (void*)&p, width);
-                return p;
-            }
-        }
-
-        Ptr resolve_ticket(Node n,  uint32_t size, uint32_t type, Ptr in = deadptr) {
-            if(is_live(n.value())) {
-                if(is_live(n.value().data_ptr())&&!n.value().data_col().empty()&&is_live(n.getPtr())) {
-                    return n.getPtr();
-                } else {
-                    Ptr p = deadptr;
-                    if(is_live(in)){
-                        p = get_ticket(in,size,type);
-                    } else {
-                        p = get_ticket(name_store_id,size,type);
-                    } 
-                    CHECK_ERROR_VAL(deadptr,"Failed while creating new ticket for resolve ticket");
-                    n.value().set((void*)&p);
-                    return p;
-                }
-            }
-            return deadptr;
-        }
-
+       
         uint32_t test_id = make_tokenized_keyword("test");
         Stage& n_handlers = reg_stage("naming"); 
 
@@ -120,12 +77,7 @@ namespace Acorn {
             standard_sub_process(ctx);
             string str = (string&)*(Ptr*)ctx.node().children()[0].value().get();
             Node n = compile_literal(str.to_std());
-            if(is_live(ctx.node().value())) {
-                recycle_value(ctx.node().value());
-            }
             ctx.node().value(n.value());
-            n.value(deadptr);
-            recycle_node(n.in_scope());
         },0,duck_id);
         uint32_t to_type_id = make_tokenized_keyword("to_type");
         uint32_t DEBUG_ROOT_id = make_tokenized_keyword("DEBUG_ROOT");
@@ -170,7 +122,7 @@ namespace Acorn {
 
         bool YAPA_sub_process(Context& ctx, uint32_t id);
         void YAPA_init(Ptr push_to, Node node, bool is_indirect);
-        void YAPA_add(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, Ptr ptr, Ptr& p, uint32_t tag, void* key, uint32_t key_size, uint32_t key_tag, Value typeval);
+        void YAPA_add(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, Ptr ptr, Ptr& p, uint32_t tag, string label, Value typeval);
         void YAPA_get(uint32_t YAPA_level, uint32_t id, bool is_indirect, Context& ctx, bool key_on_right, bool error_on_key_not_found);
 
         list<list<uint32_t>> prep_YAPA_directory() {
@@ -277,11 +229,7 @@ namespace Acorn {
             standard_sub_process(ctx);
             Ptr p = ctx.node().getPtr(0);
             ColColCol& sub = resolve_to_subunit(p);
-            if(ctx.node().children().length()>0) {
-                save_subunit(&sub,true,ctx.node().getString(0).to_std());
-            } else {
-                save_subunit(&sub);
-            }
+            save_subunit(&sub);
         });
         uint32_t acquire_id = add_function("acquire",[this](Context& ctx){
             standard_sub_process(ctx);
@@ -392,7 +340,7 @@ namespace Acorn {
             s = std::to_string(ms);
         },sizeof(Ptr),string_id);
 
-        uint32_t header_ribbonT_id = overload_type(header_id,list<std::string>{".'ribbonT'",".'ribbonT'(string)"},"HEADER_RIBBONT",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_ribbonT_id = overload_type(header_id,list<std::string>{".'ribbonT'",".'ribbonT'(string)"},"HEADER_RIBBONT",make_global_value(header_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header ribbon");
@@ -444,7 +392,7 @@ namespace Acorn {
             ctx.node().value().set((void*)&ptr);
         });
 
-        uint32_t header_ribbon_id = overload_type(header_id,list<std::string>{".'ribbon'",".'ribbon'(string)"},"HEADER_RIBBON",make_value(header_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_ribbon_id = overload_type(header_id,list<std::string>{".'ribbon'",".'ribbon'(string)"},"HEADER_RIBBON",make_global_value(header_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header ribbon");
@@ -466,7 +414,7 @@ namespace Acorn {
             }
             ctx.node().value().set((void*)&ptr);
         });
-        uint32_t header_ribbons_id = overload_type(header_id,".'ribbons'","HEADER_RIBBONS",make_value(ptr_id,sizeof(Ptr),0,ptr_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_ribbons_id = overload_type(header_id,".'ribbons'","HEADER_RIBBONS",make_global_value(ptr_id,sizeof(Ptr),0,ptr_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header ribbons");
@@ -486,13 +434,13 @@ namespace Acorn {
             }
         });
 
-        uint32_t header_col_id = overload_type(header_id,".'col'","HEADER_COL",make_value(colcol_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t header_col_id = overload_type(header_id,".'col'","HEADER_COL",make_global_value(colcol_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header col");
             ctx.node().value().set((void*)&ptr);
         });
-        uint32_t header_getString_id = overload_type(header_id,list<std::string>{".'getString'",".'getString'(string)",".'getString'(string, string)"},"HEADER_GETSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t header_getString_id = overload_type(header_id,list<std::string>{".'getString'",".'getString'(string)",".'getString'(string, string)"},"HEADER_GETSTRING",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Ptr ptr = ctx.node().getPtr(0);
             CHECK_ERROR("Invalid ptr in header getString");
@@ -601,40 +549,40 @@ namespace Acorn {
         // },sizeof(Ptr),colcol_id);
 
 
-        uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_equality_int = overload_type(int_id,"==int","CHECK_EQUALITY_INT",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (*(int*)ctx.node().children()[0].value().get()==*(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_noequality_int = overload_type(int_id,"!=int","CHECK_NOEQUALITY_INT",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_noequality_int = overload_type(int_id,"!=int","CHECK_NOEQUALITY_INT",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (*(int*)ctx.node().children()[0].value().get()!=*(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
 
-        uint32_t check_equality_node = overload_type(node_id,"==node","CHECK_EQUALITY_NODE",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_equality_node = overload_type(node_id,"==node","CHECK_EQUALITY_NODE",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (ctx.node().getNode(0)==ctx.node().getNode(1));
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_noequality_node = overload_type(node_id,"!=node","CHECK_NOEQUALITY_NODE",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_noequality_node = overload_type(node_id,"!=node","CHECK_NOEQUALITY_NODE",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (ctx.node().getNode(0)!=ctx.node().getNode(1));
             ctx.node().value().set((void*)&result);
         });
 
-        uint32_t check_equality_ptr = overload_type(ptr_id,"==ptr","CHECK_EQUALITY_PTR",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_equality_ptr = overload_type(ptr_id,"==ptr","CHECK_EQUALITY_PTR",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (ctx.node().getPtr(0)==ctx.node().getPtr(1));
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_noequality_ptr = overload_type(ptr_id,"!=ptr","CHECK_NOEQUALITY_PTR",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_noequality_ptr = overload_type(ptr_id,"!=ptr","CHECK_NOEQUALITY_PTR",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (ctx.node().getPtr(0)!=ctx.node().getPtr(1));
             ctx.node().value().set((void*)&result);
         });
 
-        uint32_t check_equality_string = overload_type(string_id,"==string","CHECK_EQUALITY_STRING",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_equality_string = overload_type(string_id,"==string","CHECK_EQUALITY_STRING",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             string l(*(Ptr*)ctx.node().children()[0].value().get());
             string r(*(Ptr*)ctx.node().children()[1].value().get());
@@ -649,36 +597,36 @@ namespace Acorn {
             result = true;
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_noequality_string = overload_type(string_id,"!=string","CHECK_NOEQUALITY_STRING",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_noequality_string = overload_type(string_id,"!=string","CHECK_NOEQUALITY_STRING",make_global_value(bool_id),[this](Context& ctx){
             x_handlers.run(check_equality_string)(ctx);
             bool b = !(*(bool*)ctx.node().value().get());
             ctx.node().value().set((void*)&b);
         });
 
-        uint32_t check_lessthan_or_equalsto_int = overload_type(int_id,"<=int","CHECK_LEQ_INT",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_lessthan_or_equalsto_int = overload_type(int_id,"<=int","CHECK_LEQ_INT",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (*(int*)ctx.node().children()[0].value().get()<=*(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_greaterthan_or_equalsto_int = overload_type(int_id,">=int","CHECK_GEQ_INT",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_greaterthan_or_equalsto_int = overload_type(int_id,">=int","CHECK_GEQ_INT",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             bool result = (*(int*)ctx.node().children()[0].value().get()>=*(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_lessthan_int = overload_type(int_id,"<int","CHECK_LT_INT",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_lessthan_int = overload_type(int_id,"<int","CHECK_LT_INT",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             DEBUG_ONLY(if(ERROR_FLAG) {return;});
             bool result = (*(int*)ctx.node().children()[0].value().get()<*(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
-        uint32_t check_greaterthan_int = overload_type(int_id,">int","CHECK_GT_INT",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t check_greaterthan_int = overload_type(int_id,">int","CHECK_GT_INT",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             DEBUG_ONLY(if(ERROR_FLAG) {return;});
             bool result = (*(int*)ctx.node().children()[0].value().get() > *(int*)ctx.node().children()[1].value().get());
             ctx.node().value().set((void*)&result);
         });
 
-        uint32_t increment_int = overload_type(int_id,"++","INCREMENT_INT",make_value(int_id,4),[this](Context& ctx){
+        uint32_t increment_int = overload_type(int_id,"++","INCREMENT_INT",make_global_value(int_id),[this](Context& ctx){
             standard_sub_process(ctx);
             ctx.node().value(ctx.node().children()[0].value());
             int inced = *(int*)ctx.node().value().get()+1;
@@ -695,18 +643,18 @@ namespace Acorn {
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
-        uint32_t valueGetStr_id = overload_type(value_id,".'getStr'","VALUE_GETSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t valueGetStr_id = overload_type(value_id,".'getStr'","VALUE_GETSTR",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
             resolve_string_ticket(ctx.node());
         });
-        uint32_t valueGetNode_id = overload_type(value_id,".'getNode'","VALUE_GETNODE",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+        uint32_t valueGetNode_id = overload_type(value_id,".'getNode'","VALUE_GETNODE",make_global_value(node_id,sizeof(Ptr)),[this](Context& ctx){
             standard_sub_process(ctx);
             Node v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
         });
-        uint32_t valueGetInt_id = overload_type(value_id,".'getInt'","VALUE_GETINT",make_value(int_id,4),[this](Context& ctx){
+        uint32_t valueGetInt_id = overload_type(value_id,".'getInt'","VALUE_GETINT",make_global_value(int_id),[this](Context& ctx){
             standard_sub_process(ctx);
             Value v = (Value&)*(Ptr*)ctx.node().children()[0].value().get();
             ctx.node().value(v);
@@ -722,19 +670,19 @@ namespace Acorn {
             ctx.node().getNode(0).value(ctx.node().getValue(1));
         });
 
-        uint32_t node_asid_id = overload_type(node_id,".'asID'","NODE_ASID",make_value(int_id,4),[this](Context& ctx){
+        uint32_t node_asid_id = overload_type(node_id,".'asID'","NODE_ASID",make_global_value(int_id),[this](Context& ctx){
             standard_sub_process(ctx);
             uint32_t id = (*(Ptr*)ctx.node().children()[0].value().get()).idx;
             ctx.node().value().set((void*)&id);
         });
-        uint32_t node_astid_id = overload_type(node_id,".'asTID'","NODE_ASTID",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t node_astid_id = overload_type(node_id,".'asTID'","NODE_ASTID",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             string output = resolve_string_ticket(ctx.node());
             Node n = ctx.node().getNode(0);
             CHECK_ERROR("Bad Node in node_asTID");
             output = n.name().to_std()+"_"+std::to_string(n.idx);
         });
-        uint32_t node_has_qual_id = overload_type(node_id,".'has_qual'(int)","NODE_HAS_QUAL",make_value(bool_id,1),[this](Context& ctx){
+        uint32_t node_has_qual_id = overload_type(node_id,".'has_qual'(int)","NODE_HAS_QUAL",make_global_value(bool_id),[this](Context& ctx){
             standard_sub_process(ctx);
             Node n = ctx.node().getNode(0);
             CHECK_ERROR("Bad Node in node_has_qual");
@@ -750,10 +698,6 @@ namespace Acorn {
             Context c = (Context&)*(Ptr*)ctx.node().children()[0].value().get();
             standard_sub_process(c);
         });
-        uint32_t std_contprocess_id = add_function("contprocess",[this](Context& ctx){
-            Context c = (Context&)*(Ptr*)ctx.node().children()[0].value().get();
-            standard_travel_pass(c.node().scope(),c.sub());
-        });
 
         //Investigate why this isn't working later
         // uint32_t context_doat = overload_type(context_id,".\"p\"","DOAT",deadptr,[this](Context& ctx){
@@ -767,7 +711,7 @@ namespace Acorn {
             standard_sub_process(ctx);
             ctx.node().getString(0) = ctx.node().getString(1).to_std();
         });
-        uint32_t string_append_id = overload_type(string_id,"+string","STRING_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t string_append_id = overload_type(string_id,"+string","STRING_APPEND",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             uint32_t old_type = ctx.node().type();
             //sub_process_node(ctx,ctx.node().left()); <- do proper subprocessing so that dynamic overloads work with + in this context, not worth it right now because... well you generally know what you're adding!
             process_node(ctx,ctx.node().left());
@@ -779,7 +723,7 @@ namespace Acorn {
             string output = resolve_string_ticket(ctx.node());
             output = l+r;
         });
-        uint32_t string_append_eq_id = overload_type(string_id,"+=string","STRING_APPEND_EQ",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t string_append_eq_id = overload_type(string_id,"+=string","STRING_APPEND_EQ",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             process_node(ctx,ctx.node().right());
             std::string r = ctx.node().getString(1).to_std();
             process_node(ctx,ctx.node().left());
@@ -788,7 +732,7 @@ namespace Acorn {
             ctx.node().value(ctx.node().left().value());
         });
 
-        uint32_t string_func_append_id = overload_type(string_id,".'append'(string)","STRING_FUNC_APPEND",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+        uint32_t string_func_append_id = overload_type(string_id,".'append'(string)","STRING_FUNC_APPEND",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
             standard_sub_process(ctx);
             Node left = ctx.node().children()[0]; Node right = ctx.node().children()[1];
             DEBUG_ONLY(if(ERROR_FLAG) return;)
@@ -804,23 +748,24 @@ namespace Acorn {
 
         uint32_t split_str_id = add_function("split_str",[this](Context& ctx){
             standard_sub_process(ctx);
-            std::string str = ((string&)(*(Ptr*)ctx.node().children()[0].value().get())).to_std();
-            std::string delimiter = ((string&)(*(Ptr*)ctx.node().children()[1].value().get())).to_std();
+            string str = ctx.node().getString(0);
+            string delimiter = ctx.node().getString(1);
+            CHECK_ERROR("Bad string in split_str");
             Ptr p = resolve_ticket(ctx.node(),sizeof(Ptr),string_id);
             Col& data = resolve_to_col(p);
-            list<std::string> split = split_str(str, delimiter.at(0));
+            list<std::string> split = split_str(str.to_std(), delimiter.at(0));
             while(data.length() > split.length()) {
                 recycle_column(*(Ptr*)data.last());
                 data.removeAt(data.length()-1);
             }
             for(int i=0;i<split.length();i++) {
-                if(i<data.length()) {
-                    string s = (string&)*(Ptr*)data[i];
+                if(i<resolve_to_col(p).length()) {
+                    string s = (string&)*(Ptr*)resolve_to_col(p)[i];
                     s = split[i];
                 } else {
-                    string s = get_ticket(name_store_id,1,char_id);
+                    string s = get_ticket(p,getOrPutPool(resolve_to_subunit(p),"Names"),char_id);
                     s = split[i];
-                    data.push((void*)&s);
+                    resolve_to_col(p).push((void*)&s);
                 }
             }
             ctx.node().value().set((void*)&p);
@@ -838,7 +783,7 @@ namespace Acorn {
         },4,int_id);
 
         uint32_t make_value_id = add_function("make_value",[this](Context& ctx){
-            Value v = make_value();
+            Value v = make_value(ctx.node().value());
             if(ctx.node().children().length()==2) {
                 standard_sub_process(ctx);
                 int type = *(int*)ctx.node().children()[0].value().get();
@@ -851,12 +796,8 @@ namespace Acorn {
 
         uint32_t recycle_id = add_function("recycle",[this](Context& ctx){
             standard_sub_process(ctx);
-            if(ctx.node().c0().value().type()==node_id) {
-                Node to_recycle = (Node&)(*(Ptr*)ctx.node().children()[0].value().get());
-                recycle_node(to_recycle);
-            } else if(is_ptr_alias(ctx.node().c0().value().type())) {
-                recycle(ctx.node().getPtr(0));
-            }
+            Node to_recycle = (Node&)(*(Ptr*)ctx.node().children()[0].value().get());
+            recycle_node(to_recycle);
         });
 
         uint32_t cleanup_id = add_function("cleanup",[this](Context& ctx){
@@ -957,11 +898,11 @@ namespace Acorn {
                 log(red("Unable to do e stage assignment handler because one of the values is missing"));
                 return;
             }
-            ctx.node().quals().push((make_node(live_qual))); //This liveness thing is kludgy but I'm tired and just trying to get ctx.source = "wub" to work
+            ctx.node().quals().push((make_node(ctx.node(),live_qual))); //This liveness thing is kludgy but I'm tired and just trying to get ctx.source = "wub" to work
             process_node(ctx,left);
             if(left.has_qual(live_qual)) { //Transfer liveness
                 if(!right.has_qual(live_qual)) {
-                    right.value().quals().push(make_node(live_qual));
+                    right.value().quals().push(make_node(ctx.node(),live_qual));
                 }
             } else {
                 ctx.node().quals().pop(); //Kill it
@@ -970,14 +911,14 @@ namespace Acorn {
             int const_at = left.value().find_qual(constant_qual);
             if(const_at==-1) { //A value is constant if it's only asigned once
                 if(!left.has_qual(assigned_qual)) {
-                    left.value().quals().push(make_node(constant_qual));
+                    left.value().quals().push(make_node(ctx.node(),constant_qual));
                 }
             } else {
                 left.value().quals().removeAt(const_at);
             }
 
             if(!left.has_qual(assigned_qual)) {
-                left.value().quals().push(make_node(assigned_qual));
+                left.value().quals().push(make_node(ctx.node(),assigned_qual));
             }
         };
         void e_stage_binary_handler(Context& ctx) {
@@ -989,20 +930,20 @@ namespace Acorn {
             }
             if(ctx.node().has_qual(live_qual)) {
                 if(!right.has_qual(live_qual)) {
-                    right.value().quals().push(make_node(live_qual));
+                    right.value().quals().push(make_node(ctx.node(),live_qual));
                 }
                 if(!left.has_qual(live_qual)) {
-                    left.value().quals().push(make_node(live_qual));
+                    left.value().quals().push(make_node(ctx.node(),live_qual));
                 }
             } else {
                 if(left.has_qual(live_qual)) { //Transfer liveness
-                    ctx.node().quals().push((make_node(live_qual)));
+                    ctx.node().quals().push((make_node(ctx.node(),live_qual)));
                     if(!right.has_qual(live_qual)) {
-                        right.value().quals().push(make_node(live_qual));
+                        right.value().quals().push(make_node(ctx.node(),live_qual));
                     }
                 } else if(right.has_qual(live_qual)) {
-                    ctx.node().quals().push((make_node(live_qual)));
-                    left.value().quals().push(make_node(live_qual));
+                    ctx.node().quals().push((make_node(ctx.node(),live_qual)));
+                    left.value().quals().push(make_node(ctx.node(),live_qual));
                 }
             }
         };
@@ -1011,7 +952,7 @@ namespace Acorn {
                 Node scope = ctx.node().scopes()[0];
                 for(int i=0;i<scope.children().length();i++) {
                     if(scope.children()[i].has_qual(live_qual)) {
-                        ctx.node().quals().push(make_node(live_qual));
+                        ctx.node().quals().push(make_node(ctx.node(),live_qual));
                         break;
                     }
                 }
@@ -1020,9 +961,9 @@ namespace Acorn {
                 for(int i=0;i<ctx.node().children().length();i++) {
                     Node c = ctx.node().children().get(i);
                     if(is_live(c.value())&&!c.has_qual(live_qual)) {
-                        c.value().quals().push(make_node(live_qual));
+                        c.value().quals().push(make_node(ctx.node(),live_qual));
                     } else if(!is_live(c.value())) {
-                        c.quals().push(make_node(live_qual));
+                        c.quals().push(make_node(ctx.node(),live_qual));
                     }
                 }
             }
@@ -1048,21 +989,7 @@ namespace Acorn {
 
         uint32_t bumpid = add_function("BUMP",[](Context& ctx){});
 
-        void m_stage_assignment_handler(Context& ctx) {
-            standard_sub_process(ctx); //Not sure what to do with this yet
-        };
-        bool should_allocate_data(Value v) {
-            return (is_live(v)&&!is_live(v.data_ptr())&&v.type()!=0);
-        }
-        bool should_recycle_data(Value v) {
-            return (is_live(v)&&is_live(v.data_ptr())&&v.type()!=0);
-        }
-        void allocate_data(Value v) {
-            v.data_ptr(get_ticket(data_store_id,v.size(),v.type()));
-            if(v.data_col().empty()) {
-                v.data_col().push_default();
-            }
-        }
+        
 
         uint32_t precompile_brace = add_token_combo("precompile_brace",'#','#');
         uint32_t comment_brace = add_token_combo("comment_brace",'/','/');
@@ -1071,7 +998,7 @@ namespace Acorn {
             register_type("list",ptr_id,sizeof(Ptr));
             x_handlers[init_property_id] = [this](Context& ctx){standard_sub_process(ctx);};
 
-            overload_type(string_id,list<std::string>{".'substr'(any)", ".'substr'(any,any)"},"STRING_SUBSTR",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+            overload_type(string_id,list<std::string>{".'substr'(any)", ".'substr'(any,any)"},"STRING_SUBSTR",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                 standard_sub_process(ctx);
                 string output = resolve_string_ticket(ctx.node());
                 string str = ctx.node().getString(0);
@@ -1086,7 +1013,7 @@ namespace Acorn {
                     output.push(str.at(i));
                 }
             });
-            overload_type(string_id,list<std::string>{".'slice'(any,any)", ".'slice'(any,any,any)", ".'slice'(any,any,any,any)"},"STRING_SLICE",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+            overload_type(string_id,list<std::string>{".'slice'(any,any)", ".'slice'(any,any,any)", ".'slice'(any,any,any,any)"},"STRING_SLICE",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
@@ -1113,7 +1040,7 @@ namespace Acorn {
                     target.push(*(char*)resolve_to_col(ptr)[i]);
                 }
             });
-            overload_type(string_id,list<std::string>{".'find'(any)", ".'find'(any,any)", ".'find'(any,any,any)"},"STRING_FIND",make_value(int_id,4),[this](Context& ctx){
+            overload_type(string_id,list<std::string>{".'find'(any)", ".'find'(any,any)", ".'find'(any,any,any)"},"STRING_FIND",make_global_value(int_id,4),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node left = ctx.node().children()[0];
                 Node right = ctx.node().children()[1];
@@ -1133,7 +1060,7 @@ namespace Acorn {
                 ctx.node().value().set((void*)&found_id);
             });
 
-            overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_value(ptr_id,sizeof(Ptr),0,int_id,4));
+            overload_type(string_id,"|*^+int",reg_id("THRONGLIZE"),make_global_value(ptr_id,sizeof(Ptr),0,int_id,4));
 
 
             add_function("makePtr3",[this](Context& ctx){
@@ -1200,7 +1127,7 @@ namespace Acorn {
 
             uint32_t ptr_setsidx_id = add_binding_token_combo("PTR_SETSIDX_OP",8,2,'|','S','=');
             r_handlers[ptr_setsidx_id] = [this](Context& ctx){standard_sub_process(ctx);};
-            overload_type(ptr_id, "|S=int", "PTR_SETSIDX", make_value(ptr_id, sizeof(Ptr)), [this](Context& ctx){
+            overload_type(ptr_id, "|S=int", "PTR_SETSIDX", make_global_value(ptr_id, sizeof(Ptr)), [this](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr p = ctx.node().getPtr(0);
                 CHECK_ERROR("Invalid ptr in ptr_setsidx");
@@ -1209,6 +1136,11 @@ namespace Acorn {
                 p.sidx = val;
                 ctx.node().value().set((void*)&p);
             });
+            add_function("type_of",[this](Context& ctx){
+                standard_sub_process(ctx);
+                uint32_t type = ctx.node().c0().value().type();
+                ctx.node().value().set((void*)&type);
+            },4,int_id);
 
             add_function("plen",[this](Context& ctx){
                 standard_sub_process(ctx);
@@ -1281,13 +1213,13 @@ namespace Acorn {
             add_function("cast_to_Node",[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
-                if(n.cachelevel==3) n.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
+                // if(n.cachelevel==3) n.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
                 ctx.node().value().set((void*)&n);
             },sizeof(Ptr),node_id);
             add_function("cast_to_Ptr",[this](Context& ctx){
                 standard_sub_process(ctx);
                 Ptr p = *(Ptr*)ctx.node().children()[0].value().get();
-                if(p.cachelevel==3) p.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
+                // if(p.cachelevel==3) p.cache = &types; //Figure out later why this isnt' working with string_to_Ptr
                 ctx.node().value().set((void*)&p);
             },sizeof(Ptr),ptr_id);
             add_function("cast_to_string",[this](Context& ctx){
@@ -1388,21 +1320,6 @@ namespace Acorn {
             });
             
 
-            Handler discard = [this](Context& ctx){
-                if(ctx.index()>0) {
-                    ctx.result().get(ctx.index()-1).quals() << turn_into_token(ctx.result().take(ctx.index()));
-                    ctx.index()--;
-                } else if(is_live(ctx.root())) {
-                    ctx.root().quals() << turn_into_token(ctx.result().take(ctx.index()));
-                    if(!ctx.result().empty()) {
-                        ctx.index()--;
-                    }
-                }
-            };
-            t_handlers[end_id] = discard;
-            t_handlers[comma_id] = discard;
-            t_handlers[comment_id] = discard;
-
             a_handlers[make_tokenized_keyword("register")] = [this](Context& ctx){
                 ctx.node().quals() << turn_into_token(ctx.result().take(ctx.index()+1));
                 make_tokenized_keyword(ctx.node().quals().last().name().to_std());
@@ -1487,13 +1404,13 @@ namespace Acorn {
                 ctx.node().value().set((void*)&c1);
             },sizeof(Ptr),node_id);
     
-            overload_type(node_id,".'c0'","NODE_c0",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            overload_type(node_id,".'c0'","NODE_c0",make_global_value(node_id,sizeof(Ptr)),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
                 Node c0 = n.children()[0];
                 ctx.node().value().set((void*)&c0);
             });
-            overload_type(node_id,".'c1'","NODE_c1",make_value(node_id,sizeof(Ptr)),[this](Context& ctx){
+            overload_type(node_id,".'c1'","NODE_c1",make_global_value(node_id,sizeof(Ptr)),[this](Context& ctx){
                 standard_sub_process(ctx);
                 Node n = (Node&)*(Ptr*)ctx.node().children()[0].value().get();
                 Node c1 = n.children()[1];
@@ -1640,7 +1557,7 @@ namespace Acorn {
                     ctx.node().value().sub_type(datatype);
                 },sizeof(Ptr),query_id);
 
-                overload_type(query_id,".'sort'(string)","QUERY_SORT",make_value(query_id,sizeof(Ptr)),[this](Context& ctx){
+                overload_type(query_id,".'sort'(string)","QUERY_SORT",make_global_value(query_id,sizeof(Ptr)),[this](Context& ctx){
                     standard_sub_process(ctx);
                     uint32_t datatype = ctx.node().left().value().sub_type();
                     if(datatype==0) { //Kludge
@@ -1709,7 +1626,7 @@ namespace Acorn {
 
                 });
 
-                overload_type(query_id,".'asIndexString'","QUERY_ASINDEXSTRING",make_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
+                overload_type(query_id,".'asIndexString'","QUERY_ASINDEXSTRING",make_global_value(string_id,sizeof(Ptr),0,char_id,1),[this](Context& ctx){
                     standard_sub_process(ctx);
                     Col& sortcol = ctx.node().left().value().data_col();
                     string output = resolve_string_ticket(ctx.node());
@@ -1794,16 +1711,20 @@ namespace Acorn {
             });
 
             add_function("green",[this](Context& ctx){
-                resolve_string_ticket(ctx.node()) = green(children_to_string(ctx));
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = green(ctx.node().getString(0).to_std());
             },sizeof(Ptr),string_id);
             add_function("red",[this](Context& ctx){
-                resolve_string_ticket(ctx.node()) = red(children_to_string(ctx));
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = red(ctx.node().getString(0).to_std());
             },sizeof(Ptr),string_id);
             add_function("blue",[this](Context& ctx){
-                resolve_string_ticket(ctx.node()) = blue(children_to_string(ctx));
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = blue(ctx.node().getString(0).to_std());
             },sizeof(Ptr),string_id);
             add_function("yellow",[this](Context& ctx){
-                resolve_string_ticket(ctx.node()) = yellow(children_to_string(ctx));
+                standard_sub_process(ctx);
+                resolve_string_ticket(ctx.node()) = yellow(ctx.node().getString(0).to_std());
             },sizeof(Ptr),string_id);
 
             add_function("unit_has_arg",[this](Context& ctx){
@@ -1902,163 +1823,6 @@ namespace Acorn {
                 }
             };
 
-
-            
-
-
-            x_handlers[make_tokenized_keyword("as_data")] = [this](Context& ctx){
-                Value rv = ctx.node().children()[0].value();
-                ctx.node().value(make_value(ptr_id,sizeof(Ptr)));
-                ctx.node().value().set((void*)&rv.data_ptr());
-            };
-
-            r_handlers[var_decl_id] = [this](Context& ctx){
-                fire_quals(ctx,ctx.node().value());
-            };
-            r_handlers[to_unary_id(star_id)] = [this](Context& ctx){ //To get size data and such from the type
-                standard_sub_process(ctx);
-                if(is_live(ctx.node().value())) {
-                    ctx.node().value().type(duck_id);
-                    ctx.node().value().size(0);
-                } else {
-                    ctx.node().value(make_value(duck_id,0));
-                }
-                resolve_overload(ctx);
-            };
-
-
-            r_handlers[to_decl_id(star_id)] = [this](Context& ctx){
-                if(ctx.node().value().type()!=ptr_id) {
-                    ctx.node().value().type(ptr_id);
-                    ctx.node().value().size(sizeof(Ptr));
-                    ctx.node().value().quals().insert(0,make_node(ptr_id,"Ptr",make_value(ptr_id,sizeof(Ptr)),ctx.node().in_scope()));
-                    fire_quals(ctx,ctx.node().value());
-                    standard_sub_process(ctx);
-                    resolve_overload(ctx);
-                }
-            };
-            x_handlers[to_decl_id(star_id)] = [this](Context& ctx){
-                if(!ctx.node().children().empty()) {
-                    standard_sub_process(ctx);
-                    Node child = ctx.node().children()[0];
-                    Ptr p = *(Ptr*)child.value().get();
-                    ctx.node().value().set((void*)&p);
-                }
-            };
-            r_handlers[to_unary_id(amp_id)] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                if(is_live(ctx.node().value())) {
-                    ctx.node().value().type(ptr_id);
-                    ctx.node().value().size(sizeof(Ptr));
-                } else {
-                    ctx.node().value(make_value(ptr_id,sizeof(Ptr)));
-                }
-                resolve_overload(ctx);
-                // if(ctx.node().children().length()!=1) return;
-                // if(ctx.node().value().type()!=ptr_id) {
-                //     ctx.node().value().type(ptr_id);
-                //     ctx.node().value().size(sizeof(Ptr));
-                //     ctx.node().value().quals().insert(0,make_node(ptr_id,"Ptr",make_value(ptr_id,sizeof(Ptr)),ctx.node().in_scope()));
-                //     fire_quals(ctx,ctx.node().value());
-                //     standard_sub_process(ctx);
-                //     resolve_overload(ctx);
-                // }
-            };
-
-            x_handlers[to_unary_id(amp_id)] = [this](Context& ctx){
-                // if(ctx.node().children().length()!=1) return;
-                standard_sub_process(ctx);
-                Node child = ctx.node().children()[0];
-                Ptr p = child.value().data_ptr();
-                ctx.node().value().set((void*)&p);
-            };
-            x_handlers[to_unary_id(star_id)] = [this](Context& ctx){
-                standard_sub_process(ctx);
-                if(ctx.node().c0().value().size()!=sizeof(Ptr)) {throw_error("can't defrefrence because the node does not have storage for a Ptr"); return;}
-                Ptr p = ctx.node().getPtr(0);
-                CHECK_ERROR("Bad Ptr in unary star");
-                ctx.node().value().data_ptr(p);
-                if(is_live(p)) {
-                    sync_value(ctx);
-                }
-            };
-
-
-            x_handlers[var_decl_id] = [this](Context& ctx){
-                fire_quals(ctx,ctx.node().value());
-            };
-            r_handlers[to_prefix_id(ptr_id)] = [this](Context& ctx){
-                if(is_live(ctx.value())) {
-                    if(ctx.value().quals().length()>1) {
-                        int i = 0;
-                        while(i<ctx.value().quals().length()) {
-                            Node q = ctx.value().quals()[i];
-                            if(q.type()==ptr_id&&i<ctx.value().quals().length()-1) {
-                                Node left = ctx.value().quals()[i+1];
-                                ctx.value().sub_type(left.value().type());
-                                ctx.value().sub_size(left.value().size());
-                                break;
-                            }
-                            i++;
-                        }
-                    } else {
-                        //It's just a normal Ptr
-                        // print(red("prefix_ptr_id::r_handler missing type it points to!"));
-                        // print(node_to_string(ctx.node()));
-                    }
-                }
-            };
-            // x_handlers[prefix_node_id] = [this](Context& ctx){
-            //     if(is_live(ctx.value())&&is_first_type_qual(ctx)&&!is_live(ctx.value().data_ptr())) {
-            //         Node n = make_node();
-            //         ctx.node().value().init_data();
-            //         ctx.value().set((void*)&n);
-            //     }
-            // };
-            // x_handlers[prefix_value_id] = [this](Context& ctx){
-            //     if(is_live(ctx.value())&&is_first_type_qual(ctx)) {
-            //         Value v = make_value();
-            //         ctx.node().value().init_data();
-            //         ctx.value().set((void*)&v);
-            //     }
-            // };
-            // x_handlers[prefix_context_id] = [this](Context& ctx){
-            //     if(is_live(ctx.value())&&is_first_type_qual(ctx)) {
-            //         Context c = make_context();
-            //         ctx.node().value().init_data();
-            //         ctx.value().set((void*)&c);
-            //     }
-            // };
-
-            x_handlers[literal_id] = [this](Context& ctx){
-                std::string name = ctx.node().name().to_std();
-                uint32_t vtype = ctx.node().value().type();
-                if(vtype==int_id) {
-                    int i = std::stoi(name); ctx.node().value().set((void*)&i);
-                } else if(vtype==float_id) {
-                    float f = std::stof(name); ctx.node().value().set((void*)&f);
-                } else if(vtype==ptr_id) {
-                    Ptr p = string_to_Ptr(name); 
-                    if(p.cachelevel==3&&!p.cache) {p.cache = &types;} //Add fillins for other caches somehow later
-                    ctx.node().value().set((void*)&p);
-                } else if(vtype==string_id) {
-                    resolve_string_ticket(ctx.node()) = name;
-                } else if(vtype==bool_id) {
-                    bool b = (name=="true"||name=="1");
-                    ctx.node().value().set((void*)&b);
-                } else if(vtype==char_id) {
-                    char c = name.empty() ? '\0' : name[0];
-                    ctx.node().value().set((void*)&c);
-                } else if(vtype==null_id) { //For future use
-                    Ptr dead = deadptr;
-                    ctx.node().value().set((void*)&dead);
-                } else {
-                    throw_error("No way to handle value type ",labels[vtype],"!");
-                }
-                CHECK_ERROR("Failed to handle literal ",labels[vtype]," of name ",escape_string(name,true));
-            };
-
-
             uint32_t include_id = make_tokenized_keyword("include");
             tokenizer_state_functions[include_id] = [this](Context& ctx){
                 char c = ctx.source().at(ctx.index());
@@ -2085,7 +1849,7 @@ namespace Acorn {
 
             r_handlers[to_unary_id(hash_id)] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(int_id,4));
+                ctx.node().value(make_value(ctx.root(),int_id));
                 resolve_overload(ctx);
             };
             x_handlers[to_unary_id(hash_id)] = [this](Context& ctx){
@@ -2102,7 +1866,7 @@ namespace Acorn {
             uint32_t label_type_combo = add_binding_token_combo("LABEL_TYPE",l_lbp,l_rbp,'L','#');
             r_handlers[label_type_combo] = [this](Context& ctx){
                 standard_sub_process(ctx); 
-                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                ctx.node().value(make_value(ctx.root(),string_id,sizeof(Ptr)));  
                 //:/ 
             };
             x_handlers[label_type_combo] = [this](Context& ctx){
@@ -2116,7 +1880,7 @@ namespace Acorn {
             uint32_t node_type_combo = add_binding_token_combo("NODE_TYPE",l_lbp,l_rbp,'N','#');
             r_handlers[node_type_combo] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(int_id,4));
+                ctx.node().value(make_value(ctx.root(),int_id));
                 //:/
             };
             x_handlers[node_type_combo] = [this](Context& ctx){
@@ -2128,7 +1892,7 @@ namespace Acorn {
             uint32_t label_node_type_combo = add_binding_token_combo("LABEL_NODE_TYPE",l_lbp,l_rbp,'S','N','#');
             r_handlers[label_node_type_combo] = [this](Context& ctx){
                 standard_sub_process(ctx); 
-                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                ctx.node().value(make_value(ctx.root(),string_id,sizeof(Ptr)));  
                 //:/
             };
             x_handlers[label_node_type_combo] = [this](Context& ctx){
@@ -2140,7 +1904,7 @@ namespace Acorn {
             uint32_t value_type_combo = add_binding_token_combo("VALUE_TYPE",l_lbp,l_rbp,'V','#');
             r_handlers[value_type_combo] = [this](Context& ctx){                 
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(int_id,4));
+                ctx.node().value(make_value(ctx.root(),int_id));
                 //:/
             };
             x_handlers[value_type_combo] = [this](Context& ctx){
@@ -2154,7 +1918,7 @@ namespace Acorn {
             uint32_t label_value_type_combo = add_binding_token_combo("LABEL_VALUE_TYPE",l_lbp,l_rbp,'S','V','#');
             r_handlers[label_value_type_combo] = [this](Context& ctx){
                 standard_sub_process(ctx); 
-                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                ctx.node().value(make_value(ctx.root(),string_id,sizeof(Ptr)));  
                 //:/
             };
             x_handlers[label_value_type_combo] = [this](Context& ctx){
@@ -2170,7 +1934,7 @@ namespace Acorn {
             uint32_t info_value_combo = add_binding_token_combo("INFO_VALUE",l_lbp,l_rbp,'I','V','#');
             r_handlers[info_value_combo] = [this](Context& ctx){
                 standard_sub_process(ctx); 
-                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));  
+                ctx.node().value(make_value(ctx.root(),string_id,sizeof(Ptr)));  
                 //:/ 
             };
             x_handlers[info_value_combo] = [this](Context& ctx){
@@ -2218,8 +1982,8 @@ namespace Acorn {
             };
            
             r_handlers[ctx_id] = [this](Context& ctx){
-                ctx.node().value(make_value(context_id,sizeof(Ptr)));
-                ctx.node().value().quals().push(make_node(live_qual));
+                ctx.node().value(make_value(ctx.root(),context_id,sizeof(Ptr)));
+                // ctx.node().value().quals().push(make_node(ctx.node(),live_qual));
             };
             x_handlers[ctx_id] = [this](Context& ctx){
                 if(is_live(ctx.sub())) {
@@ -2230,8 +1994,8 @@ namespace Acorn {
                 }
             };
             r_handlers[lctx_id] = [this](Context& ctx){
-                ctx.node().value(make_value(context_id,sizeof(Ptr)));
-                ctx.node().value().quals().push(make_node(live_qual));
+                ctx.node().value(make_value(ctx.root(),context_id,sizeof(Ptr)));
+                ctx.node().value().quals().push(make_node(ctx.node(),live_qual));
             };
             x_handlers[lctx_id] = [this](Context& ctx){
                 ctx.node().value().set((void*)&ctx);
@@ -2239,16 +2003,15 @@ namespace Acorn {
 
             r_handlers[to_string_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(string_id,sizeof(Ptr)));
+                ctx.node().value(make_value(ctx.root(),string_id,sizeof(Ptr)));
                 ctx.node().value().init_data();
                 Ptr ticket = get_ticket(data_store_id,1,char_id);
                 ctx.node().value().set((void*)&ticket);
                 //:/
             };
             x_handlers[to_string_id] = [this](Context& ctx){
-                standard_sub_process(ctx);
                 string str(*(Ptr*)ctx.node().value().get());
-                str = value_as_string(ctx.node().children()[0].value());
+                str = children_to_string(ctx);
             };
 
             add_function("to_color_string",[this](Context& ctx){
@@ -2272,7 +2035,7 @@ namespace Acorn {
 
             r_handlers[labels_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(string_id,sizeof(Ptr),0,char_id,1));
+                ctx.node().value(make_value(ctx.root(),string_id,sizeof(Ptr)));
                 Ptr ticket = get_ticket(data_store_id,1,char_id);
                 ctx.node().value().set((void*)&ticket);
                 //:/
@@ -2288,7 +2051,7 @@ namespace Acorn {
 
             r_handlers[to_type_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(int_id,4));
+                ctx.node().value(make_value(ctx.root(),int_id));
                 ctx.node().value().init_data();
                 //:/
             };
@@ -2408,7 +2171,8 @@ namespace Acorn {
                     ctx.index()++;
                     process_node(ctx,right);
                     ctx.index()--;
-                    Node newscope = make_node(scope_id,ctx.node().name().to_std(),deadptr,deadptr);
+                    Node newscope = make_node(ctx.node(),scope_id);
+                    newscope.name() = ctx.node().name().to_std();
                     ctx.node().scopes() << newscope;
                     newscope.owner(ctx.node());
                     place_node_in_scope(right,newscope);
@@ -2472,7 +2236,7 @@ namespace Acorn {
 
             r_handlers[while_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-                ctx.node().value(make_value());
+                ctx.node().value(make_value(ctx.root()));
             };
             x_handlers[while_id] = [this](Context& ctx) {
                 while(true) {
@@ -2504,7 +2268,7 @@ namespace Acorn {
             };
             r_handlers[for_id] = [this](Context& ctx) {
                 standard_sub_process(ctx);
-                ctx.node().scopes()[0].value(make_value());
+                ctx.node().scopes()[0].value(make_value(ctx.root()));
             };
             x_handlers[for_id] = [this](Context& ctx) {
                 process_node(ctx, ctx.node().children()[0]);
@@ -2563,99 +2327,23 @@ namespace Acorn {
 
             r_handlers[compile_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                ctx.node().value(make_value(node_id,sizeof(Ptr)));
-                Ptr ticket = make_node();
+                ctx.node().value(make_value(ctx.root(),node_id,sizeof(Ptr)));
+                Ptr ticket = make_node(ctx.node());
                 ctx.node().value().set((void*)&ticket);
                 //:/
             };
             x_handlers[compile_id] = [this](Context& ctx){
                 standard_sub_process(ctx);
-                Node node = ctx.node().getNode();
                 std::string source = ctx.node().getString(0).to_std();
                 float old_at_x = at_x; float old_at_y = at_y; float old_at_z = at_z;
                 at_x = 0.0f; at_y = 0.0f; last_z++; at_z = last_z;
                 Node root = process(source);
+                Node inscope = ctx.node().in_scope();
                 root.z(at_z);
                 at_x = old_at_x; at_y = old_at_y; at_z = old_at_z;
-
-                //UNIFY THIS WITH THE NORMAL COMPILE() LATER!!!
-
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                //Log::Line l; l.start();
-                start_logged_stage(a_handlers);
-                standard_direct_pass(root);
-                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
-                end_logged_stage();
-                
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                lemmatize_stages();
-                newline("Resolving keywords");
-                    a_pass_resolve_keywords(root.children());
-                endline();
-                for(int i=0;i<root.children().length();i++) {
-                    place_node_in_scope(root.children()[i],root);
-                }
-
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                start_logged_stage(n_handlers);
-                standard_direct_pass(root);
-                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
-                end_logged_stage();
-
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                start_logged_stage(s_handlers);
-                standard_direct_pass(root);
-                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
-                end_logged_stage();
-
-                Node inscope = ctx.node().in_scope();
-                if(is_live(inscope)) {
-                    value_col vals = inscope.value_table();
-                    list<CCol*> vcells = vals.col().allCells();
-                    for(int i=0;i<vcells.length();i++) {
-                        distribute_value(root,((QString&)(*(vcells[i]))).to_std(),vals[vcells[i]->index],0);
-                    }
-                    node_col nodes = inscope.node_table();
-                    list<CCol*> ncells = nodes.col().allCells();
-                    for(int i=0;i<ncells.length();i++) {
-                        distribute_node(root,((QString&)(*(ncells[i]))).to_std(),nodes[ncells[i]->index],0);
-                    }
-                }
-                
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                start_logged_stage(t_handlers);
-                standard_resolving_pass(root);
-                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
-                end_logged_stage();
-
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                start_logged_stage(r_handlers);
-                standard_resolving_pass(root);
-                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
-                end_logged_stage();
-
-                //No E stage for now while testing
-                // DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                // start_logged_stage(e_handlers);
-                // memory_backwards_pass(root);
-                // endline();
-
-                // if(prune) {
-                //     newline("Pruning dead nodes");
-                //         e_pass_prune_dead(root.children());
-                //     endline();
-                // }
-
-                DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
-                start_logged_stage(m_handlers);
-                memory_backwards_pass(root);
-                //print("[",at_z,"] ",active_stage->label,": ",ftime(l.end())); l.start();
-                end_logged_stage();
-                
-
-
+                compile(root);
                 start_logged_stage(x_handlers);
-                node.copy(root);
+                ctx.node().value().set((void*)&root);
                 end_logged_stage();
             };
          
@@ -2678,7 +2366,7 @@ namespace Acorn {
                     return;
                 }
 
-                if(!is_live(ctx.node().value())) {ctx.node().quals().push(make_node(live_qual));} //For debug things and such
+                if(!is_live(ctx.node().value())) {ctx.node().quals().push(make_node(ctx.node(),live_qual));} //For debug things and such
 
                 if(is_node_opperator(ctx.node())) {
                     if(ctx.node().children().length()==2) {
@@ -2699,7 +2387,7 @@ namespace Acorn {
                     for(int i=0;i<ctx.node().children().length();i++) {
                         Node c = ctx.node().children().get(i);
                         if(is_live(c.value())&&!c.has_qual(live_qual)) {
-                            c.value().quals().push(make_node(live_qual));
+                            c.value().quals().push(make_node(ctx.node(),live_qual));
                         }
                     }
                 }
@@ -2710,15 +2398,15 @@ namespace Acorn {
                     for(int i=0;i<ctx.node().children().length();i++) {
                         Node c = ctx.node().children().get(i);
                         if(is_live(c.value())&&!c.has_qual(live_qual)) {
-                            c.value().quals().push(make_node(live_qual));
+                            c.value().quals().push(make_node(ctx.node(),live_qual));
                         }
                     }
                 }
                 standard_sub_process(ctx);
             };
             e_handlers[print_id] = [this](Context& ctx){
-                ctx.node().value().quals().push(make_node(gatekeeper_qual));
-                ctx.node().value().quals().push(make_node(live_qual));
+                ctx.node().value().quals().push(make_node(ctx.node(),gatekeeper_qual));
+                ctx.node().value().quals().push(make_node(ctx.node(),live_qual));
                 value_col subvals = ctx.node().value().sub_values();
                 gather_all_values_in_scope(subvals,ctx.node());
                 fire_quals(ctx,ctx.node().value());
@@ -2727,54 +2415,11 @@ namespace Acorn {
             e_handlers[to_prefix_id(gatekeeper_qual)] = [this](Context& ctx){
                 for(int i=0;i<ctx.value().sub_values().length();i++) {
                     Value v = ctx.value().sub_values().get(i);
-                    if(!v.has_qual(live_qual)) {v.quals().push(make_node(live_qual));}
+                    if(!v.has_qual(live_qual)) {v.quals().push(make_node(ctx.node(),live_qual));}
                 }
             };
 
-            m_handlers.default_function = [this](Context& ctx){
-                if(is_live(ctx.node().value())) {
-                    if(should_allocate_data(ctx.node().value())) {
-                        allocate_data(ctx.node().value());
-                    }
-                    for(int i=ctx.node().children().length()-1;i>=0;i--) {
-                        Node child = ctx.node().children()[i];
-                        if(m_handlers.has(child.type())) {
-                            process_node(ctx,child);
-                        } else {
-                            if(is_live(child.value())) {
-                                if(should_allocate_data(child.value())) {
-                                    allocate_data(child.value());
-                                }
-                            }
-                            process_node(ctx,child);
-                        }
-                    }
-                    #if !LOBOTOMIZE_M_STAGE
-                    for(int i=ctx.node().children().length()-1;i>=0;i--) {
-                        Node child = ctx.node().children()[i];
-                        if(!m_handlers.has(child.type())) {
-                            if(should_recycle_data(child.value())) {
-                                recycle_column(child.value().data_ptr());
-                            }
-                        }
-                    }
-                    #endif
-                } else {
-                    backwards_sub_process(ctx);
-                }
-            };
-            // m_handlers[var_decl_id] = [this](Context& ctx){
-            //     #if !LOBOTOMIZE_M_STAGE
-            //     if(should_recycle_data(ctx.node().value())) {
-            //         recycle_column(ctx.node().value().data_ptr());
-            //     }
-            //     #endif
-            // };
-            // m_handlers[identifier_id] = [this](Context& ctx){
-            //     if(should_allocate_data(ctx.node().value())) {
-            //         allocate_data(ctx.node().value());
-            //     }
-            // };
+           
 
             add_function("compute_percent",[this](Context& ctx){
                 standard_sub_process(ctx);
@@ -2990,7 +2635,7 @@ namespace Acorn {
                         list<uint32_t> lower_YAPAs = YAPAs[YAPA_level-1];
                         for(int i=0;i<lower_YAPAs.length();i++) {
                             uint32_t lower_id = lower_YAPAs[i];
-                            overload_type(id,list<std::string>{".'"+labels[lower_id]+"'(...)","."+labels[lower_id]+"(...)",".'"+labels[lower_id]+"'","."+labels[lower_id]},labels[id]+"_INIT_LOWER",make_value(lower_id,sizeof(Ptr)),[this,id,YAPA_level,lower_id](Context& ctx){
+                            overload_type(id,list<std::string>{".'"+labels[lower_id]+"'(...)","."+labels[lower_id]+"(...)",".'"+labels[lower_id]+"'","."+labels[lower_id]},labels[id]+"_INIT_LOWER",make_global_value(lower_id,sizeof(Ptr)),[this,id,YAPA_level,lower_id](Context& ctx){
                                 uint32_t old_type = ctx.node().type();
                                 Node right = ctx.node().right();
                                 if(!right.children().empty()) {
@@ -3060,6 +2705,14 @@ namespace Acorn {
                     verbosity = ctx.node().getInt(0);
                 }
                 print(node_to_string(ctx.node().in_scope(),0,0,verbosity));
+            });
+            add_function("DEBUG_NODE_X",[this](Context& ctx){
+                standard_sub_process(ctx);
+                int verbosity = 0;
+                if(ctx.node().children().length()>1) {
+                    verbosity = ctx.node().getInt(1);
+                }
+                print(node_to_string(ctx.node().c0(),0,0,verbosity));
             });
 
             add_function("DEBUG_ROOT_X_BRIEF",[this](Context& ctx){
@@ -3269,11 +2922,10 @@ namespace Acorn {
                     n.type(string_id);
                 }
             }
-            Context ctx = make_context(); ctx.node(n);
+            Context ctx = make_root_context(root); ctx.node(n);
             t_handlers.run(n.type())(ctx);
             m_handlers.run(n.type())(ctx);
             x_handlers.run(n.type())(ctx);
-            deep_recycle_context(ctx);
             return n;
         }
 
@@ -3347,6 +2999,7 @@ namespace Acorn {
             DEBUG_ONLY(if(ERROR_FLAG){post_mortem(root); return;})
             //print(node_to_string(root,0,0,true));
 
+            
             start_logged_stage(x_handlers);
             standard_travel_pass(root);
             end_logged_stage();

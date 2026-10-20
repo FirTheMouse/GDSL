@@ -31,10 +31,12 @@ namespace Acorn {
         #define CHECK_ERROR_VAL(value, ...)     \
             do {                                \
                 if (ERROR_FLAG) {               \
+                    ERROR_FLAG = false;         \
                     append_error(               \
                         __VA_ARGS__,            \
                         " [", strip_path(__FILE__), ":", __LINE__, "]" \
                     );                          \
+                    ERROR_FLAG = true;          \
                     return value;               \
                 }                               \
             } while (false)
@@ -42,10 +44,12 @@ namespace Acorn {
         #define CHECK_ERROR(...)                \
             do {                                \
                 if (ERROR_FLAG) {               \
+                    ERROR_FLAG = false;         \
                     append_error(               \
                         __VA_ARGS__,            \
                         " [", strip_path(__FILE__), ":", __LINE__, "]" \
                     );                          \
+                    ERROR_FLAG = true;          \
                     return;                     \
                 }                               \
             } while (false)                     
@@ -255,11 +259,14 @@ namespace Acorn {
         uint32_t offset() {
             return 0; //Currently not doing anything, but for future metaprogramming, left as a stub so it's easy to add when space is found.
         }
+        inline Ptr& make_owning() {if(specialization==1){specialization=2;} return *this;}
+        inline Ptr& make_weak() {if(specialization==2){specialization=1;} return *this;}
     };
     static_assert(sizeof(Ptr)==32," Size of Ptr must be 32 for cross platform");
 
     inline const uint8_t _DEADSPEC = 0;
     inline bool is_live(Ptr p) {return (p.specialization!=_DEADSPEC);}
+    inline bool is_owning(Ptr p) {return (p.specialization==2);}
 
     struct Ptr4 {
         Ptr4() {}
@@ -501,11 +508,9 @@ namespace Acorn {
         char& at(uint32_t idx) {return *(char*)qget(idx);}
         char& operator[](uint32_t idx) {return *(char*)qget(idx);}
         void push(char c) {QCol::push((void*)&c,1);}
-        void push(const char* s, uint32_t len) {QCol::push(s,len);}
         uint32_t length() {return size;}
-        void clearAndPush(const char* s, uint32_t len) {clear(); push(s,len);}
 
-        void operator=(const std::string& s) {clear(); push(s.data(),s.length());}
+        void operator=(const std::string& s) {clear(); for(char c : s) push(c);}
         void operator=(const char* s) {clear(); while(*s) push(*s++);}
         bool operator==(const std::string& s) {
             if(size != s.length()) return false;
@@ -896,6 +901,11 @@ namespace Acorn {
             free = std::move(o.free);
             return *this;
         }
+        Col& operator=(const Col& o) {
+            if(this == &o) return *this;
+            Col tmp(o);
+            return *this = std::move(tmp);
+        }
         ~Col() {
             if(!storage || element_size == 0) return;
             switch(specialization) {
@@ -918,6 +928,15 @@ namespace Acorn {
         QCellCol cells;
         list<uint32_t> free;
         std::atomic<uint8_t> live = true;
+
+        void copy_metadata(Col& o) {
+            element_size = o.element_size;
+            tag = o.tag;
+            specialization = o.specialization;
+            form = o.form;
+            cachelevel = o.cachelevel;
+            heterogenous = o.heterogenous;
+        }
 
         void erase() {
             label.clear();
@@ -1164,12 +1183,14 @@ namespace Acorn {
     struct ColCol : Col {
         ColCol() {specialization = Spec::COL;  element_size = sizeof(Col);}
         Col& get(uint32_t idx) {return *(Col*)Col::get(idx);}
+        Col& get(const std::string& s) {return *(Col*)Col::get(s);}
         inline Col& operator[](uint32_t index) {return get(index);}
     };
 
     struct ColColCol : Col {
         ColColCol() {specialization = Spec::COL; element_size = sizeof(ColCol);}
         ColCol& get(uint32_t idx) {return *(ColCol*)Col::get(idx);}
+        ColCol& get(const std::string& s) {return *(ColCol*)Col::get(s);}
         inline ColCol& operator[](uint32_t index) {return get(index);}
         ColCol& add() {Col& c = Col::add(); c.specialization = Spec::COL; c.element_size = sizeof(Col); return (ColCol&)c;}
         uint32_t add_idx() {
@@ -1194,12 +1215,12 @@ namespace Acorn {
             CHECK_ERROR_VAL(0,"Error while adding, no index can be returned");
             return length()-1; //<- indexof is the more general case, but can't be used in the Ptr case.
         }
-        ColColCol* create(const std::string& label) {
-            ColColCol* col = new ColColCol();
-            col->label = label;
-            push((void*)&col);
-            return col;
-        }
+        // ColColCol* create(const std::string& label) {
+        //     ColColCol* c = add();
+        //     c->label = label;
+        //     c->addcell(label.data(),
+        //     return col;
+        // }
     };
 
     inline static void write_qcol(std::ostream& out, QCol& col, bool include_data) {
